@@ -5,3 +5,7 @@ Homeworks
 Outputs
 *.pyc
 visualize.ipynb
+Dashboard/.env 
+.env
+Dashboard/.env
+Dashboard/.streamlit/secrets.toml
