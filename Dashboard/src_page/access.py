@@ -250,7 +250,7 @@ def scene_access():
             st.plotly_chart(fig_surface_cnt, use_container_width=True, config={"displayModeBar": False})
         if not sw_ranges.empty:
             st.caption("Per-country surface water exposure ranges (2024).")
-            st.dataframe(sw_ranges.round(1), width="stretch")
+            st.dataframe(sw_ranges.round(1), use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='panel'><h3>Population Coverage Trend (2020–2024)</h3>", unsafe_allow_html=True)
@@ -383,6 +383,6 @@ def scene_access():
                 priority_display[col] = priority_display[col].round(1)
             if "population" in priority_display.columns:
                 priority_display["population"] = pd.to_numeric(priority_display["population"], errors="coerce").round(0).astype("Int64")
-            st.dataframe(priority_display, width="stretch")
+            st.dataframe(priority_display, use_container_width=True)
             st.caption("Sewer gap = unimproved % + open defecation % (sewer).")
     st.markdown("</div>", unsafe_allow_html=True)

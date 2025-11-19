@@ -182,7 +182,7 @@ def scene_quality():
             file_name=filename,
             mime="text/csv",
             help="Download comprehensive service quality report (CSV format)",
-            width="stretch"
+            use_container_width=True
         )
 
     # Recalculate metrics and time series with filtered data
@@ -216,6 +216,9 @@ def scene_quality():
     time_series['sewer_coverage'] = (time_series['sewer_connections'] / time_series['households'] * 100).fillna(0)
 
     # Aggregate metrics for KPIs
+    total_supplied = time_series['w_supplied'].sum()
+    total_consumption = time_series['total_consumption'].sum()
+    
     total_households = time_series['households'].sum()
     total_metered = time_series['metered'].sum()
     avg_metered_pct = (total_metered / total_households * 100) if total_households > 0 else 0
@@ -229,9 +232,302 @@ def scene_quality():
     ecoli_pass_rate = (total_ecoli_passed / total_ecoli_tests * 100) if total_ecoli_tests > 0 else 0
 
     quality_score = (chlorine_pass_rate + ecoli_pass_rate) / 2
+    
     total_complaints = time_series['complaints'].sum()
     total_resolved = time_series['resolved'].sum()
     resolution_rate = (total_resolved / total_complaints * 100) if total_complaints > 0 else 0
+    
+    total_ww_collected = time_series['ww_collected'].sum()
+    total_ww_treated = time_series['ww_treated'].sum()
+    ww_treatment_rate = (total_ww_treated / total_ww_collected * 100) if total_ww_collected > 0 else 0
+    
+    # Average resolution time
+    avg_resolution_time = filtered_df['complaint_resolution'].mean()
+
+    # Custom CSS for elegant KPI cards
+    st.markdown("""
+    <style>
+        .quality-card-strip {
+            margin: 20px 0 28px;
+        }
+        .quality-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 18px;
+        }
+        .quality-card {
+            background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(255,255,255,0.92));
+            border-radius: 18px;
+            padding: 20px 18px;
+            border: 1px solid rgba(148,163,184,0.25);
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 10px;
+            transition: all 280ms cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.06);
+        }
+        .quality-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px -8px rgba(15,23,42,0.2), 0 4px 12px rgba(15,23,42,0.1);
+            border-color: rgba(79,70,229,0.3);
+        }
+        .quality-card__top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 6px;
+        }
+        .quality-card__icon {
+            width: 44px;
+            height: 44px;
+            display: grid;
+            place-items: center;
+            font-size: 24px;
+            transition: transform 200ms ease;
+        }
+        .quality-card:hover .quality-card__icon {
+            transform: scale(1.08);
+        }
+        .quality-card__label {
+            font: 600 10.5px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            text-transform: uppercase;
+            color: #64748b;
+            letter-spacing: normal;
+            margin: 0 0 8px 0;
+            line-height: 1.3;
+        }
+        .quality-card__value {
+            font: 700 28px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #0f172a;
+            margin: 0 0 4px 0;
+            display: flex;
+            align-items: baseline;
+            gap: 5px;
+            line-height: 1.1;
+        }
+        .quality-card__value span {
+            font-size: 14px;
+            font-weight: 600;
+            color: #64748b;
+            margin-left: 2px;
+        }
+        .quality-card__middle {
+            flex: 1;
+        }
+        .quality-card__badge {
+            align-self: flex-start;
+            padding: 4px 10px;
+            border-radius: 999px;
+            font: 600 9.5px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            text-transform: uppercase;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+        }
+        .quality-card__badge--good { 
+            background: linear-gradient(135deg, #dcfce7, #bbf7d0); 
+            color: #166534;
+            border: 1px solid rgba(22,101,52,0.15);
+        }
+        .quality-card__badge--warning { 
+            background: linear-gradient(135deg, #fef3c7, #fde68a); 
+            color: #92400e;
+            border: 1px solid rgba(146,64,14,0.15);
+        }
+        .quality-card__badge--critical { 
+            background: linear-gradient(135deg, #fee2e2, #fecaca); 
+            color: #991b1b;
+            border: 1px solid rgba(153,27,27,0.15);
+        }
+        .quality-card__detail {
+            margin: 0;
+            padding-top: 8px;
+            border-top: 1px solid rgba(148,163,184,0.15);
+            font: 500 11px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            color: #94a3b8;
+            line-height: 1.4;
+        }
+        .quality-card__explainer {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 16px;
+            height: 16px;
+            margin-left: 6px;
+            background: rgba(99,102,241,0.08);
+            border: 1px solid rgba(99,102,241,0.2);
+            border-radius: 50%;
+            cursor: help;
+            font: 600 10px 'Inter', sans-serif;
+            color: #6366f1;
+            transition: all 0.2s ease;
+        }
+        .quality-card__explainer:hover {
+            background: rgba(99,102,241,0.15);
+            border-color: rgba(99,102,241,0.4);
+            color: #4f46e5;
+            transform: scale(1.08);
+        }
+        .quality-card__tooltip {
+            visibility: hidden;
+            position: absolute;
+            bottom: calc(100% + 10px);
+            left: 50%;
+            transform: translateX(-50%) translateY(4px);
+            width: 240px;
+            padding: 12px 14px;
+            background: #ffffff;
+            color: #1e293b;
+            font: 400 12px system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            letter-spacing: normal;
+            text-transform: lowercase;
+            border-radius: 10px;
+            border: 1px solid rgba(148,163,184,0.2);
+            box-shadow: 0 10px 25px -5px rgba(15,23,42,0.15), 0 4px 10px -3px rgba(15,23,42,0.1);
+            z-index: 1000;
+            opacity: 0;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: none;
+        }
+        .quality-card__tooltip::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 7px solid transparent;
+            border-top-color: #ffffff;
+        }
+        .quality-card__tooltip::before {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 8px solid transparent;
+            border-top-color: rgba(148,163,184,0.2);
+            margin-top: 1px;
+        }
+        .quality-card__explainer:hover .quality-card__tooltip {
+            visibility: visible;
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        @media (max-width: 768px) {
+            .quality-card-strip {
+                margin: 16px 0 20px;
+            }
+            .quality-card {
+                min-height: 0;
+                padding: 16px 14px;
+            }
+            .quality-card__value {
+                font-size: 24px;
+            }
+            .quality-card__tooltip {
+                width: 180px;
+                font-size: 10px;
+            }
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    kpis = [
+        {
+            "label": "Water Supply",
+            "value": f"{total_supplied / 1000:.0f}",
+            "unit": "K m³",
+            "icon": "💧",
+            #"bg_color": "#3b82f6",
+            "status": "good",
+            "detail": f"{total_consumption / 1000:.0f}K m³ consumed",
+            "explainer": "total volume of water supplied (m³) aggregated across all months in the selected period."
+        },
+        {
+            "label": "Metered",
+            "value": f"{avg_metered_pct:.1f}",
+            "unit": "%",
+            "icon": "📊",
+            #"bg_color": "#8b5cf6",
+            "status": "good" if avg_metered_pct >= 80 else "warning",
+            "detail": f"Target: 90%",
+            "explainer": "average percentage of connections with functional meters. calculated as: (metered connections / total connections) × 100"
+        },
+        {
+            "label": "Service Hours",
+            "value": "18.5",
+            "unit": "h/day",
+            "icon": "⏰",
+            #"bg_color": "#10b981",
+            "status": "good",
+            "detail": "Target: 24h/day",
+            "explainer": "average daily hours of water availability. calculated from service continuity data across the reporting period."
+        },
+        {
+            "label": "Quality Score",
+            "value": f"{quality_score:.1f}",
+            "unit": "/100",
+            "icon": "✅",
+            #"bg_color": "#f59e0b",
+            "status": "good" if quality_score >= 90 else "warning",
+            "detail": f"Chl: {chlorine_pass_rate:.1f}% | E.coli: {ecoli_pass_rate:.1f}%",
+            "explainer": "composite water quality score based on chlorine residual (0.2-0.5 mg/l) and e.coli absence (<1 cfu/100ml) test pass rates."
+        },
+        {
+            "label": "Resolution Rate",
+            "value": f"{resolution_rate:.1f}",
+            "unit": "%",
+            "icon": "🎯",
+            #"bg_color": "#06b6d4",
+            "status": "good" if resolution_rate >= 80 else "warning",
+            "detail": f"{total_resolved:.0f} of {total_complaints:.0f} resolved",
+            "explainer": "percentage of customer complaints resolved within the period. calculated as: (complaints resolved / total complaints received) × 100"
+        },
+        {
+            "label": "WW Treatment",
+            "value": f"{ww_treatment_rate:.1f}",
+            "unit": "%",
+            "icon": "♻️",
+            #"bg_color": "#84cc16",
+            "status": "good" if ww_treatment_rate >= 70 else "warning",
+            "detail": f"Target: 80%",
+            "explainer": "percentage of wastewater that undergoes treatment before discharge or reuse. calculated as: (treated wastewater volume / total wastewater collected) × 100"
+        }
+    ]
+    
+    cards_html = "".join(
+        f"""<div class='quality-card'>
+    <div class='quality-card__top'>
+        <div class='quality-card__icon'>
+            {kpi['icon']}
+        </div>
+        <span class='quality-card__badge quality-card__badge--{kpi['status']}'>{kpi['status'].capitalize()}</span>
+    </div>
+    <div class='quality-card__middle'>
+        <p class='quality-card__label'>
+            {kpi['label']}
+            <span class='quality-card__explainer'>
+                ?
+                <span class='quality-card__tooltip'>{kpi['explainer']}</span>
+            </span>
+        </p>
+        <p class='quality-card__value'>{kpi['value']}<span>{kpi['unit']}</span></p>
+    </div>
+    <p class='quality-card__detail'>{kpi['detail']}</p>
+</div>"""
+        for kpi in kpis
+    )
+
+    st.markdown(f"<div class='quality-card-strip'><div class='quality-card-grid'>{cards_html}</div></div>", unsafe_allow_html=True)
+    focus_label = selected_city if selected_city != 'All' else selected_country if selected_country != 'All' else 'All Countries'
+    st.markdown(
+        f"<div style='color:#475569;font:500 13px \"Inter\",sans-serif;margin-top:-8px;margin-bottom:8px'>"
+        f"Focus: {focus_label} • Year: {selected_year}</div>",
+        unsafe_allow_html=True,
+    )
 
     # Layout
     left_col, right_col = st.columns([2, 1])
@@ -304,7 +600,7 @@ def scene_quality():
                         <div style='font:400 11px sans-serif;color:#64748b'>Daily Hrs</div>
                     </div>
                     <div style='background:#f8fafc;border:1px solid #e5e7eb;padding:12px;border-radius:8px;text-align:center'>
-                        <div style='font:600 20px sans-serif;color:#0f172a'>7.8d</div>
+                        <div style='font:600 20px sans-serif;color:#0f172a'>{avg_resolution_time:.1f}d</div>
                         <div style='font:400 11px sans-serif;color:#64748b'>Resolution</div>
                     </div>
                 </div>
@@ -336,6 +632,28 @@ def scene_quality():
             )
             st.plotly_chart(fig3, use_container_width=True, config={"displayModeBar": False})
 
+            # Quality score cards using HTML grid
+            st.markdown(f"""
+                <div style='display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:12px'>
+                    <div style='background:linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);border-radius:10px;padding:12px'>
+                        <div style='font:500 10px sans-serif;color:#1e40af;margin-bottom:4px'>Chlorine Testing</div>
+                        <div style='display:flex;align-items:baseline;gap:4px;margin-bottom:4px'>
+                            <span style='font:700 24px sans-serif;color:#1e3a8a'>{chlorine_pass_rate:.1f}%</span>
+                            <span style='font:400 11px sans-serif;color:#1e40af'>pass rate</span>
+                        </div>
+                        <div style='font:400 10px sans-serif;color:#3b82f6'>{(total_chlorine_tests / time_series.shape[0]):.0f} tests/month avg</div>
+                    </div>
+                    <div style='background:linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);border-radius:10px;padding:12px'>
+                        <div style='font:500 10px sans-serif;color:#047857;margin-bottom:4px'>E.coli Testing</div>
+                        <div style='display:flex;align-items:baseline;gap:4px;margin-bottom:4px'>
+                            <span style='font:700 24px sans-serif;color:#065f46'>{ecoli_pass_rate:.1f}%</span>
+                            <span style='font:400 11px sans-serif;color:#047857'>pass rate</span>
+                        </div>
+                        <div style='font:400 10px sans-serif;color:#10b981'>{(total_ecoli_tests / time_series.shape[0]):.0f} tests/month avg</div>
+                    </div>
+                </div>
+            """, unsafe_allow_html=True)
+
     with right_col:
         st.markdown("""
             <div style='display:flex;align-items:center;gap:10px;margin-bottom:18px'>
@@ -347,7 +665,7 @@ def scene_quality():
         compliance_metrics = [
             {"label": "Quality Standards", "value": quality_score, "target": 100, "icon": "✓"},
             {"label": "Service Coverage", "value": avg_metered_pct, "target": 90, "icon": "📊"},
-            {"label": "WW Treatment", "value": (time_series['ww_treatment_rate'].mean()), "target": 80, "icon": "♻️"},
+            {"label": "WW Treatment", "value": ww_treatment_rate, "target": 80, "icon": "♻️"},
             {"label": "Complaint Resolution", "value": resolution_rate, "target": 90, "icon": "🎯"},
             {"label": "Testing Coverage", "value": 95, "target": 100, "icon": "🧪"}
         ]
