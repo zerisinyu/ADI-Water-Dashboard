@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Any
 import json
 from pathlib import Path
-
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1933,7 +1933,7 @@ def scene_quality():
         for metric in compliance_metrics:
             pct = (metric["value"] / metric["target"]) * 100
             color = "#10b981" if pct >= 95 else "#f59e0b" if pct >= 80 else "#ef4444"
-            # bg_color = "rgba(16,185,129,0.1)" if pct >= 95 else "rgba(245,158,11,0.1)" if pct >= 80 else "rgba(239,68,68,0.1)"
+            bg_color = "rgba(16,185,129,0.1)" if pct >= 95 else "rgba(245,158,11,0.1)" if pct >= 80 else "rgba(239,68,68,0.1)"
             status_text = "Excellent" if pct >= 95 else "Good" if pct >= 80 else "Needs Attention"
             
             st.markdown(f"""
