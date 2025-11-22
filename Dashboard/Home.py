@@ -6,7 +6,7 @@ from typing import Optional
 
 import streamlit as st
 
-from utils import get_zones
+from utils import get_zones, prepare_service_data
 
 # Scenes are implemented in src_page/*
 from src_page.exec import scene_executive as scene_exec_page
@@ -26,36 +26,68 @@ def _inject_styles() -> None:
 
 def _render_overview_banner() -> None:
     zone = st.session_state.get("selected_zone")
-    if isinstance(zone, dict):
-        zone_label = zone.get("name") or "All zones"
+    country = st.session_state.get("selected_country")
+    
+    if zone and zone != 'All':
+        location_label = f"{zone}, {country}" if country and country != 'All' else zone
+    elif country and country != 'All':
+        location_label = country
     else:
-        zone_label = zone or "All zones"
-    start = st.session_state.get("start_month") or "Any"
-    end = st.session_state.get("end_month") or "Now"
+        location_label = "All Locations"
+        
+    month = st.session_state.get("selected_month") or "All"
+    year = st.session_state.get("selected_year") or "All"
 
     st.title("Water Utility Performance Dashboard")
-    st.caption(f"Latest performance overview for {zone_label} (Months: {start} – {end})")
+    st.caption(f"Overview for {location_label} | Year: {year} | Month: {month}")
 
 
 def _sidebar_filters() -> None:
     st.sidebar.title("Filters")
-    zones = get_zones()
-    zone_names = ["All"] + [z.get("name") for z in zones]
-    sel_zone = st.sidebar.selectbox("Zone", zone_names, index=0, key="global_zone")
-    if sel_zone == "All":
-        st.session_state["selected_zone"] = None
+    
+    # Load data for filters (using service data as it has the most granular time/location info)
+    service_data = prepare_service_data()
+    df_service = service_data["full_data"]
+    
+    # 1. Country
+    countries = ['All'] + service_data["countries"]
+    # Initialize session state if not present
+    if "selected_country" not in st.session_state:
+        st.session_state["selected_country"] = "All"
+        
+    selected_country = st.sidebar.selectbox('Country', countries, key='selected_country')
+
+    # 2. Zone
+    if selected_country != 'All':
+        zones = ['All'] + sorted(df_service[df_service['country'] == selected_country]['zone'].unique().tolist())
     else:
-        st.session_state["selected_zone"] = next((z for z in zones if z.get("name") == sel_zone), None)
+        zones = ['All'] + service_data["zones"]
+        
+    if "selected_zone" not in st.session_state:
+        st.session_state["selected_zone"] = "All"
+        
+    selected_zone = st.sidebar.selectbox('Zone', zones, key='selected_zone')
 
-    st.sidebar.markdown("Month range (YYYY-MM)")
-    st.sidebar.text_input("Start", value=st.session_state.get("start_month", ""), key="start_month")
-    st.sidebar.text_input("End", value=st.session_state.get("end_month", ""), key="end_month")
+    # 3. Year
+    available_years = sorted(df_service['year'].unique(), reverse=True)
+    if "selected_year" not in st.session_state:
+        st.session_state["selected_year"] = available_years[0] if available_years else None
+        
+    selected_year = st.sidebar.selectbox('Year', available_years, key='selected_year')
 
-    st.sidebar.radio("Blockages rate basis", ["per 100 km", "per 1000 connections"], index=0, key="blockage_basis")
+    # 4. Month
+    months = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    if "selected_month" not in st.session_state:
+        st.session_state["selected_month"] = "All"
+        
+    selected_month_name = st.sidebar.selectbox('Month', months, key='selected_month')
+
     if st.sidebar.button("Reset filters"):
-        for k in ["global_zone", "selected_zone", "start_month", "end_month", "blockage_basis"]:
-            if k in st.session_state:
-                del st.session_state[k]
+        st.session_state["selected_country"] = "All"
+        st.session_state["selected_zone"] = "All"
+        if available_years:
+            st.session_state["selected_year"] = available_years[0]
+        st.session_state["selected_month"] = "All"
         st.rerun()
 
 
