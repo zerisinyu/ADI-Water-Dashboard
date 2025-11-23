@@ -307,3 +307,97 @@
   }
 }
 
+/* === Floating Chat Button === */
+.chat-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--primary-text);
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  font-size: 22px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(79,70,229,0.25);
+  z-index: 9999;
+}
+.chat-fab:hover, .chat-fab:focus {
+  background: #4338ca; /* a bit darker indigo */
+  outline: none;
+}
+.chat-fab:focus {
+  box-shadow: 0 0 0 4px rgba(79,70,229,0.25);
+}
+
+/* === Chat Panel (Sidebar rendering styles) === */
+.chat-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.chat-close-link {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  text-decoration: none;
+}
+.chat-close-link:hover {
+  text-decoration: underline;
+}
+
+.chat-bubble {
+  border-radius: 14px;
+  padding: 10px 12px;
+  margin: 6px 0;
+  font-size: 14px;
+  line-height: 1.35;
+  border: 1px solid var(--border-color);
+}
+.chat-bubble--user {
+  background: var(--primary-soft);
+  border-color: rgba(79,70,229,0.35);
+}
+.chat-bubble--assistant {
+  background: var(--surface);
+}
+.chat-meta {
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* === Bottom-right Dialog Override (positions Streamlit dialog) === */
+/* Try to anchor st.dialog to bottom-right as a compact popover */
+[data-testid="stDialog"] {
+  position: fixed !important;
+  inset: 0 !important; /* full-screen overlay area */
+  display: flex !important;
+  align-items: flex-end !important; /* bottom */
+  justify-content: flex-end !important; /* right */
+  padding: 0 !important;
+  background: transparent !important;
+}
+/* Ensure the dialog content hugs the bottom-right */
+[data-testid="stDialog"] > div,
+[data-testid="stDialog"] > section,
+[data-testid="stDialog"] > * {
+  width: 360px !important;
+  max-width: 92vw !important;
+  margin-top: 0 !important;
+  margin-bottom: 88px !important; /* leave space above FAB */
+  margin-right: 24px !important;
+  margin-left: auto !important; /* push to right */
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--shadow-lg) !important;
+}
+/* Make the dialog background less obtrusive */
+[data-testid="stDialog"]::backdrop { background: transparent !important; }
+
+/* Force transparency even if other rules load later */
+[data-testid="stDialog" i] { background: transparent !important; }
+[data-testid="stDialog" i]::backdrop { background: transparent !important; }
