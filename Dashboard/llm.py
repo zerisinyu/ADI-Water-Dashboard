@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Dict, Iterator, List, Optional, Tuple
+import pandas as pd
 
 from pathlib import Path
 import streamlit as st
@@ -13,6 +14,53 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 class LLMNotConfiguredError(RuntimeError):
     pass
+
+
+def build_data_context_prompt() -> str:
+    """
+    Build a context string from current dashboard state and data.
+    This is injected into the system prompt for data-aware responses.
+    """
+    context_parts = []
+    
+    # Get filters
+    country = st.session_state.get("selected_country", "All")
+    zone = st.session_state.get("selected_zone", "All")
+    year = st.session_state.get("selected_year", "All")
+    month = st.session_state.get("selected_month", "All")
+    
+    context_parts.append(f"Current filters: Country={country}, Zone={zone}, Year={year}, Month={month}")
+    
+    # Get cached data insights if available (from exec page)
+    if "exec_insights_cache" in st.session_state:
+        insights = st.session_state["exec_insights_cache"]
+        
+        if "overall_score" in insights:
+            context_parts.append(f"Overall Performance Score: {insights['overall_score']:.0f}/100")
+        
+        if "collection_efficiency" in insights:
+            context_parts.append(f"Collection Efficiency: {insights['collection_efficiency']:.1f}%")
+        
+        if "nrw_percent" in insights:
+            context_parts.append(f"Non-Revenue Water (NRW): {insights['nrw_percent']:.1f}%")
+        
+        if "service_hours" in insights:
+            context_parts.append(f"Average Service Hours: {insights['service_hours']:.1f} hours/day")
+        
+        if "anomalies" in insights and insights["anomalies"]:
+            anom_text = "; ".join([f"{a['metric']} changed {a['change_pct']:+.1f}%" for a in insights["anomalies"][:2]])
+            context_parts.append(f"Recent Anomalies: {anom_text}")
+        
+        if "zones" in insights and insights["zones"]:
+            zone_summary = []
+            for z, metrics in list(insights["zones"].items())[:3]:
+                zone_summary.append(f"{z} (Coll: {metrics.get('collection_efficiency', 0):.0f}%)")
+            context_parts.append(f"Zone Performance: {', '.join(zone_summary)}")
+    
+    if context_parts:
+        return "\n\nCurrent Dashboard Data Context:\n" + "\n".join(context_parts)
+    else:
+        return ""
 
 
 @dataclass
@@ -123,8 +171,13 @@ class ChatLLM:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,  # Unused for Gemini
+        inject_context: bool = True,
     ) -> str:
         """Return a single completion text for the given messages."""
+        # Inject data context if requested
+        if inject_context:
+            messages = self._inject_data_context(messages)
+        
         if self.provider == "gemini":
             mdl = self._ensure_gemini()
             system, contents = self._to_gemini_contents(messages)
@@ -154,8 +207,13 @@ class ChatLLM:
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,  # Unused for Gemini
+        inject_context: bool = True,
     ) -> Iterator[str]:
         """Yield content chunks for the given messages."""
+        # Inject data context if requested
+        if inject_context:
+            messages = self._inject_data_context(messages)
+        
         if self.provider == "gemini":
             mdl = self._ensure_gemini()
             system, contents = self._to_gemini_contents(messages)
@@ -186,6 +244,30 @@ class ChatLLM:
         raise LLMNotConfiguredError("No supported provider configured")
 
     # ---------------- Utilities ----------------
+    @staticmethod
+    def _inject_data_context(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Inject current data context into system message."""
+        context = build_data_context_prompt()
+        
+        if not context:
+            return messages
+        
+        # Find system message and append context
+        modified = []
+        system_found = False
+        
+        for msg in messages:
+            if msg.get("role") == "system" and not system_found:
+                modified.append({
+                    "role": "system",
+                    "content": msg.get("content", "") + context
+                })
+                system_found = True
+            else:
+                modified.append(msg)
+        
+        return modified
+    
     @staticmethod
     def trim_history(messages: List[Dict[str, str]], max_messages: int = 16) -> List[Dict[str, str]]:
         if len(messages) <= max_messages:

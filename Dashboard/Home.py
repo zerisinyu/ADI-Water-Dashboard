@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Callable
 from urllib.parse import urlencode
 
 import streamlit as st
@@ -80,19 +80,32 @@ def _ensure_chat_state() -> None:
             {
                 "role": "system",
                 "content": (
-                    "You are a helpful assistant for the Water Utility Performance Dashboard. "
-                    "Answer succinctly and refer to metrics, filters, and scenes when helpful."
+                    "You are MajiBot, an AI data analyst for a water utility Managing Director. "
+                    "Your role is to provide executive-level insights, not just data. "
+                    "When answering:\n"
+                    "1. Start with the business impact, then explain the data.\n"
+                    "2. Connect insights across datasets (e.g., 'Low service hours correlate with poor collection').\n"
+                    "3. Suggest actionable next steps (e.g., 'Consider investigating Zone B's billing system').\n"
+                    "4. Use executive language: 'critical', 'opportunity', 'risk', not technical jargon.\n"
+                    "5. Reference specific zones, time periods, and metrics from the current dashboard context.\n"
+                    "Keep responses concise (2-3 sentences) unless asked for detailed analysis."
                 ),
             }
         ]
 
 
-def _render_chat_fab() -> None:
+def _render_majibot_fab() -> None:
+    """Render floating MajiBot button at bottom-right."""
     if not _chat_enabled():
         return
     href = _build_chat_open_href()
     st.markdown(
-        f"<a target=\"_self\" rel=\"noopener\" href=\"{href}\" class=\"chat-fab\" title=\"Chat with assistant\" aria-label=\"Open chat\">💬</a>",
+        f"""
+        <a target="_self" rel="noopener" href="{href}" class="majibot-fab" 
+           title="Chat with MajiBot" aria-label="Open MajiBot">
+            <span class="majibot-icon">🤖</span>
+        </a>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -180,67 +193,69 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
 
-    st.markdown(
-        "<div class='chat-sidebar-header'><h3 style='margin:0'>Assistant</h3>"
-        "<a class='chat-close-link' href='?'>Close</a></div>",
-        unsafe_allow_html=True,
-    )
+    # Custom Header
+    st.markdown("""
+        <div class="gemini-header">
+            <div class="gemini-title">
+                <span>✨</span> Assistant
+            </div>
+            <a class='chat-close-link' href='?'>Close</a>
+        </div>
+    """, unsafe_allow_html=True)
 
-    for m in messages:
-        role = m.get("role")
-        if role == "system":
-            continue
-        content = m.get("content", "")
-        css_class = "chat-bubble--user" if role == "user" else "chat-bubble--assistant"
+    # Filter out system message
+    display_messages = [m for m in messages if m.get("role") != "system"]
+    
+    if not display_messages:
         st.markdown(
-            f"<div class='chat-bubble {css_class}'>{content}</div>",
-            unsafe_allow_html=True,
+            "<div style='text-align:center;color:#64748b;margin-top:2rem;'>"
+            "<p>👋 Hi! I'm your data assistant.</p>"
+            "<p style='font-size:0.9em'>Ask me about NRW, collection efficiency, or specific zones.</p>"
+            "</div>", 
+            unsafe_allow_html=True
         )
 
-    with st.form(f"chat_form_modal{input_key_suffix}", clear_on_submit=True):
-        prompt = st.text_area(
-            "Ask a question",
-            key=f"chat_input_text{input_key_suffix}",
-            height=90,
-            placeholder="Ask about metrics, filters, or data…",
-        )
-        send_clicked = st.form_submit_button("Send")
+    for msg in display_messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        
+        # Map role to streamlit avatar/name
+        st_role = "user" if role == "user" else "assistant"
+        avatar = None if role == "user" else "✨"
+        
+        with st.chat_message(st_role, avatar=avatar):
+            st.markdown(content)
 
-    if st.button("Close", key=f"close_btn{input_key_suffix}"):
-        _set_query_param("chat", None)
+    # Chat Input
+    if prompt := st.chat_input("Ask a question about your data...", key=f"chat_input{input_key_suffix}"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("You have reached the chat limit for this session.")
+            return
+            
+        # Add user message
+        messages.append({"role": "user", "content": prompt})
         st.rerun()
-
-    if send_clicked:
-        text = (prompt or "").strip()
-        if not text:
-            st.warning("Please enter a question.")
-        else:
-            max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
-            user_turns = sum(1 for m in messages if m.get("role") == "user")
-            if user_turns >= max_turns:
-                st.warning("You have reached the chat limit for this session.")
-                return
-            messages.append({"role": "user", "content": text})
+        
+    # Handle response generation after rerun
+    last_msg = messages[-1] if messages else None
+    if last_msg and last_msg.get("role") == "user":
+        with st.chat_message("assistant", avatar="✨"):
             try:
                 client = ChatLLM()
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                response_placeholder = st.empty()
+                full_response = ""
+                for chunk in client.stream_chat(trimmed):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                response_placeholder.markdown(full_response)
+                messages.append({"role": "assistant", "content": full_response})
             except LLMNotConfiguredError as e:
                 st.error(str(e))
-                return
-            trimmed = ChatLLM.trim_history(messages, max_messages=16)
-            placeholder = st.empty()
-            acc = ""
-            try:
-                for chunk in client.stream_chat(trimmed):
-                    acc += chunk
-                    placeholder.markdown(
-                        f"<div class='chat-bubble chat-bubble--assistant'>{acc}</div>",
-                        unsafe_allow_html=True,
-                    )
             except Exception as e:
-                st.error(f"Chat error: {e}")
-                return
-            messages.append({"role": "assistant", "content": acc})
-            st.rerun()
+                st.error(f"Error: {e}")
 
 
 def _render_overview_banner() -> None:
@@ -310,83 +325,177 @@ def _sidebar_filters() -> None:
         st.rerun()
 
 
+def _render_majibot_popup() -> None:
+    """Render MajiBot chat in a modal popup."""
+    _ensure_chat_state()
+    messages: List[Dict[str, str]] = st.session_state["chat_messages"]
+    
+    st.markdown("**🤖 Your AI Data Analyst**")
+    st.markdown("---")
+    
+    # Daily Insights Section (without performance score)
+    insights_cache = st.session_state.get("exec_insights_cache", {})
+    
+    if insights_cache:
+        anomalies = insights_cache.get("anomalies", [])
+        suggested = insights_cache.get("suggested_questions", [])
+        
+        # Show only anomalies (removed score display)
+        st.markdown("**💡 Key Insights**")
+        if anomalies:
+            for anom in anomalies[:3]:
+                severity_color = "#ef4444" if anom["severity"] == "critical" else "#f59e0b"
+                icon = "🔴" if anom["severity"] == "critical" else "🟡"
+                st.markdown(
+                    f"""<div style='background: {severity_color}15; padding: 10px; border-radius: 8px; 
+                    margin: 8px 0; border-left: 3px solid {severity_color};'>
+                    {icon} <span style='font-size: 13px;'>{anom['message']}</span>
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
+        else:
+            st.success("✅ All metrics stable", icon="✅")
+        
+        st.markdown("---")
+        
+        # Suggested Questions
+        if suggested:
+            st.markdown("**❓ Suggested Questions**")
+            for i, question in enumerate(suggested[:3]):
+                if st.button(question, key=f"suggest_popup_{i}", use_container_width=True):
+                    max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+                    user_turns = sum(1 for m in messages if m.get("role") == "user")
+                    if user_turns < max_turns:
+                        messages.append({"role": "user", "content": question})
+                        st.rerun()
+            st.markdown("---")
+    
+    # Chat Messages
+    display_messages = [m for m in messages if m.get("role") != "system"]
+    
+    if not display_messages:
+        st.markdown(
+            "<div style='text-align:center;color:#64748b;padding:2rem 0;'>"
+            "<p style='font-size: 16px;'>👋 Hi! I'm MajiBot, your AI analyst.</p>"
+            "<p style='font-size: 14px;'>Ask me about NRW, collection efficiency, zones, or any metric.</p>"
+            "</div>", 
+            unsafe_allow_html=True
+        )
+    
+    for msg in display_messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        
+        st_role = "user" if role == "user" else "assistant"
+        avatar = "👤" if role == "user" else "🤖"
+        
+        with st.chat_message(st_role, avatar=avatar):
+            st.markdown(content)
+    
+    # Chat Input
+    if prompt := st.chat_input("Ask about your data...", key="majibot_popup_input"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("Chat limit reached for this session.")
+            return
+            
+        messages.append({"role": "user", "content": prompt})
+        st.rerun()
+    
+    # Handle response generation
+    last_msg = messages[-1] if messages else None
+    if last_msg and last_msg.get("role") == "user":
+        with st.chat_message("assistant", avatar="🤖"):
+            try:
+                client = ChatLLM()
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                response_placeholder = st.empty()
+                full_response = ""
+                for chunk in client.stream_chat(trimmed):
+                    full_response += chunk
+                    response_placeholder.markdown(full_response + "▌")
+                response_placeholder.markdown(full_response)
+                messages.append({"role": "assistant", "content": full_response})
+            except LLMNotConfiguredError as e:
+                st.error(str(e))
+            except Exception as e:
+                st.error(f"Error: {e}")
+
+
+def _render_main_layout(scene_runner: Callable[[], None]) -> None:
+    chat_open = False
+    if _chat_enabled():
+        chat_param = (_get_query_param("chat") or "").lower()
+        if chat_param == "open":
+            chat_open = True
+
+    st.markdown("<div class='shell'>", unsafe_allow_html=True)
+    _render_overview_banner()
+    st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+    scene_runner()
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Render MajiBot popup in a dialog when open
+    if chat_open:
+        @st.dialog("MajiBot", width="large")
+        def show_majibot():
+            _render_majibot_popup()
+        
+        show_majibot()
+        # Still render the FAB behind the dialog, it will be hidden by CSS
+        _render_majibot_fab()
+    else:
+        # Show the floating button when chat is closed
+        if _chat_enabled():
+            _render_majibot_fab()
+
+
 def render_uhn_dashboard() -> None:
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
     _sidebar_filters()
 
-    st.markdown("<div class='shell'>", unsafe_allow_html=True)
-    _render_overview_banner()
+    def run_scene():
+        if scene_exec_page:
+            scene_exec_page()
+        else:
+            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
 
-    st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-    if scene_exec_page:
-        scene_exec_page()
-    else:
-        st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # Chat launcher + panel/modal
-    if _chat_enabled():
-        _render_chat_fab()
-        chat_param = (_get_query_param("chat") or "").lower()
-        # Prefer modal positioned bottom-right (CSS override). If not supported, fallback to sidebar.
-        chat_shown = False
-        try:
-            dialog_fn = getattr(st, "dialog")  # type: ignore[attr-defined]
-        except Exception:
-            dialog_fn = getattr(st, "experimental_dialog", None)
-        if dialog_fn and chat_param == "open":
-            # Some Streamlit versions don't support width argument on dialog
-            try:
-                decorator = dialog_fn("Assistant", width="small")  # type: ignore[misc]
-            except TypeError:
-                decorator = dialog_fn("Assistant")
-
-            @decorator  # type: ignore[misc]
-            def _chat_modal():
-                _render_chat_modal_body("_modal")
-
-            _chat_modal()
-            chat_shown = True
-
-        if not chat_shown and chat_param == "open":
-            # Fallback to sidebar rendering
-            _render_chat_panel_sidebar()
+    _render_main_layout(run_scene)
 
 
 def render_scene_page(scene_key: str) -> None:
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
     _sidebar_filters()
-    st.markdown("<div class='shell'>", unsafe_allow_html=True)
-    _render_overview_banner()
-    st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-    if scene_key == "exec":
-        if scene_exec_page:
-            scene_exec_page()
+
+    def run_scene():
+        if scene_key == "exec":
+            if scene_exec_page:
+                scene_exec_page()
+            else:
+                st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+        elif scene_key == "access":
+            scene_access()
+        elif scene_key == "quality":
+            scene_quality_page()
+        elif scene_key == "finance":
+            scene_finance_page()
+        elif scene_key == "production":
+            scene_production_page()
+        elif scene_key == "governance":
+            scene_governance_page()
+        elif scene_key == "sector":
+            scene_sector_page()
         else:
-            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
-    elif scene_key == "access":
-        scene_access()
-    elif scene_key == "quality":
-        scene_quality_page()
-    elif scene_key == "finance":
-        scene_finance_page()
-    elif scene_key == "production":
-        scene_production_page()
-    elif scene_key == "governance":
-        scene_governance_page()
-    elif scene_key == "sector":
-        scene_sector_page()
-    else:
-        if scene_exec_page:
-            scene_exec_page()
-        else:
-            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+            if scene_exec_page:
+                scene_exec_page()
+            else:
+                st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+
+    _render_main_layout(run_scene)
 
 
 if __name__ == "__main__":
