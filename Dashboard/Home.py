@@ -7,7 +7,8 @@ from urllib.parse import urlencode
 
 import streamlit as st
 
-from utils import get_zones
+from utils import get_zones, prepare_service_data
+from llm import ChatLLM, LLMNotConfiguredError
 
 # Scenes are implemented in src_page/*
 from src_page.exec import scene_executive as scene_exec_page
@@ -130,10 +131,9 @@ def _render_chat_panel_sidebar() -> None:
                 height=90,
                 placeholder="Ask about metrics, filters, or data…",
             )
-            col_send, col_close = st.columns(2)
-            send_clicked = col_send.form_submit_button("Send", use_container_width=True)
-            close_clicked = col_close.form_submit_button("Close", use_container_width=True)
-        if close_clicked:
+            send_clicked = st.form_submit_button("Send", use_container_width=True)
+
+        if st.button("Close", key="sidebar_close_btn", use_container_width=True):
             _set_query_param("chat", None)
             st.rerun()
 
@@ -204,10 +204,9 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
             height=90,
             placeholder="Ask about metrics, filters, or data…",
         )
-        col_send, col_close = st.columns(2)
-        send_clicked = col_send.form_submit_button("Send", use_container_width=True, key=f"send_btn{input_key_suffix}")
-        close_clicked = col_close.form_submit_button("Close", use_container_width=True, key=f"close_btn{input_key_suffix}")
-    if close_clicked:
+        send_clicked = st.form_submit_button("Send")
+
+    if st.button("Close", key=f"close_btn{input_key_suffix}"):
         _set_query_param("chat", None)
         st.rerun()
 
