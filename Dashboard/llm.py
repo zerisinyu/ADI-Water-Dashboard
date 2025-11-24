@@ -228,19 +228,58 @@ class ChatLLM:
                         "max_output_tokens": max_tokens if max_tokens is not None else self.cfg.max_tokens,
                     },
                 )
+            # Attempt streaming; handle StopIteration (SDK may exhaust immediately)
+            response = None
             try:
                 response = mdl.generate_content(contents, stream=True)
-                for chunk in response:
-                    txt = getattr(chunk, "text", None)
-                    if txt:
-                        yield txt
-                try:
-                    response.resolve()
-                except Exception:
-                    pass
-                return
+            except StopIteration:
+                response = None
             except Exception as e:
+                # Bubble up other errors
                 raise LLMNotConfiguredError(str(e))
+
+            yielded_any = False
+            if response is not None:
+                try:
+                    for chunk in response:
+                        # Some SDK versions expose text differently; fallback to candidates/parts
+                        txt = getattr(chunk, "text", None)
+                        if not txt:
+                            try:
+                                cands = getattr(chunk, "candidates", []) or []
+                                if cands:
+                                    parts = getattr(cands[0], "content", None)
+                                    if parts and getattr(parts, "parts", None):
+                                        txt = "".join(getattr(p, "text", "") for p in parts.parts)
+                            except Exception:
+                                txt = None
+                        if txt:
+                            yielded_any = True
+                            yield txt
+                    try:
+                        response.resolve()
+                    except Exception:
+                        pass
+                except StopIteration:
+                    # Gracefully end stream
+                    pass
+                except Exception as e:
+                    # Fall back below
+                    pass
+
+            # Fallback to non-streaming if nothing was yielded
+            if not yielded_any:
+                try:
+                    non_stream = mdl.generate_content(contents)
+                    text = (getattr(non_stream, "text", None) or "").strip()
+                    if text:
+                        yield text
+                        return
+                    # No content at all; stop quietly
+                    return
+                except Exception as e:
+                    raise LLMNotConfiguredError(str(e))
+            return
         raise LLMNotConfiguredError("No supported provider configured")
 
     # ---------------- Utilities ----------------
@@ -277,5 +316,4 @@ class ChatLLM:
         others = [m for m in messages if m.get("role") != "system"]
         trimmed = (system[:1] if system else []) + others[-(max_messages - (1 if system else 0)) :]
         return trimmed
-
 

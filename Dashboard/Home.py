@@ -20,6 +20,56 @@ from src_page.governance import scene_governance as scene_governance_page
 from src_page.sector import scene_sector as scene_sector_page
 
 
+def _render_llm_error(exc: Exception) -> None:
+    """Render a helpful error block with basic diagnostics without leaking secrets."""
+    import os
+    import traceback
+    import streamlit as st
+
+    # Basic error message
+    st.error(f"LLM error: {type(exc).__name__}: {exc}")
+
+    # Lightweight diagnostics
+    try:
+        provider = (st.secrets.get("LLM_PROVIDER") or os.getenv("LLM_PROVIDER") or "gemini").lower()  # type: ignore[attr-defined]
+    except Exception:
+        provider = (os.getenv("LLM_PROVIDER") or "gemini").lower()
+    try:
+        model = (st.secrets.get("MODEL_ID") or os.getenv("MODEL_ID") or "gemini-2.5-flash")  # type: ignore[attr-defined]
+    except Exception:
+        model = os.getenv("MODEL_ID") or "gemini-2.5-flash"
+
+    # API key presence (do not print the key)
+    try:
+        key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))  # type: ignore[attr-defined]
+    except Exception:
+        key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    key_present = bool(key)
+
+    # SDK availability
+    try:
+        import google.generativeai as genai  # type: ignore
+        sdk_ok = True
+        sdk_version = getattr(genai, "__version__", "?")
+    except Exception:
+        sdk_ok = False
+        sdk_version = None
+
+    with st.expander("Diagnostics"):
+        st.write(
+            {
+                "provider": provider,
+                "model": model,
+                "api_key_configured": key_present,
+                "google-generativeai_installed": sdk_ok,
+                "google-generativeai_version": sdk_version,
+            }
+        )
+        # Last exception traceback (1-2 lines) to aid debugging
+        tb = traceback.format_exc(limit=2)
+        st.code(tb or "No traceback available.")
+
+
 def _inject_styles() -> None:
     css_path = Path(__file__).parent / "styles.css"
     if css_path.exists():
@@ -136,7 +186,32 @@ def _render_chat_panel_sidebar() -> None:
                 unsafe_allow_html=True,
             )
 
-        # Input + actions in a form so we can clear on submit safely
+        # If last message is from the user, stream assistant reply first (keeps input at bottom)
+        last_msg = messages[-1] if messages else None
+        if last_msg and last_msg.get("role") == "user":
+            try:
+                client = ChatLLM()
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                placeholder = st.empty()
+                acc = ""
+                for chunk in client.stream_chat(trimmed):
+                    acc += chunk
+                    placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + acc + "▌</div>",
+                        unsafe_allow_html=True,
+                    )
+                placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + acc + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if acc.strip():
+                    messages.append({"role": "assistant", "content": acc})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
+            except Exception as e:
+                _render_llm_error(e)
+
+        # Input + actions in a form so we can clear on submit safely (rendered at bottom)
         with st.form("chat_form_sidebar", clear_on_submit=True):
             prompt = st.text_area(
                 "Ask a question",
@@ -162,29 +237,6 @@ def _render_chat_panel_sidebar() -> None:
                     st.warning("You have reached the chat limit for this session.")
                     return
                 messages.append({"role": "user", "content": text})
-                # Keep history short
-                try:
-                    client = ChatLLM()
-                except LLMNotConfiguredError as e:
-                    st.error(str(e))
-                    return
-                trimmed = ChatLLM.trim_history(messages, max_messages=16)
-
-                # Streaming response into a placeholder
-                placeholder = st.empty()
-                acc = ""
-                try:
-                    for chunk in client.stream_chat(trimmed):
-                        acc += chunk
-                        placeholder.markdown(
-                            f"<div class='chat-bubble chat-bubble--assistant'>{acc}</div>",
-                            unsafe_allow_html=True,
-                        )
-                except Exception as e:
-                    st.error(f"Chat error: {e}")
-                    return
-
-                messages.append({"role": "assistant", "content": acc})
                 st.rerun()
 
 
@@ -222,22 +274,11 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
         # Map role to streamlit avatar/name
         st_role = "user" if role == "user" else "assistant"
         avatar = None if role == "user" else "✨"
+        css_class = "chat-bubble chat-bubble--user" if role == "user" else "chat-bubble chat-bubble--assistant"
         
         with st.chat_message(st_role, avatar=avatar):
-            st.markdown(content)
+            st.markdown(f"<div class='{css_class}'>" + content + "</div>", unsafe_allow_html=True)
 
-    # Chat Input
-    if prompt := st.chat_input("Ask a question about your data...", key=f"chat_input{input_key_suffix}"):
-        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
-        user_turns = sum(1 for m in messages if m.get("role") == "user")
-        if user_turns >= max_turns:
-            st.warning("You have reached the chat limit for this session.")
-            return
-            
-        # Add user message
-        messages.append({"role": "user", "content": prompt})
-        st.rerun()
-        
     # Handle response generation after rerun
     last_msg = messages[-1] if messages else None
     if last_msg and last_msg.get("role") == "user":
@@ -249,13 +290,32 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
                 full_response = ""
                 for chunk in client.stream_chat(trimmed):
                     full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
-                response_placeholder.markdown(full_response)
-                messages.append({"role": "assistant", "content": full_response})
-            except LLMNotConfiguredError as e:
-                st.error(str(e))
+                    response_placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
+                        unsafe_allow_html=True,
+                    )
+                response_placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if full_response.strip():
+                    messages.append({"role": "assistant", "content": full_response})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
             except Exception as e:
-                st.error(f"Error: {e}")
+                _render_llm_error(e)
+
+    # Chat Input (render at bottom)
+    if prompt := st.chat_input("Ask a question about your data...", key=f"chat_input{input_key_suffix}"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("You have reached the chat limit for this session.")
+            return
+            
+        # Add user message
+        messages.append({"role": "user", "content": prompt})
+        st.rerun()
 
 
 def _render_overview_banner() -> None:
@@ -385,20 +445,10 @@ def _render_majibot_popup() -> None:
         
         st_role = "user" if role == "user" else "assistant"
         avatar = "👤" if role == "user" else "🤖"
+        css_class = "chat-bubble chat-bubble--user" if role == "user" else "chat-bubble chat-bubble--assistant"
         
         with st.chat_message(st_role, avatar=avatar):
-            st.markdown(content)
-    
-    # Chat Input
-    if prompt := st.chat_input("Ask about your data...", key="majibot_popup_input"):
-        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
-        user_turns = sum(1 for m in messages if m.get("role") == "user")
-        if user_turns >= max_turns:
-            st.warning("Chat limit reached for this session.")
-            return
-            
-        messages.append({"role": "user", "content": prompt})
-        st.rerun()
+            st.markdown(f"<div class='{css_class}'>" + content + "</div>", unsafe_allow_html=True)
     
     # Handle response generation
     last_msg = messages[-1] if messages else None
@@ -411,13 +461,31 @@ def _render_majibot_popup() -> None:
                 full_response = ""
                 for chunk in client.stream_chat(trimmed):
                     full_response += chunk
-                    response_placeholder.markdown(full_response + "▌")
-                response_placeholder.markdown(full_response)
-                messages.append({"role": "assistant", "content": full_response})
-            except LLMNotConfiguredError as e:
-                st.error(str(e))
+                    response_placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
+                        unsafe_allow_html=True,
+                    )
+                response_placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if full_response.strip():
+                    messages.append({"role": "assistant", "content": full_response})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
             except Exception as e:
-                st.error(f"Error: {e}")
+                _render_llm_error(e)
+
+    # Chat Input (render at bottom)
+    if prompt := st.chat_input("Ask about your data...", key="majibot_popup_input"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("Chat limit reached for this session.")
+            return
+            
+        messages.append({"role": "user", "content": prompt})
+        st.rerun()
 
 
 def _render_main_layout(scene_runner: Callable[[], None]) -> None:
