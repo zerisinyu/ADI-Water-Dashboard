@@ -172,49 +172,105 @@ def scene_quality():
     st.markdown("<div class='section-header'>☕ Daily Briefing <span style='font-size:14px;color:#6b7280;font-weight:400'>| High-Level Assessment</span></div>", unsafe_allow_html=True)
     
     # Calculations
-    # 1. Water Quality Compliance
+    # 1. Water Quality Compliance (with last month comparison)
     total_tests = df_s_filt['tests_conducted_chlorine'].sum()
     passed_tests = df_s_filt['test_passed_chlorine'].sum()
     compliance_rate = (passed_tests / total_tests * 100) if total_tests > 0 else 0
     
-    # 2. Service Hours (from Production)
+    # Calculate last month's compliance for comparison
+    if selected_month != 'All':
+        last_month = selected_month - 1 if selected_month > 1 else 12
+        last_month_year = selected_year if selected_month > 1 else (selected_year - 1 if selected_year else None)
+        df_last_month = df_service.copy()
+        if selected_country != 'All': df_last_month = df_last_month[df_last_month['country'] == selected_country]
+        if selected_zone != 'All': df_last_month = df_last_month[df_last_month['zone'] == selected_zone]
+        if last_month_year: df_last_month = df_last_month[df_last_month['year'] == last_month_year]
+        df_last_month = df_last_month[df_last_month['month'] == last_month]
+        
+        last_month_tests = df_last_month['tests_conducted_chlorine'].sum()
+        last_month_passed = df_last_month['test_passed_chlorine'].sum()
+        last_month_compliance = (last_month_passed / last_month_tests * 100) if last_month_tests > 0 else 0
+        compliance_delta = compliance_rate - last_month_compliance
+    else:
+        compliance_delta = 0
+    
+    # 2. Service Continuity (from Production)
     avg_service_hours = df_p_filt['service_hours'].mean() if not df_p_filt.empty and 'service_hours' in df_p_filt.columns else 0
     
-    # 3. Complaint Resolution
+    # 3. Non-Revenue Water (NRW)
+    # Calculate from billing and production data: ((Volume produced – Volume billed) ÷ Volume produced) × 100
+    volume_produced = df_p_filt['production_m3'].sum() if not df_p_filt.empty and 'production_m3' in df_p_filt.columns else 0
+    volume_billed = df_b_filt['billed'].sum() if not df_b_filt.empty and 'billed' in df_b_filt.columns else 0
+    # Note: billing data has monetary values, need consumption_m3 for volume
+    volume_billed_m3 = df_b_filt['consumption_m3'].sum() if not df_b_filt.empty and 'consumption_m3' in df_b_filt.columns else 0
+    nrw_rate = ((volume_produced - volume_billed_m3) / volume_produced * 100) if volume_produced > 0 else 0
+    
+    # 4. Complaint Resolution
     total_complaints = df_s_filt['complaints'].sum()
     total_resolved = df_s_filt['resolved'].sum()
     resolution_rate = (total_resolved / total_complaints * 100) if total_complaints > 0 else 0
-    
-    # 4. Testing Adherence
-    required_tests = df_s_filt['tests_chlorine'].sum() # Assuming 'tests_chlorine' is the target/required count
-    adherence_rate = (total_tests / required_tests * 100) if required_tests > 0 else 0
 
     # Render Scorecard
     sc1, sc2, sc3, sc4 = st.columns(4)
     
-    metrics = [
-        ("Water Quality Compliance", f"{compliance_rate:.1f}%", 98, "%"),
-        ("Avg Service<br>Hours", f"{avg_service_hours:.1f}", 18.5, "hrs/day"),
-        ("Complaint<br>Resolution", f"{resolution_rate:.1f}%", 85, "%"),
-        ("Testing<br>Adherence", f"{adherence_rate:.1f}%", 100, "%")
-    ]
-    
-    for col, (label, value, target, unit) in zip([sc1, sc2, sc3, sc4], metrics):
-        val_num = float(value.strip('%'))
-        delta = val_num - target
-        delta_cls = "delta-up" if delta >= 0 else "delta-down"
-        icon = "↑" if delta >= 0 else "↓"
+    # Scorecard 1: Water Quality Compliance
+    with sc1:
+        delta_cls = "delta-up" if compliance_delta >= 0 else "delta-down"
+        icon = "↑" if compliance_delta >= 0 else "↓"
+        delta_text = f"{icon} {abs(compliance_delta):.1f}% from last month" if selected_month != 'All' else "No monthly comparison"
         
-        with col:
-            st.markdown(f"""
-            <div class='metric-container'>
-                <div class='metric-label'>{label}</div>
-                <div class='metric-value'>{value}</div>
-                <div class='metric-delta {delta_cls}'>
-                    {icon} {abs(delta):.1f}{unit} vs Target
-                </div>
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div class='metric-label'>Water Quality<br>Compliance</div>
+            <div class='metric-value'>{compliance_rate:.1f}%</div>
+            <div class='metric-delta {delta_cls}'>
+                {delta_text}
             </div>
-            """, unsafe_allow_html=True)
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Scorecard 2: Service Continuity
+    with sc2:
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div class='metric-label'>Service<br>Continuity</div>
+            <div class='metric-value'>{avg_service_hours:.1f} <span style='font-size:16px;'>hours/day</span></div>
+            <div class='metric-delta delta-neutral'>
+                Average service hours
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Scorecard 3: Non-Revenue Water (NRW)
+    with sc3:
+        nrw_target = 25.0
+        delta = nrw_rate - nrw_target
+        delta_cls = "delta-up" if delta < 0 else "delta-down"  # Lower is better for NRW
+        icon = "↓" if delta < 0 else "↑"
+        
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div class='metric-label'>Non-Revenue Water<br>(NRW)</div>
+            <div class='metric-value'>{nrw_rate:.1f}%</div>
+            <div class='metric-delta {delta_cls}'>
+                Target: &lt;25%
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Scorecard 4: Complaints Resolution
+    with sc4:
+        resolved_count = f"{resolution_rate:.1f}%" if total_complaints > 0 else "N/A"
+        
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div class='metric-label'>Complaints<br>Resolution</div>
+            <div class='metric-value'>{resolved_count}</div>
+            <div class='metric-delta delta-neutral'>
+                {total_resolved:,.0f} resolved
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # --- Step 2: The Deep Dive (Quality) ---
     st.markdown("<div class='section-header'>🔍 Quality Deep Dive <span style='font-size:14px;color:#6b7280;font-weight:400'>| Investigating Issues</span></div>", unsafe_allow_html=True)
@@ -290,7 +346,7 @@ def scene_quality():
             name='Conducted',
             orientation='h',
             marker_color='#3b82f6',
-            text=chart_data.apply(lambda row: f"{row['tests_conducted_chlorine']:.0f} ({row['conduct_rate']:.1f}%)", axis=1),
+            text=chart_data.apply(lambda row: f"{row['tests_conducted_chlorine']:.0f} (conducted rate {row['conduct_rate']:.1f}%)", axis=1),
             textposition='auto'
         ))
         
@@ -301,7 +357,7 @@ def scene_quality():
             name='Passed',
             orientation='h',
             marker_color='#10b981',
-            text=chart_data.apply(lambda row: f"{row['test_passed_chlorine']:.0f} ({row['pass_rate']:.1f}%)", axis=1),
+            text=chart_data.apply(lambda row: f"{row['test_passed_chlorine']:.0f} (passed rate {row['pass_rate']:.1f}%)", axis=1),
             textposition='auto'
         ))
 
@@ -309,8 +365,8 @@ def scene_quality():
             height=300 + (len(chart_data) * 20 if len(chart_data) > 5 else 0), # Dynamic height
             margin=dict(l=0, r=0, t=30, b=0),
             barmode='group',
-            legend=dict(orientation="h", y=1.1),
-            title=dict(text=f"Testing Performance {title_suffix}", font=dict(size=14)),
+            legend=dict(orientation="v", y=0.5, x=1.02, xanchor="left", yanchor="middle"),
+            title=dict(text=f"{title_suffix}", font=dict(size=14)),
             xaxis_title="Number of Tests"
         )
         

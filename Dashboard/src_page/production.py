@@ -29,9 +29,9 @@ def load_production_data():
                 df_prod['date_dt'] = pd.to_datetime(df_prod['date'], errors='coerce')
                 
             if 'date_dt' in df_prod.columns:
-                df_prod['year'] = df_prod['date_dt'].dt.year
-                df_prod['month'] = df_prod['date_dt'].dt.month
-                df_prod['day'] = df_prod['date_dt'].dt.day
+                df_prod['year'] = df_prod['date_dt'].dt.year.astype('Int64')  # Convert to Int64 for consistency
+                df_prod['month'] = df_prod['date_dt'].dt.month.astype('Int64')
+                df_prod['day'] = df_prod['date_dt'].dt.day.astype('Int64')
         except Exception as e:
             st.error(f"Error loading production data: {e}")
             
@@ -133,15 +133,32 @@ def scene_production():
     # --- Apply Filters ---
     df_p_filt = df_prod.copy()
     
+    # Debug: Show available data info
+    if 'date_dt' not in df_p_filt.columns:
+        st.error("Date column not properly parsed. Please check the data format.")
+        return
+    
+    # Remove rows with invalid dates
+    df_p_filt = df_p_filt.dropna(subset=['date_dt'])
+    
+    if df_p_filt.empty:
+        st.warning("No valid data after parsing dates.")
+        return
+    
+    # Apply filters
     if selected_country != 'All' and 'country' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['country'] == selected_country]
+        # Case-insensitive country comparison
+        df_p_filt = df_p_filt[df_p_filt['country'].str.lower() == selected_country.lower()]
     if selected_year and 'year' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['year'] == selected_year]
+        # Ensure year comparison uses same type
+        df_p_filt = df_p_filt[df_p_filt['year'] == int(selected_year)]
     if selected_month != 'All' and 'month' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['month'] == selected_month]
+        df_p_filt = df_p_filt[df_p_filt['month'] == int(selected_month)]
 
     if df_p_filt.empty:
-        st.warning("No data available for the selected filters.")
+        st.warning(f"No data available for the selected filters: Country={selected_country}, Year={selected_year}, Month={selected_month_name}")
+        st.info(f"Available countries: {', '.join(df_prod['country'].unique().tolist())}")
+        st.info(f"Available years: {', '.join(map(str, sorted(df_prod['year'].dropna().unique().tolist())))}")
         return
 
     # --- Step 1: The "Morning Output" Check (Scorecard) ---
@@ -150,6 +167,9 @@ def scene_production():
     # Calculations
     # Latest Date in Filtered Data (or "Yesterday" context)
     latest_date = df_p_filt['date_dt'].max()
+    if pd.isna(latest_date):
+        st.error("No valid dates found in the filtered data.")
+        return
     df_latest = df_p_filt[df_p_filt['date_dt'] == latest_date]
     
     # 1. Total Production (Latest Day)
@@ -230,19 +250,18 @@ def scene_production():
     c1, c2 = st.columns(2)
     
     with c1:
-        st.markdown("**Production Mix (Last 30 Days)**")
-        # Filter last 30 days of the selected period
-        # If selected period is a month, show that month.
-        # If year, show whole year? The prompt says "Last 30 days". 
-        # Let's stick to the filtered data but maybe limit points if too many.
-        
+        st.markdown("**Production Mix (Filtered Period)**")
+        # Group by date and source
         daily_prod = df_p_filt.groupby(['date_dt', 'source'])['production_m3'].sum().reset_index()
         
-        fig_mix = px.area(daily_prod, x='date_dt', y='production_m3', color='source',
-                          labels={'production_m3': 'Volume (m³)', 'date_dt': 'Date'},
-                          color_discrete_sequence=px.colors.qualitative.Safe)
-        fig_mix.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=1.1))
-        st.plotly_chart(fig_mix, use_container_width=True)
+        if daily_prod.empty:
+            st.info("No production data available for visualization.")
+        else:
+            fig_mix = px.area(daily_prod, x='date_dt', y='production_m3', color='source',
+                              labels={'production_m3': 'Volume (m³)', 'date_dt': 'Date'},
+                              color_discrete_sequence=px.colors.qualitative.Safe)
+            fig_mix.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=1.1))
+            st.plotly_chart(fig_mix, use_container_width=True)
         
     with c2:
         st.markdown("**Source Performance Leaderboard**")
@@ -252,18 +271,17 @@ def scene_production():
             'service_hours': 'mean'
         }).reset_index()
         
-        # Normalize for visualization (dual axis simulation in bar chart?)
-        # Or just side-by-side bars?
-        # Let's do a scatter plot or bar chart with color for service hours
-        
-        fig_perf = px.bar(source_stats, x='production_m3', y='source', 
-                          color='service_hours',
-                          title="Total Volume vs Avg Service Hours",
-                          labels={'production_m3': 'Total Volume (m³)', 'service_hours': 'Avg Hours/Day'},
-                          color_continuous_scale='RdYlGn',
-                          orientation='h')
-        fig_perf.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
-        st.plotly_chart(fig_perf, use_container_width=True)
+        if source_stats.empty:
+            st.info("No source performance data available.")
+        else:
+            fig_perf = px.bar(source_stats, x='production_m3', y='source', 
+                              color='service_hours',
+                              title="Total Volume vs Avg Service Hours",
+                              labels={'production_m3': 'Total Volume (m³)', 'service_hours': 'Avg Hours/Day'},
+                              color_continuous_scale='RdYlGn',
+                              orientation='h')
+            fig_perf.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
+            st.plotly_chart(fig_perf, use_container_width=True)
 
     # --- Step 3: The Intermittency Investigation (Reliability) ---
     st.markdown("<div class='section-header'>🔌 Intermittency Investigation <span style='font-size:14px;color:#6b7280;font-weight:400'>| Service Reliability</span></div>", unsafe_allow_html=True)
@@ -275,17 +293,20 @@ def scene_production():
     # If data spans multiple months, X should be Date.
     heatmap_data = df_p_filt.pivot_table(index='source', columns='date_dt', values='service_hours', aggfunc='mean')
     
-    fig_heat = go.Figure(data=go.Heatmap(
-        z=heatmap_data.values,
-        x=heatmap_data.columns,
-        y=heatmap_data.index,
-        colorscale='RdYlGn', # Red to Green
-        zmin=0, zmax=24,
-        colorbar=dict(title='Hours')
-    ))
-    
-    fig_heat.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
-    st.plotly_chart(fig_heat, use_container_width=True)
+    if heatmap_data.empty or heatmap_data.shape[0] == 0:
+        st.info("No service hours data available for heatmap.")
+    else:
+        fig_heat = go.Figure(data=go.Heatmap(
+            z=heatmap_data.values,
+            x=heatmap_data.columns,
+            y=heatmap_data.index,
+            colorscale='RdYlGn', # Red to Green
+            zmin=0, zmax=24,
+            colorbar=dict(title='Hours')
+        ))
+        
+        fig_heat.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+        st.plotly_chart(fig_heat, use_container_width=True)
 
     # --- Step 4: Strategic Planning (Resource Availability) ---
     st.markdown("<div class='section-header'>🔭 Strategic Planning <span style='font-size:14px;color:#6b7280;font-weight:400'>| Resource Sustainability</span></div>", unsafe_allow_html=True)

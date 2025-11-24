@@ -330,9 +330,6 @@ def _render_majibot_popup() -> None:
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
     
-    st.markdown("**🤖 Your AI Data Analyst**")
-    st.markdown("---")
-    
     # Daily Insights Section (without performance score)
     insights_cache = st.session_state.get("exec_insights_cache", {})
     
@@ -375,7 +372,7 @@ def _render_majibot_popup() -> None:
     
     if not display_messages:
         st.markdown(
-            "<div style='text-align:center;color:#64748b;padding:2rem 0;'>"
+            "<div style='text-align:left;color:#64748b;padding:2rem 0;'>"
             "<p style='font-size: 16px;'>👋 Hi! I'm MajiBot, your AI analyst.</p>"
             "<p style='font-size: 14px;'>Ask me about NRW, collection efficiency, zones, or any metric.</p>"
             "</div>", 
