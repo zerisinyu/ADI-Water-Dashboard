@@ -246,14 +246,12 @@ def scene_access():
     # WATER COVERAGE COLUMN
     with col_water:
         st.markdown("""
-        <div style='background-color: #f8fafc; border: 2px solid #3b82f6; border-radius: 12px; padding: 20px; height: 100%;'>
-            <div style='font-size: 16px; font-weight: 700; color: #1e40af; margin-bottom: 16px; text-align: center;'>
-                💧 WATER COVERAGE
-            </div>
+        <div style='font-size: 16px; font-weight: 700; color: #1e40af; margin-bottom: 16px; text-align: center;'>
+            💧 WATER COVERAGE
+        </div>
         """, unsafe_allow_html=True)
         
         # Row 1: Municipal Supply % and YoY Growth
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px; margin-bottom: 12px;'>", unsafe_allow_html=True)
         
         r1c1, r1c2 = st.columns([3, 2])
         with r1c1:
@@ -297,7 +295,6 @@ def scene_access():
         st.markdown("</div>", unsafe_allow_html=True)
         
         # Row 2: Households Covered and Population Served
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px;'>", unsafe_allow_html=True)
         
         r2c1, r2c2 = st.columns(2)
         with r2c1:
@@ -329,14 +326,12 @@ def scene_access():
     # SANITATION COVERAGE COLUMN
     with col_san:
         st.markdown("""
-        <div style='background-color: #fefce8; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px; height: 100%;'>
-            <div style='font-size: 16px; font-weight: 700; color: #6b21a8; margin-bottom: 16px; text-align: center;'>
-                🚽 SANITATION COVERAGE
-            </div>
+        <div style='font-size: 16px; font-weight: 700; color: #6b21a8; margin-bottom: 16px; text-align: center;'>
+            🚽 SANITATION COVERAGE
+        </div>
         """, unsafe_allow_html=True)
         
         # Row 1: Sewered Connections % and Growth (YoY or MoM)
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px; margin-bottom: 12px;'>", unsafe_allow_html=True)
         
         r1c1, r1c2 = st.columns([3, 2])
         with r1c1:
@@ -380,7 +375,6 @@ def scene_access():
         st.markdown("</div>", unsafe_allow_html=True)
         
         # Row 2: Households Connected and Population Served
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px;'>", unsafe_allow_html=True)
         
         r2c1, r2c2 = st.columns(2)
         with r2c1:
