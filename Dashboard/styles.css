@@ -37,6 +37,7 @@
 
 .stApp .block-container {
   padding-top: 0.5rem;
+  padding-right: 30px !important;
 }
 
 .shell { 

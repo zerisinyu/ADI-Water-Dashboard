@@ -20,6 +20,56 @@ from src_page.governance import scene_governance as scene_governance_page
 from src_page.sector import scene_sector as scene_sector_page
 
 
+def _render_llm_error(exc: Exception) -> None:
+    """Render a helpful error block with basic diagnostics without leaking secrets."""
+    import os
+    import traceback
+    import streamlit as st
+
+    # Basic error message
+    st.error(f"LLM error: {type(exc).__name__}: {exc}")
+
+    # Lightweight diagnostics
+    try:
+        provider = (st.secrets.get("LLM_PROVIDER") or os.getenv("LLM_PROVIDER") or "gemini").lower()  # type: ignore[attr-defined]
+    except Exception:
+        provider = (os.getenv("LLM_PROVIDER") or "gemini").lower()
+    try:
+        model = (st.secrets.get("MODEL_ID") or os.getenv("MODEL_ID") or "gemini-2.5-flash")  # type: ignore[attr-defined]
+    except Exception:
+        model = os.getenv("MODEL_ID") or "gemini-2.5-flash"
+
+    # API key presence (do not print the key)
+    try:
+        key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))  # type: ignore[attr-defined]
+    except Exception:
+        key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    key_present = bool(key)
+
+    # SDK availability
+    try:
+        import google.generativeai as genai  # type: ignore
+        sdk_ok = True
+        sdk_version = getattr(genai, "__version__", "?")
+    except Exception:
+        sdk_ok = False
+        sdk_version = None
+
+    with st.expander("Diagnostics"):
+        st.write(
+            {
+                "provider": provider,
+                "model": model,
+                "api_key_configured": key_present,
+                "google-generativeai_installed": sdk_ok,
+                "google-generativeai_version": sdk_version,
+            }
+        )
+        # Last exception traceback (1-2 lines) to aid debugging
+        tb = traceback.format_exc(limit=2)
+        st.code(tb or "No traceback available.")
+
+
 def _inject_styles() -> None:
     css_path = Path(__file__).parent / "styles.css"
     if css_path.exists():
@@ -80,14 +130,22 @@ def _ensure_chat_state() -> None:
             {
                 "role": "system",
                 "content": (
-                    "You are a helpful assistant for the Water Utility Performance Dashboard. "
-                    "Answer succinctly and refer to metrics, filters, and scenes when helpful."
+                    "You are MajiBot, an AI data analyst for a water utility Managing Director. "
+                    "Your role is to provide executive-level insights, not just data. "
+                    "When answering:\n"
+                    "1. Start with the business impact, then explain the data.\n"
+                    "2. Connect insights across datasets (e.g., 'Low service hours correlate with poor collection').\n"
+                    "3. Suggest actionable next steps (e.g., 'Consider investigating Zone B's billing system').\n"
+                    "4. Use executive language: 'critical', 'opportunity', 'risk', not technical jargon.\n"
+                    "5. Reference specific zones, time periods, and metrics from the current dashboard context.\n"
+                    "Keep responses concise (2-3 sentences) unless asked for detailed analysis."
                 ),
             }
         ]
 
 
-def _render_chat_fab() -> None:
+def _render_majibot_fab() -> None:
+    """Render floating MajiBot button at bottom-right."""
     if not _chat_enabled():
         return
     href = _build_chat_open_href()
@@ -247,54 +305,186 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
 
 def _render_overview_banner() -> None:
     zone = st.session_state.get("selected_zone")
-    if isinstance(zone, dict):
-        zone_label = zone.get("name") or "All zones"
+    country = st.session_state.get("selected_country")
+    
+    if zone and zone != 'All':
+        location_label = f"{zone}, {country}" if country and country != 'All' else zone
+    elif country and country != 'All':
+        location_label = country
     else:
-        zone_label = zone or "All zones"
-    start = st.session_state.get("start_month") or "Any"
-    end = st.session_state.get("end_month") or "Now"
+        location_label = "All Locations"
+        
+    month = st.session_state.get("selected_month") or "All"
+    year = st.session_state.get("selected_year") or "All"
 
     st.title("Water Utility Performance Dashboard")
-    st.caption(f"Latest performance overview for {zone_label} (Months: {start} – {end})")
+    st.caption(f"Overview for {location_label} | Year: {year} | Month: {month}")
 
 
 def _sidebar_filters() -> None:
     st.sidebar.title("Filters")
-    zones = get_zones()
-    zone_names = ["All"] + [z.get("name") for z in zones]
-    sel_zone = st.sidebar.selectbox("Zone", zone_names, index=0, key="global_zone")
-    if sel_zone == "All":
-        st.session_state["selected_zone"] = None
+    
+    # Load data for filters (using service data as it has the most granular time/location info)
+    service_data = prepare_service_data()
+    df_service = service_data["full_data"]
+    
+    # 1. Country
+    countries = ['All'] + service_data["countries"]
+    # Initialize session state if not present
+    if "selected_country" not in st.session_state:
+        st.session_state["selected_country"] = "All"
+        
+    selected_country = st.sidebar.selectbox('Country', countries, key='selected_country')
+
+    # 2. Zone
+    if selected_country != 'All':
+        zones = ['All'] + sorted(df_service[df_service['country'] == selected_country]['zone'].unique().tolist())
     else:
-        st.session_state["selected_zone"] = next((z for z in zones if z.get("name") == sel_zone), None)
+        zones = ['All'] + service_data["zones"]
+        
+    if "selected_zone" not in st.session_state:
+        st.session_state["selected_zone"] = "All"
+        
+    selected_zone = st.sidebar.selectbox('Zone', zones, key='selected_zone')
 
-    st.sidebar.markdown("Month range (YYYY-MM)")
-    st.sidebar.text_input("Start", value=st.session_state.get("start_month", ""), key="start_month")
-    st.sidebar.text_input("End", value=st.session_state.get("end_month", ""), key="end_month")
+    # 3. Year
+    available_years = sorted(df_service['year'].unique(), reverse=True)
+    if "selected_year" not in st.session_state:
+        st.session_state["selected_year"] = available_years[0] if available_years else None
+        
+    selected_year = st.sidebar.selectbox('Year', available_years, key='selected_year')
 
-    st.sidebar.radio("Blockages rate basis", ["per 100 km", "per 1000 connections"], index=0, key="blockage_basis")
+    # 4. Month
+    months = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    if "selected_month" not in st.session_state:
+        st.session_state["selected_month"] = "All"
+        
+    selected_month_name = st.sidebar.selectbox('Month', months, key='selected_month')
+
     if st.sidebar.button("Reset filters"):
-        for k in ["global_zone", "selected_zone", "start_month", "end_month", "blockage_basis"]:
-            if k in st.session_state:
-                del st.session_state[k]
+        st.session_state["selected_country"] = "All"
+        st.session_state["selected_zone"] = "All"
+        if available_years:
+            st.session_state["selected_year"] = available_years[0]
+        st.session_state["selected_month"] = "All"
         st.rerun()
 
 
-def render_uhn_dashboard() -> None:
-    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
-    _inject_styles()
-    _sidebar_filters()
+def _render_majibot_popup() -> None:
+    """Render MajiBot chat in a modal popup."""
+    _ensure_chat_state()
+    messages: List[Dict[str, str]] = st.session_state["chat_messages"]
+    
+    # Daily Insights Section (without performance score)
+    insights_cache = st.session_state.get("exec_insights_cache", {})
+    
+    if insights_cache:
+        anomalies = insights_cache.get("anomalies", [])
+        suggested = insights_cache.get("suggested_questions", [])
+        
+        # Show only anomalies (removed score display)
+        st.markdown("**💡 Key Insights**")
+        if anomalies:
+            for anom in anomalies[:3]:
+                severity_color = "#ef4444" if anom["severity"] == "critical" else "#f59e0b"
+                icon = "🔴" if anom["severity"] == "critical" else "🟡"
+                st.markdown(
+                    f"""<div style='background: {severity_color}15; padding: 10px; border-radius: 8px; 
+                    margin: 8px 0; border-left: 3px solid {severity_color};'>
+                    {icon} <span style='font-size: 13px;'>{anom['message']}</span>
+                    </div>""", 
+                    unsafe_allow_html=True
+                )
+        else:
+            st.success("✅ All metrics stable", icon="✅")
+        
+        st.markdown("---")
+        
+        # Suggested Questions
+        if suggested:
+            st.markdown("**❓ Suggested Questions**")
+            for i, question in enumerate(suggested[:3]):
+                if st.button(question, key=f"suggest_popup_{i}", use_container_width=True):
+                    max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+                    user_turns = sum(1 for m in messages if m.get("role") == "user")
+                    if user_turns < max_turns:
+                        messages.append({"role": "user", "content": question})
+                        st.rerun()
+            st.markdown("---")
+    
+    # Chat Messages
+    display_messages = [m for m in messages if m.get("role") != "system"]
+    
+    if not display_messages:
+        st.markdown(
+            "<div style='text-align:left;color:#64748b;padding:2rem 0;'>"
+            "<p style='font-size: 16px;'>👋 Hi! I'm MajiBot, your AI analyst.</p>"
+            "<p style='font-size: 14px;'>Ask me about NRW, collection efficiency, zones, or any metric.</p>"
+            "</div>", 
+            unsafe_allow_html=True
+        )
+    
+    for msg in display_messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        
+        st_role = "user" if role == "user" else "assistant"
+        avatar = "👤" if role == "user" else "🤖"
+        css_class = "chat-bubble chat-bubble--user" if role == "user" else "chat-bubble chat-bubble--assistant"
+        
+        with st.chat_message(st_role, avatar=avatar):
+            st.markdown(f"<div class='{css_class}'>" + content + "</div>", unsafe_allow_html=True)
+    
+    # Handle response generation
+    last_msg = messages[-1] if messages else None
+    if last_msg and last_msg.get("role") == "user":
+        with st.chat_message("assistant", avatar="🤖"):
+            try:
+                client = ChatLLM()
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                response_placeholder = st.empty()
+                full_response = ""
+                for chunk in client.stream_chat(trimmed):
+                    full_response += chunk
+                    response_placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
+                        unsafe_allow_html=True,
+                    )
+                response_placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if full_response.strip():
+                    messages.append({"role": "assistant", "content": full_response})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
+            except Exception as e:
+                _render_llm_error(e)
+
+    # Chat Input (render at bottom)
+    if prompt := st.chat_input("Ask about your data...", key="majibot_popup_input"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("Chat limit reached for this session.")
+            return
+            
+        messages.append({"role": "user", "content": prompt})
+        st.rerun()
+
+
+def _render_main_layout(scene_runner: Callable[[], None]) -> None:
+    chat_open = False
+    if _chat_enabled():
+        chat_param = (_get_query_param("chat") or "").lower()
+        if chat_param == "open":
+            chat_open = True
 
     st.markdown("<div class='shell'>", unsafe_allow_html=True)
     _render_overview_banner()
-
     st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-    if scene_exec_page:
-        scene_exec_page()
-    else:
-        st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+    scene_runner()
     st.markdown("</div>", unsafe_allow_html=True)
-
     st.markdown("</div>", unsafe_allow_html=True)
 
     # Chat launcher + panel/modal
@@ -326,37 +516,51 @@ def render_uhn_dashboard() -> None:
             _render_chat_panel_sidebar()
 
 
+
+def render_uhn_dashboard() -> None:
+    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
+    _inject_styles()
+    _sidebar_filters()
+
+    def run_scene():
+        if scene_exec_page:
+            scene_exec_page()
+        else:
+            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+
+    _render_main_layout(run_scene)
+
+
 def render_scene_page(scene_key: str) -> None:
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
     _sidebar_filters()
-    st.markdown("<div class='shell'>", unsafe_allow_html=True)
-    _render_overview_banner()
-    st.markdown("<div class='content-area'>", unsafe_allow_html=True)
-    if scene_key == "exec":
-        if scene_exec_page:
-            scene_exec_page()
+
+    def run_scene():
+        if scene_key == "exec":
+            if scene_exec_page:
+                scene_exec_page()
+            else:
+                st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+        elif scene_key == "access":
+            scene_access()
+        elif scene_key == "quality":
+            scene_quality_page()
+        elif scene_key == "finance":
+            scene_finance_page()
+        elif scene_key == "production":
+            scene_production_page()
+        elif scene_key == "governance":
+            scene_governance_page()
+        elif scene_key == "sector":
+            scene_sector_page()
         else:
-            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
-    elif scene_key == "access":
-        scene_access()
-    elif scene_key == "quality":
-        scene_quality_page()
-    elif scene_key == "finance":
-        scene_finance_page()
-    elif scene_key == "production":
-        scene_production_page()
-    elif scene_key == "governance":
-        scene_governance_page()
-    elif scene_key == "sector":
-        scene_sector_page()
-    else:
-        if scene_exec_page:
-            scene_exec_page()
-        else:
-            st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+            if scene_exec_page:
+                scene_exec_page()
+            else:
+                st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
+
+    _render_main_layout(run_scene)
 
 
 if __name__ == "__main__":
