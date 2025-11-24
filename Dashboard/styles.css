@@ -308,38 +308,30 @@
   }
 }
 
-/* === MajiBot Floating Button === */
-.majibot-fab {
+/* === Floating Chat Button === */
+.chat-fab {
   position: fixed;
-  right: 32px;
-  bottom: 32px;
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  right: 24px;
+  bottom: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  background: var(--primary);
+  color: var(--primary-text);
+  display: grid;
+  place-items: center;
   text-decoration: none;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
-  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-  z-index: 1000;
-  cursor: pointer;
-  border: none;
+  font-size: 22px;
+  box-shadow: var(--shadow-lg);
+  border: 1px solid rgba(79,70,229,0.25);
+  z-index: 9999;
 }
-
-.majibot-fab:hover {
-  transform: scale(1.15) translateY(-4px);
-  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.6);
+.chat-fab:hover, .chat-fab:focus {
+  background: #4338ca; /* a bit darker indigo */
+  outline: none;
 }
-
-.majibot-fab:active {
-  transform: scale(1.05);
-}
-
-.majibot-icon {
-  font-size: 32px;
+.chat-fab:focus {
+  box-shadow: 0 0 0 4px rgba(79,70,229,0.25);
 }
 
 /* === Chat Panel (Sidebar rendering styles) === */
@@ -359,55 +351,20 @@
   text-decoration: underline;
 }
 
-/* Bubble look and feel */
 .chat-bubble {
-  position: relative;
-  display: inline-block;
-  max-width: 85%;
-  border-radius: 18px;
+  border-radius: 14px;
   padding: 10px 12px;
-  margin: 8px 0;
+  margin: 6px 0;
   font-size: 14px;
-  line-height: 1.45;
-  word-wrap: break-word;
-  white-space: pre-wrap;
+  line-height: 1.35;
   border: 1px solid var(--border-color);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
 }
 .chat-bubble--user {
-  margin-left: auto; /* right align */
-  color: #fff;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  background: var(--primary-soft);
   border-color: rgba(79,70,229,0.35);
 }
 .chat-bubble--assistant {
-  margin-right: auto; /* left align */
-  background: #f8fafc; /* soft surface */
-}
-/* Bubble tails */
-.chat-bubble--assistant::after {
-  content: "";
-  position: absolute;
-  left: -5px;
-  bottom: 12px;
-  width: 10px;
-  height: 10px;
-  background: #f8fafc;
-  border-left: 1px solid var(--border-color);
-  border-bottom: 1px solid var(--border-color);
-  transform: rotate(45deg);
-}
-.chat-bubble--user::after {
-  content: "";
-  position: absolute;
-  right: -5px;
-  bottom: 12px;
-  width: 10px;
-  height: 10px;
-  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
-  border-right: 1px solid rgba(79,70,229,0.35);
-  border-top: 1px solid rgba(79,70,229,0.35);
-  transform: rotate(45deg);
+  background: var(--surface);
 }
 .chat-meta {
   color: var(--on-surface-variant);
@@ -415,156 +372,33 @@
   margin-top: 2px;
 }
 
-/* === MajiBot Popup Dialog (Smooth Slide-in Animation) === */
+/* === Bottom-right Dialog Override (positions Streamlit dialog) === */
+/* Try to anchor st.dialog to bottom-right as a compact popover */
 [data-testid="stDialog"] {
   position: fixed !important;
-  inset: 0 !important;
+  inset: 0 !important; /* full-screen overlay area */
   display: flex !important;
-  align-items: flex-start !important;
-  justify-content: flex-end !important;
+  align-items: flex-end !important; /* bottom */
+  justify-content: flex-end !important; /* right */
   padding: 0 !important;
-  background: rgba(0, 0, 0, 0.05) !important;
-  backdrop-filter: blur(2px);
-  animation: fadeIn 0.2s ease-out;
+  background: transparent !important;
 }
-
-/* MajiBot popup container */
+/* Ensure the dialog content hugs the bottom-right */
 [data-testid="stDialog"] > div,
 [data-testid="stDialog"] > section,
 [data-testid="stDialog"] > * {
-  width: 420px !important;
-  max-width: 95vw !important;
-  max-height: 85vh !important;
-  margin-top: 80px !important;
-  margin-right: 32px !important;
-  margin-bottom: 32px !important;
-  margin-left: auto !important;
-  border-radius: 20px !important;
-  box-shadow: 0 20px 60px rgba(102, 126, 234, 0.3), 
-              0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  border: none !important;
-  background: #ffffff !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  animation: slideInRight 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  width: 360px !important;
+  max-width: 92vw !important;
+  margin-top: 0 !important;
+  margin-bottom: 88px !important; /* leave space above FAB */
+  margin-right: 24px !important;
+  margin-left: auto !important; /* push to right */
+  border-radius: var(--border-radius) !important;
+  box-shadow: var(--shadow-lg) !important;
 }
+/* Make the dialog background less obtrusive */
+[data-testid="stDialog"]::backdrop { background: transparent !important; }
 
-/* Enable scrolling for dialog content */
-[data-testid="stDialog"] > div > div,
-[data-testid="stDialog"] section > div {
-  overflow-y: auto !important;
-  max-height: calc(85vh - 40px) !important;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes slideInRight {
-  from {
-    transform: translateX(100px) translateY(-20px) scale(0.9);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0) translateY(0) scale(1);
-    opacity: 1;
-  }
-}
-
-/* Smooth backdrop */
-[data-testid="stDialog"]::backdrop {
-  background: rgba(0, 0, 0, 0.1) !important;
-  backdrop-filter: blur(4px);
-}
-
-/* Gemini-like Header */
-.gemini-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 1rem;
-}
-
-.gemini-title {
-  font-family: 'Google Sans', var(--font-sans); /* Fallback */
-  font-size: 1.25rem;
-  font-weight: 500;
-  background: linear-gradient(90deg, #4285F4, #9B72CB, #D96570);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.gemini-icon {
-  font-size: 1.5rem;
-}
-
-/* === MajiBot Dialog Custom Styling === */
-[data-testid="stDialog"] h2 {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 700;
-    font-size: 24px;
-}
-
-/* Style buttons within dialog */
-[data-testid="stDialog"] [data-testid="stButton"] button {
-    font-size: 13px !important;
-    padding: 10px 16px !important;
-    text-align: left !important;
-    border-radius: 10px !important;
-    border: 1px solid #e5e7eb !important;
-    background: #ffffff !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
-}
-
-[data-testid="stDialog"] [data-testid="stButton"] button:hover {
-    background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%) !important;
-    border-color: #667eea !important;
-    box-shadow: 0 2px 6px rgba(102, 126, 234, 0.2) !important;
-    transform: translateY(-1px);
-}
-
-/* Chat message styling within dialog: make default messages look like bubbles */
-[data-testid="stDialog"] [data-testid="stChatMessage"] {
-  padding: 0 !important;           /* we will style inner content */
-  background: transparent !important;
-  border: 0 !important;
-  margin: 10px 0 !important;
-}
-/* Ensure markdown inside chat gets bubble-friendly spacing */
-[data-testid="stDialog"] [data-testid="stChatMessage"] p {
-  margin: 0 !important;
-}
-
-/* Scrollbar styling for dialog */
-[data-testid="stDialog"] ::-webkit-scrollbar {
-    width: 6px;
-}
-
-[data-testid="stDialog"] ::-webkit-scrollbar-track {
-    background: #f1f5f9;
-    border-radius: 10px;
-}
-
-[data-testid="stDialog"] ::-webkit-scrollbar-thumb {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-radius: 10px;
-}
-
-[data-testid="stDialog"] ::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(135deg, #5568d3 0%, #663a8f 100%);
-}
+/* Force transparency even if other rules load later */
+[data-testid="stDialog" i] { background: transparent !important; }
+[data-testid="stDialog" i]::backdrop { background: transparent !important; }
