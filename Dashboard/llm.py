@@ -242,6 +242,14 @@ class ChatLLM:
             if response is not None:
                 try:
                     for chunk in response:
+                        # Check for safety blocks in streaming chunks
+                        if hasattr(chunk, 'candidates') and chunk.candidates:
+                            finish_reason = getattr(chunk.candidates[0], 'finish_reason', None)
+                            if finish_reason == 3:  # SAFETY
+                                yield "I apologize, but I cannot generate that response due to safety guidelines. Please try rephrasing your question."
+                                yielded_any = True
+                                return
+                        
                         # Some SDK versions expose text differently; fallback to candidates/parts
                         txt = getattr(chunk, "text", None)
                         if not txt:
@@ -271,14 +279,38 @@ class ChatLLM:
             if not yielded_any:
                 try:
                     non_stream = mdl.generate_content(contents)
+                    # Check finish_reason before accessing text
+                    if hasattr(non_stream, 'candidates') and non_stream.candidates:
+                        candidate = non_stream.candidates[0]
+                        finish_reason = getattr(candidate, 'finish_reason', None)
+                        
+                        # finish_reason: 1=STOP (normal), 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
+                        if finish_reason == 3:  # SAFETY
+                            yield "I apologize, but I cannot generate that response due to safety guidelines. Please try rephrasing your question."
+                            return
+                        elif finish_reason == 4:  # RECITATION
+                            yield "I cannot provide that response. Please ask a different question."
+                            return
+                        elif finish_reason in [2, 5]:  # MAX_TOKENS or OTHER
+                            yield "I encountered an issue generating the response. Please try again with a simpler question."
+                            return
+                    
+                    # Try to get text normally
                     text = (getattr(non_stream, "text", None) or "").strip()
                     if text:
                         yield text
                         return
-                    # No content at all; stop quietly
+                    # No content at all; provide feedback
+                    yield "I'm sorry, I couldn't generate a response. Please try asking your question differently."
                     return
                 except Exception as e:
-                    raise LLMNotConfiguredError(str(e))
+                    # Provide user-friendly error message
+                    error_msg = str(e).lower()
+                    if "safety" in error_msg or "finish_reason" in error_msg:
+                        yield "I apologize, but I cannot provide a response to that question. Please try rephrasing it."
+                    else:
+                        yield f"I encountered an error: {str(e)[:100]}. Please try again."
+                    return
             return
         raise LLMNotConfiguredError("No supported provider configured")
 
