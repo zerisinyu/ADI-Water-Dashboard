@@ -887,7 +887,6 @@ def scene_access():
                             showscale=True,
                             colorbar=dict(
                                 title="Priority<br>Score",
-                                titleside="right",
                                 tickmode="linear",
                                 tick0=0,
                                 dtick=0.2
@@ -962,7 +961,6 @@ def scene_access():
                                 showscale=True,
                                 colorbar=dict(
                                     title="Priority<br>Score",
-                                    titleside="right",
                                     tickmode="linear",
                                     tick0=0,
                                     dtick=0.2

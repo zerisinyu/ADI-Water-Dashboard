@@ -298,8 +298,8 @@ def scene_executive():
              # Fin data doesn't have zone usually, so we might keep it as is or try to filter by city if mapped.
         
         # Group by Month
-        fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="M")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
-        billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="M")).agg({"paid": "sum"}).reset_index()
+        fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
+        billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"paid": "sum"}).reset_index()
         
         merged_trend = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
         merged_trend["total_revenue"] = merged_trend["paid"] + merged_trend["sewer_revenue"]
@@ -322,8 +322,8 @@ def scene_executive():
         if selected_zone and selected_zone != "All":
             trend_prod = trend_prod[trend_prod["zone"] == selected_zone]
             
-        prod_monthly = trend_prod.groupby(pd.Grouper(key="date", freq="M")).agg({"production_m3": "sum"}).reset_index()
-        cons_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="M")).agg({"consumption_m3": "sum"}).reset_index()
+        prod_monthly = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"production_m3": "sum"}).reset_index()
+        cons_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"consumption_m3": "sum"}).reset_index()
         
         nrw_trend = pd.merge(prod_monthly, cons_monthly, on="date", how="inner")
         nrw_trend["nrw_pct"] = (nrw_trend["production_m3"] - nrw_trend["consumption_m3"]) / nrw_trend["production_m3"] * 100
@@ -343,8 +343,8 @@ def scene_executive():
         # Service hours from prod (daily/monthly avg), Complaints from fin (monthly)
         
         # Group prod by month for compatibility
-        prod_monthly_svc = trend_prod.groupby(pd.Grouper(key="date", freq="M")).agg({"service_hours": "mean"}).reset_index()
-        fin_monthly_comp = trend_fin.groupby(pd.Grouper(key="date", freq="M")).agg({"complaints": "sum"}).reset_index()
+        prod_monthly_svc = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"service_hours": "mean"}).reset_index()
+        fin_monthly_comp = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"complaints": "sum"}).reset_index()
         
         svc_comp = pd.merge(prod_monthly_svc, fin_monthly_comp, on="date", how="outer").sort_values("date")
         
