@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from typing import Optional, List, Dict, Callable
 from urllib.parse import urlencode
+from datetime import datetime
 
 import streamlit as st
 
@@ -319,21 +320,93 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
 
 
 def _render_overview_banner() -> None:
-    zone = st.session_state.get("selected_zone")
-    country = st.session_state.get("selected_country")
+    # Sync state for country
+    if "selected_country" not in st.session_state:
+        st.session_state["selected_country"] = "All"
     
-    if zone and zone != 'All':
-        location_label = f"{zone}, {country}" if country and country != 'All' else zone
-    elif country and country != 'All':
-        location_label = country
-    else:
-        location_label = "All Locations"
+    current_country = st.session_state["selected_country"]
+    
+    # Header Layout
+    with st.container():
+        # Top Row: Title & Clock
+        col_title, col_clock = st.columns([3, 1])
+        with col_title:
+            st.markdown("""
+<h1 style='margin-bottom: 0; font-size: 2.2rem;'>Executive Dashboard</h1>
+<p style='color: #64748b; font-size: 1.1em; margin-top: 0.5rem; font-weight: 500;'>Water Utility Performance</p>
+""", unsafe_allow_html=True)
         
-    month = st.session_state.get("selected_month") or "All"
-    year = st.session_state.get("selected_year") or "All"
+        with col_clock:
+            now = datetime.now()
+            st.markdown(f"""
+<div style='text-align: right; background: #ffffff; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);'>
+    <div style='color: #64748b; font-size: 0.85em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;'>{now.strftime('%A, %d %B %Y')}</div>
+    <div style='color: #0f172a; font-size: 1.8em; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums;'>{now.strftime('%H:%M')}</div>
+    <div style='color: #10b981; font-size: 0.75em; font-weight: 600; margin-top: 4px;'>● Live Data Stream</div>
+</div>
+""", unsafe_allow_html=True)
+            
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        
+        # Controls Row
+        with st.container():
+            # Custom styling for the control bar
+            st.markdown("""
+                <style>
+                    div[data-testid="stHorizontalBlock"] {
+                        align-items: center;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            c1, c2, c3 = st.columns([1.5, 1.5, 2])
+            
+            with c1:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Region Selection</div>', unsafe_allow_html=True)
+                # Country Selector
+                countries = ["All", "Uganda", "Cameroon", "Lesotho", "Malawi"]
+                # Ensure current is in list
+                if current_country not in countries:
+                    countries.append(current_country)
+                    
+                def on_country_change():
+                    st.session_state["selected_country"] = st.session_state["header_country_select"]
+                
+                st.selectbox(
+                    "Country",
+                    options=countries,
+                    index=countries.index(current_country),
+                    key="header_country_select",
+                    label_visibility="collapsed",
+                    on_change=on_country_change
+                )
 
-    st.title("Water Utility Performance Dashboard")
-    st.caption(f"Overview for {location_label} | Year: {year} | Month: {month}")
+            with c2:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Time Period</div>', unsafe_allow_html=True)
+                # Time Period Toggle
+                if "view_period" not in st.session_state:
+                    st.session_state["view_period"] = "Monthly"
+                    
+                st.radio(
+                    "Period",
+                    ["YTD", "Quarterly", "Monthly"],
+                    horizontal=True,
+                    key="view_period",
+                    label_visibility="collapsed"
+                )
+
+            with c3:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Quick Actions</div>', unsafe_allow_html=True)
+                # Quick Actions
+                ac1, ac2, ac3 = st.columns(3)
+                with ac1:
+                    st.button("📥 Report", key="btn_report", use_container_width=True, help="Download Executive Report")
+                with ac2:
+                    st.button("📅 Meeting", key="btn_meet", use_container_width=True, help="Schedule Meeting")
+                with ac3:
+                    st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Alert Settings")
+        
+        st.markdown("---")
 
 
 def _sidebar_filters() -> None:
@@ -488,7 +561,7 @@ def _render_majibot_popup() -> None:
         st.rerun()
 
 
-def _render_main_layout(scene_runner: Callable[[], None]) -> None:
+def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = True) -> None:
     chat_open = False
     if _chat_enabled():
         chat_param = (_get_query_param("chat") or "").lower()
@@ -496,7 +569,8 @@ def _render_main_layout(scene_runner: Callable[[], None]) -> None:
             chat_open = True
 
     st.markdown("<div class='shell'>", unsafe_allow_html=True)
-    _render_overview_banner()
+    if show_header:
+        _render_overview_banner()
     st.markdown("<div class='content-area'>", unsafe_allow_html=True)
     scene_runner()
     st.markdown("</div>", unsafe_allow_html=True)
@@ -518,9 +592,9 @@ def _render_main_layout(scene_runner: Callable[[], None]) -> None:
 
 
 def render_uhn_dashboard() -> None:
-    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
+    st.set_page_config(page_title="Executive Dashboard - Water Utility Performance", page_icon="💧", layout="wide")
     _inject_styles()
-    _sidebar_filters()
+    # _sidebar_filters() # Removed as per request
 
     def run_scene():
         if scene_exec_page:
@@ -534,7 +608,9 @@ def render_uhn_dashboard() -> None:
 def render_scene_page(scene_key: str) -> None:
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
-    _sidebar_filters()
+    # Production page has its own filters in the header
+    # if scene_key != "production":
+    #    _sidebar_filters()
 
     def run_scene():
         if scene_key == "exec":
@@ -560,7 +636,7 @@ def render_scene_page(scene_key: str) -> None:
             else:
                 st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
 
-    _render_main_layout(run_scene)
+    _render_main_layout(run_scene, show_header=(scene_key == "exec"))
 
 
 if __name__ == "__main__":

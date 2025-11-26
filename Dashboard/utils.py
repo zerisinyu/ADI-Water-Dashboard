@@ -121,6 +121,7 @@ def prepare_access_data() -> Dict[str, Any]:
             "w_limited",
             "w_unimproved",
             "surface_water",
+            "popn_total",
         ],
     )
     sewer_latest = latest_snapshot(
@@ -133,7 +134,7 @@ def prepare_access_data() -> Dict[str, Any]:
             "s_unimproved_pct": "sewer_unimproved_pct",
             "open_def_pct": "sewer_open_def_pct",
         },
-        additional_columns=["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def"],
+        additional_columns=["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def", "popn_total"],
     )
 
     merge_keys = [col for col in ("country", "zone") if col in water_latest.columns and col in sewer_latest.columns]

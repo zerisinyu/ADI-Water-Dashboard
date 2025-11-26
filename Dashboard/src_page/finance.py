@@ -179,16 +179,76 @@ def scene_finance():
         return
 
     # --- Filters (from Session State) ---
-    selected_country = st.session_state.get("selected_country", "All")
-    selected_zone = st.session_state.get("selected_zone", "All") # Billing might not have zone
-    selected_year = st.session_state.get("selected_year")
-    selected_month_name = st.session_state.get("selected_month", "All")
+    # Header Section
+    st.markdown("<h1 style='font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 16px;'>Financial Health</h1>", unsafe_allow_html=True)
+    
+    # Filter Controls
+    with st.container():
+        st.markdown("""
+            <style>
+                div[data-testid="stHorizontalBlock"] {
+                    align-items: center;
+                }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        f1, f2, f3, f4 = st.columns([1.5, 1.5, 2, 1])
+        
+        with f1:
+            # Date Range Selector (View Type)
+            view_type = st.selectbox(
+                "View",
+                ["Monthly", "Quarterly", "Annual"],
+                key="fin_view_type",
+                label_visibility="collapsed"
+            )
 
-    month_map = {
-        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-    }
-    selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
+        with f2:
+            # Country Filter
+            countries = ["All", "Uganda", "Cameroon", "Lesotho", "Malawi"]
+            selected_country = st.selectbox(
+                "Country",
+                countries,
+                key="fin_country_select",
+                label_visibility="collapsed"
+            )
+
+        with f3:
+            # Zone/City Filter (Multi-select)
+            # Determine available zones based on country
+            available_zones = []
+            if selected_country != "All":
+                # Try to get zones from billing or service data
+                if not df_billing.empty and 'zone' in df_billing.columns and 'country' in df_billing.columns:
+                    available_zones = sorted(df_billing[df_billing['country'] == selected_country]['zone'].unique().tolist())
+                
+                if not available_zones and not df_fin.empty and 'city' in df_fin.columns and 'country' in df_fin.columns:
+                     available_zones = sorted(df_fin[df_fin['country'] == selected_country]['city'].unique().tolist())
+            else:
+                # All zones
+                if not df_billing.empty and 'zone' in df_billing.columns:
+                    available_zones = sorted(df_billing['zone'].unique().tolist())
+            
+            selected_zones = st.multiselect(
+                "Zone/City",
+                available_zones,
+                default=[],
+                key="fin_zone_select",
+                placeholder="Select Zones/Cities",
+                label_visibility="collapsed"
+            )
+
+        with f4:
+            # Currency Toggle
+            currency_mode = st.radio(
+                "Currency",
+                ["Local", "USD"],
+                horizontal=True,
+                key="fin_currency_toggle",
+                label_visibility="collapsed"
+            )
+
+    st.markdown("---")
 
     # --- Apply Filters ---
     
@@ -197,35 +257,32 @@ def scene_finance():
     if not df_b_filt.empty:
         if selected_country != 'All' and 'country' in df_b_filt.columns:
             df_b_filt = df_b_filt[df_b_filt['country'] == selected_country]
-        # Note: Billing often lacks 'zone'. If it has it, filter. If not, we can't filter by zone.
-        if selected_zone != 'All' and 'zone' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['zone'] == selected_zone]
-        if selected_year and 'year' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['month'] == selected_month]
+        
+        if selected_zones and 'zone' in df_b_filt.columns:
+            df_b_filt = df_b_filt[df_b_filt['zone'].isin(selected_zones)]
+            
+        # Time filtering based on view_type would happen in aggregation steps usually, 
+        # but here we might filter by a specific range if needed. 
+        # For now, we keep full history for trends, but might filter for "Current Period" cards.
 
     # 2. Financial Services Data
     df_f_filt = df_fin.copy()
     if not df_f_filt.empty:
         if selected_country != 'All' and 'country' in df_f_filt.columns:
             df_f_filt = df_f_filt[df_f_filt['country'] == selected_country]
-        # Financial services usually has 'city', not 'zone'. Mapping might be needed if strict zone filter required.
-        # For now, we ignore zone filter for financial services unless we have a map.
-        if selected_year and 'year' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
+        
+        # Map 'city' to zone selection if possible, or ignore if mismatch
+        if selected_zones and 'city' in df_f_filt.columns:
+             df_f_filt = df_f_filt[df_f_filt['city'].isin(selected_zones)]
 
     # 3. Production Data
     df_p_filt = df_prod.copy()
     if not df_p_filt.empty:
         if selected_country != 'All' and 'country' in df_p_filt.columns:
             df_p_filt = df_p_filt[df_p_filt['country'] == selected_country]
-        if selected_year and 'year' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['month'] == selected_month]
+            
+        if selected_zones and 'zone' in df_p_filt.columns:
+            df_p_filt = df_p_filt[df_p_filt['zone'].isin(selected_zones)]
 
     # --- Step 1: The "Cash Flow" Pulse (Scorecard) ---
     st.markdown("<div class='section-header'>💸 Cash Flow Pulse <span style='font-size:14px;color:#6b7280;font-weight:400'>| Morning Check</span></div>", unsafe_allow_html=True)
@@ -445,6 +502,36 @@ def scene_finance():
             fig_pie.update_traces(textposition='inside', textinfo='percent+label')
             fig_pie.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig_pie, use_container_width=True)
+            
+            # Overlay "No Data" Alert with Blur Effect
+            st.markdown("""
+            <div style="
+                margin-top: -360px;
+                height: 360px; 
+                width: 100%; 
+                position: relative; 
+                z-index: 10; 
+                backdrop-filter: blur(5px);
+                -webkit-backdrop-filter: blur(5px);
+                background-color: rgba(255, 255, 255, 0.4);
+                display: flex; 
+                justify-content: center; 
+                align-items: center;
+            ">
+                <div style="
+                    background: white; 
+                    padding: 20px 30px; 
+                    border-radius: 8px; 
+                    border: 1px solid #e5e7eb; 
+                    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); 
+                    text-align: center;
+                ">
+                    <div style="font-size: 20px; margin-bottom: 8px;">⚠️</div>
+                    <div style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 4px;">No Data Available</div>
+                    <div style="font-size: 12px; color: #6b7280;">Granular expense breakdown is missing.</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.info("No Opex data to visualize breakdown.")
     else:

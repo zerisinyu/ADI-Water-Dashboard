@@ -568,3 +568,9 @@
 [data-testid="stDialog"] ::-webkit-scrollbar-thumb:hover {
     background: linear-gradient(135deg, #5568d3 0%, #663a8f 100%);
 }
+
+/* === Sidebar Customization === */
+[data-testid="stSidebar"] {
+    min-width: 200px !important;
+    max-width: 200px !important;
+}

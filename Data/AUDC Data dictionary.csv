@@ -1,58 +1,62 @@
-﻿Water supply or Sanitation,High level indicators,Description/Calculation,Frequency,Granularity
-Water Supply,"% population with access to surface water (rural, urban, low-income)","% of total population in service area that gets drinking water directly from a river, dam, lake, pond, stream, canal, or irrigation canal",Annual,Zone
-Water Supply,% population with access to unimproved water sources,% of total population obtaining drinking water from an unprotected dug well or unprotected spring,Annual,Zone
-Water Supply,% population with access to limited water sources,"% of total population getting drinking water from an improved source where collection time exceeds 30 minutes (roundtrip, including queuing)",Annual,Zone
-Water Supply,% population with access to basic water sources,"% of total population using improved source with collection time ≤30 minutes (roundtrip, including queuing)",Annual,Zone
-Water Supply,% population with access to safely managed water,"% of total population using improved source that is accessible on premises, available when needed, and free from faecal and chemical contamination",Annual,Zone
-Sanitation,% population practicing open defecation,"% of total population disposing human faeces in fields, forests, bushes, open water bodies, beaches, or with solid waste",Annual,Zone
-Sanitation,% population with unimproved sanitation facilities,"% of total population using pit latrines without slab/platform, hanging latrines, or bucket latrines",Annual,Zone
-Sanitation,% population with limited sanitation facilities,% of total population using improved sanitation facilities shared by ≥2 households,Annual,Zone
-Sanitation,% population with basic sanitation facilities,% of total population using improved sanitation facilities not shared with other households,Annual,Zone
-Sanitation,% population with safely managed sanitation facilities,"% of total population using improved, unshared sanitation facilities with excreta safely disposed in situ or treated offsite",Annual,Zone
-Water supply ,% water supply coverage,"1) (Households with dependent on municipal water ÷ total households ) x 100 :- can be calculated using population instead of HHs
-2) Total area covered through piped water connection ÷ total jurissdiction area) x 100",Quarterly,Zone
-Water Supply,% increase in water supply coverage,(New coverage - old coverage) ÷  old coverage x 100 : - can be HHs/population or area as mentioned in above indicator,Quarterly,Zone
-Water Supply,%increase in piped water supply,(new piped water connections number - old piped water connections number) ÷ old piped water connections x 100,Quarterly,Zone
-Sanitation,% sewered connections,1) (Households with sewered connections ÷ total households ) x 100 :- can be calculated using population instead of HHs,Quarterly,Zone
-Sanitation,% of increase in sewered connections,(new sewered HH connections number - old sewered connections number) ÷ old sewered connections x 100,Quarterly,Zone
-Water Supply,Non-Revenue Water,((Volume produced – Volume billed) ÷ Volume produced) × 100,Monthly,Zone
-Water Supply,Water Quality, (Number of samples meeting standards ÷ Total samples tested) × 100,Monthly,Zone
-Water Supply,Consumption per capita (l/c/d),Total water sold ÷ Population served,Monthly,Zone
-Sanitation,Safely managed public toilets,% public spaces with functional sanitation,Monthly,Zone
-Sanitation,% women in sanitation decision-making,% women in government sanitation decision bodies ie (total women ÷ total workforce in the decision maiing position) x 100,Quarterly,City
-Water Supply,Continuity of supply,Hours/day water supplied,Monthly,City
-Water Supply,24×7 water supply,(Number of continuously served customers ÷ Total connected customers) × 100,Monthly,City
-Sanitation,Wastewater collected and treated,(Volume of wastewater treated ÷ Volume of wastewater collected) × 100,Monthly,City
-Both,% total water recycled/reused,% of total wasterwater treated and reused ie ( Volume of wastewater reused  ÷ volume of total water supplied) x 100 :- note this is the ratio of wastewater and water,Monthly,City
-Sanitation,% of FS emptied,(Total HHs emptied ÷ total HHs dependent on non sewered sanitation ) x 100,Monthly,City
-Sanitation,% of treated FS reused,% treated FS reused for productive purposes  ie (Volume of FS reused ÷ volume of FS treated) x 100,Monthly,City
-Sanitation,% of treated wastewater reused,% treated wastewater reused for productive purposes  ie  (Volume of wastewater reused ÷ volume of wastewater treated) x 100,Monthly,City
-Both,Service complaints resolution efficiency,(total Complaints resolved ÷ total complaints received) x 100,Monthly,City
-Sanitation,Sewer blockages,Blockages per 100 connections/km ,Monthly,City
-Both,Revenue collection efficiency,(Revenue collected ( in unit currency) ÷ total revenue billed ( in unit currency)) x 100 ,Monthly,City
-Both,Operating cost coverage,(Operating expenses (in unit currency) ÷ revenue (in unit currency)) x 100,Monthly,City
-Both,Staff efficiency,Staff per 1000 connections,Monthly,City
-Both,Pro-poor financing,% population served by tariff systems supporting the poor ie (population served by tariff system support  ÷ total population served) x 100,Monthly,City
-Both,Utility budget variance,"1) Allocated – actual expenditure :- (for absolute numbers)
-2) (actual expense)  ÷ Allocated expense x100  :- (for percent of total allocated values)",Annual,City
-Water Supply,% Metered connections,(Total active metered connections ÷ total active connections) x 100,Monthly,Zone
-Water Supply,% Utilisation of water treatment facilities,(Utilised WTP treatment capacity (cumulative for a city or utility) ÷ total WTP operational design capacity ( in the city or utility),Monthly,City
-Sanitation,% Utilisation of wastewater/sewage treatment facilities  ,(Utilised STP treatment capacity (cumulative for a city or utility) ÷ total STP operational design capacity ( in the city or utility),Monthly,City
-Sanitation,% Utilisation of faecal sludge treatment facilities  ,(Utilised FSTP treatment capacity (cumulative for a city or utility) ÷ total FSTP operational design capacity ( in the city or utility),Monthly,City
-Water Supply,% National budget allocated to water,(budget allocated to water ( in unit currency) ÷ total budget (in unit currency)) x 100,Annual,City
-Sanitation,% National budget allocated to sanitation, budget allocated to sanitation (in unit currency) ÷  total budget (in unit currency) x 100,Annual,City
-Both,% of national budget disbursed to WASH,(budget disbursed to WASH  ÷ total budget allocated ) x 100,Annual,City
-Both,% Staff cost,HR cost (slaries etc) ÷ total operational expenses,Annual,City
-Water Supply,Level of water stress,Water withdrawals (volume) ÷ renewable resources (volume),Annual,City
-Both,Water use efficiency across sectors,"Output per unit water (this need to be calculated for few flagship sectors like agriculature, manufacturing etc e.g.
+,Water supply or Sanitation,Dashboard Page,High level indicators,Frequency,Granularity,Context,Related Variables in Datasets,Description/Calculation,,,
+Access & Coverage,,,,,,,,,,,
+,Water Supply,Access & Coverage,"% population with access to surface water (rural, urban, low-income)",Annual,Zone,,"surface_water, popn_total","% of total population in service area that gets drinking water directly from a river, dam, lake, pond, stream, canal, or irrigation canal",,,
+,Water Supply,Access & Coverage,% population with access to unimproved water sources,Annual,Zone,,"unimproved, popn_total",% of total population obtaining drinking water from an unprotected dug well or unprotected spring,,,
+,Water Supply,Access & Coverage,% population with access to limited water sources,Annual,Zone,,"limited, popn_total","% of total population getting drinking water from an improved source where collection time exceeds 30 minutes (roundtrip, including queuing)",,,
+,Water Supply,Access & Coverage,% population with access to basic water sources,Annual,Zone,,"basic, popn_total","% of total population using improved source with collection time ≤30 minutes (roundtrip, including queuing)",,,
+,Water Supply,Access & Coverage,% population with access to safely managed water,Annual,Zone,,"safely_managed, popn_total","% of total population using improved source that is accessible on premises, available when needed, and free from faecal and chemical contamination",,,
+,Sanitation,Access & Coverage,% population practicing open defecation,Annual,Zone,,"open_def, popn_total","% of total population disposing human faeces in fields, forests, bushes, open water bodies, beaches, or with solid waste",,,
+,Sanitation,Access & Coverage,% population with unimproved sanitation facilities,Annual,Zone,,"unimproved, popn_total","% of total population using pit latrines without slab/platform, hanging latrines, or bucket latrines",,,
+,Sanitation,Access & Coverage,% population with limited sanitation facilities,Annual,Zone,,"limited, popn_total",% of total population using improved sanitation facilities shared by ≥2 households,,,
+,Sanitation,Access & Coverage,% population with basic sanitation facilities,Annual,Zone,,"basic, popn_total",% of total population using improved sanitation facilities not shared with other households,,,
+,Sanitation,Access & Coverage,% population with safely managed sanitation facilities,Annual,Zone,,"safely_managed, popn_total","% of total population using improved, unshared sanitation facilities with excreta safely disposed in situ or treated offsite",,,
+,Water supply ,Access & Coverage,% water supply coverage,Quarterly,Zone,General population coverage.,"municipal_coverage, popn_total","1) (Households with dependent on municipal water ÷ total households ) x 100 :- can be calculated using population instead of HHs
+2) Total area covered through piped water connection ÷ total jurissdiction area) x 100",,,
+,Water Supply,Access & Coverage,% increase in water supply coverage,Quarterly,Zone,Growth in coverage.,"municipal_coverage, popn_total, date",(New coverage - old coverage) ÷  old coverage x 100 : - can be HHs/population or area as mentioned in above indicator,,,
+,Water Supply,Access & Coverage,% increase in piped water supply,Quarterly,Zone,Growth in network infrastructure.,Data required (piped water connections number),(new piped water connections number - old piped water connections number) ÷ old piped water connections x 100,,,
+,Sanitation,Access & Coverage,% sewered connections,Quarterly,Zone,Sanitation network reach.,"sewer_connections (monthly), households",1) (Households with sewered connections ÷ total households ) x 100 :- can be calculated using population instead of HHs,,,
+,Sanitation,Access & Coverage,% of increase in sewered connections,Quarterly,Zone,Growth in sanitation network.,"sewer_connections (monthly), households, date",(new sewered HH connections number - old sewered connections number) ÷ old sewered connections x 100,,,
+,Sanitation,Access & Coverage,Safely managed public toilets per person,Monthly,Zone,Availability of sanitation in public spaces.,"public_toilets, popn_total",% public spaces with functional sanitation,,,
+,Water Supply,Access & Coverage,% Metered connections,Monthly,Zone,Infrastructure coverage (metering).,"Data required (metered connections, total active connections)",(Total active metered connections ÷ total active connections) x 100,,,
+,Both,Access & Coverage,% Active Service Providers,Annual,City,Market availability (functional vs. non-functional).,"total_service_providers, ?",Total service providers actively providing service ÷  total service providers irrespective of  licensed/registered and whether providing services or not) x 100,,,
+Production,,,,,,,,,,,
+,Water Supply,Production,Non-Revenue Water,Monthly,Zone,Physical loss efficiency (Water produced but lost).,"production_m3, consumption_m3",((Volume produced – Volume billed) ÷ Volume produced) × 100,,,
+,Water Supply,Production,Consumption per capita (l/c/d),Monthly,Zone,Demand intensity.,"total_consumption, popn_total",Total water sold ÷ Population served,,,
+,Sanitation,Production,Wastewater collected and treated,Monthly,City,Treatment volume output.,"ww_treated, ww_collected",(Volume of wastewater treated ÷ Volume of wastewater collected) × 100,,,
+,Both,Production,% total water recycled/reused,Monthly,City,Sustainability output.,"ww_reused, w_supplied",% of total wasterwater treated and reused ie ( Volume of wastewater reused  ÷ volume of total water supplied) x 100 :- note this is the ratio of wastewater and water,,,
+,Sanitation,Production,% of FS emptied,Monthly,City,Operational volume (Sludge).,"hh_emptied, sewer_connections",(Total HHs emptied ÷ total HHs dependent on non sewered sanitation ) x 100,,,
+,Sanitation,Production,% of treated FS reused,Monthly,City,Circular economy output.,"fs_reused, fs_treated",% treated FS reused for productive purposes  ie (Volume of FS reused ÷ volume of FS treated) x 100,,,
+,Sanitation,Production,% of treated wastewater reused,Monthly,City,Circular economy output.,"ww_reused, ww_treated",% treated wastewater reused for productive purposes  ie  (Volume of wastewater reused ÷ volume of wastewater treated) x 100,,,
+,Water Supply,Production,% Utilisation of water treatment facilities,Monthly,City,Capacity utilization (Water & Wastewater).,Data required,(Utilised WTP treatment capacity (cumulative for a city or utility) ÷ total WTP operational design capacity ( in the city or utility),,,
+,Sanitation,Production,% Utilisation of wastewater/sewage treatment facilities  ,Monthly,City,Capacity utilization (Water & Wastewater).,"ww_capacity, ww_treated",(Utilised STP treatment capacity (cumulative for a city or utility) ÷ total STP operational design capacity ( in the city or utility),,,
+,Sanitation,Production,% Utilisation of faecal sludge treatment facilities  ,Monthly,City,Capacity utilization (Sludge).,Data required,(Utilised FSTP treatment capacity (cumulative for a city or utility) ÷ total FSTP operational design capacity ( in the city or utility),,,
+,Water Supply,Production,Level of water stress,Annual,City,Resource availability.,"water_resources, ?",Water withdrawals (volume) ÷ renewable resources (volume),,,
+,Both,Production,Water use efficiency across sectors,Annual,City,Resource usage intensity.,Data required,"Output per unit water (this need to be calculated for few flagship sectors like agriculature, manufacturing etc e.g.
 1) Agri= Total value of agricultural output (in the currency) ÷ VOlumne of water used for irrigation ( pref in cubic meter)
-2) Manufacturing = Total value of manufacturing output (in the currency) ÷ Volumne of industrial water consumption ( pref in cubic meter)",Annual,City
-Both,Direct economic loss from water-related disasters,"Monetary loss due to floods, droughts, pollution",Annual,City
-Both,Asset health index,Total assets in good condition  ÷ Total assets ,Annual,City
-Both,% Active Service Providers,Total service providers actively providing service ÷  total service providers irrespective of  licensed/registered and whether providing services or not) x 100 ,Annual,City
-Water Supply,Total Registered WTPs inspected and recertified,Count of inspected water treatment plants,Annual,City
-Both,% Active licensed Service Providers,Total licensed and active service providers ÷ total licensed service providers)× 100,Annual,City
-Both,Complaints turnaround time,Average time to resolve complaints,Annual,City
-Both,% Investment in human capital,(Budget for WASH staff capacity building ÷  total WASH budget ) x100 ,Annual,City
-Both,Staff trained (M/F),Count by gender,Annual,City
-Both,Total staff numbers,Count,Annual,City
+2) Manufacturing = Total value of manufacturing output (in the currency) ÷ Volumne of industrial water consumption ( pref in cubic meter)",,,
+Service & Quality,,,,,,,,,,,
+,Water Supply,Service & Quality,Water Quality,Monthly,Zone,Safety compliance.,"test_passed_chlorine, test_conducted_chlorine, test_conducted_ecoli, test_passed_ecoli",(Number of samples meeting standards ÷ Total samples tested) × 100,,,
+,Sanitation,Service & Quality,% women in sanitation decision-making,Quarterly,City,Governance & Social equity.,"f_workforce, workforce (all monthly)",% women in government sanitation decision bodies ie (total women ÷ total workforce in the decision maiing position) x 100,,,
+,Water Supply,Service & Quality,Continuity of supply,Monthly,City,Reliability (Hours of service).,service_hours,Hours/day water supplied,,,
+,Water Supply,Service & Quality,24×7 water supply,Monthly,City,Gold-standard reliability.,Data required (continuously served customers for each city),(Number of continuously served customers ÷ Total connected customers) × 100,,,
+,Both,Service & Quality,Service complaints resolution efficiency,Monthly,City,Customer service quality.,"resolved, complaints",(total Complaints resolved ÷ total complaints received) x 100,,,
+,Sanitation,Service & Quality,Sewer blockages,Monthly,City,Network performance/maintenance quality.,"blocks, sewer_length, sewer_connections",Blockages per 100 connections/km,,,
+,Both,Service & Quality,Staff efficiency,Monthly,City,Organizational performance (Staff/1000 connections).,"san_staff, sewer_connections, w_staff, piped connections data required",Staff per 1000 connections,,,
+,Both,Service & Quality,Asset health index,Annual,City,Infrastructure condition.,asset_health,Total assets in good condition  ÷ Total assets ,,,
+,Water Supply,Service & Quality,Total Registered WTPs inspected and recertified,Annual,City,Regulatory compliance & safety checks.,inspected_wtps,Count of inspected water treatment plants,,,
+,Both,Service & Quality,% Active licensed Service Providers,Annual,City,Regulatory compliance of market players.,"licensed_service_providers, active and licensed service providers data required",Total licensed and active service providers ÷ total licensed service providers)× 100,,,
+,Both,Service & Quality,Complaints turnaround time,Annual,City,Customer service speed.,complaint_resolution,Average time to resolve complaints,,,
+,Both,Service & Quality,Staff trained (M/F),Annual,City,Organizational capacity.,"trained_staff, male staff data required",Count by gender,,,
+,Both,Service & Quality,Total staff numbers,Annual,City,Organizational size.,"w_staff, san_staff",Count,,,
+Financial Health,,,,,,,,,,,
+,Both,Financial Health,Revenue collection efficiency,Monthly,City,Ability to collect cash for services billed.,"paid, sewer_revenue, billed, sewer_billed",(Revenue collected ( in unit currency) ÷ total revenue billed ( in unit currency)) x 100,,,
+,Both,Financial Health,Operating cost coverage,Monthly,City,Sustainability (Does income cover costs?).,"opex, sewer_revenue, paid",(Operating expenses (in unit currency) ÷ revenue (in unit currency)) x 100,,,
+,Both,Financial Health,Pro-poor financing,Monthly,City,Subsidy and grant tracking.,"propoor_popn, popn_total",% population served by tariff systems supporting the poor ie (population served by tariff system support  ÷ total population served) x 100,,,
+,Both,Financial Health,Utility budget variance,Annual,City,Budget adherence (Planned vs. Actual).,"budget_allocated, opex (monthly)","1) Allocated – actual expenditure :- (for absolute numbers)
+2) (actual expense)  ÷ Allocated expense x100  :- (for percent of total allocated values)",,,
+,Water Supply,Financial Health,% National budget allocated to water,Annual,City,Government prioritization (Water).,"wat_allocation, budget_allocated",(budget allocated to water ( in unit currency) ÷ total budget (in unit currency)) x 100,,,
+,Sanitation,Financial Health,% National budget allocated to sanitation,Annual,City,Government prioritization (Sanitation).,"san_allocation, budget_allocated",budget allocated to sanitation (in unit currency) ÷  total budget (in unit currency) x 100,,,
+,Both,Financial Health,% of national budget disbursed to WASH,Annual,City,Execution of government funding.,Data required (total budget allocated),(budget disbursed to WASH  ÷ total budget allocated ) x 100,,,
+,Both,Financial Health,% Staff cost,Annual,City,Expenditure on workforce.,"staff_cost, opex (monthly)",HR cost (slaries etc) ÷ total operational expenses,,,
+,Both,Financial Health,Direct economic loss from water-related disasters,Annual,City,Macro-economic impact.,Data required,"Monetary loss due to floods, droughts, pollution",,,
+,Both,Financial Health,% Investment in human capital,Annual,City,Financial commitment to staff development.,"staff_training_budget, budget_allocated",(Budget for WASH staff capacity building ÷  total WASH budget ) x100,,,
