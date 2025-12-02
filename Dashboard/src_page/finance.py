@@ -3,11 +3,11 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import io
-from utils import prepare_service_data, DATA_DIR
+from utils import prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
 
 @st.cache_data
-def load_finance_data():
-    """Load billing, financial services, and production data for the finance dashboard."""
+def _load_raw_finance_data():
+    """Load raw finance data (internal, cached without access filtering)."""
     # Paths
     billing_path = DATA_DIR / "all_data - billing.csv"
     if not billing_path.exists():
@@ -23,8 +23,6 @@ def load_finance_data():
     # Load Billing
     if billing_path.exists():
         try:
-            # Read only necessary columns to save memory if file is huge
-            # We need: date, billed, paid, consumption_m3, customer_id, country (maybe)
             df_billing = pd.read_csv(billing_path, low_memory=False)
             
             # Ensure numeric columns are actually numeric
@@ -96,6 +94,23 @@ def load_finance_data():
             st.error(f"Error loading production data: {e}")
             
     return df_billing, df_fin, df_prod
+
+
+def load_finance_data():
+    """
+    Load billing, financial services, and production data for the finance dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    # Load raw cached data
+    df_billing, df_fin, df_prod = _load_raw_finance_data()
+    
+    # Apply access control filtering (this happens on each call)
+    df_billing = filter_df_by_user_access(df_billing.copy(), "country")
+    df_fin = filter_df_by_user_access(df_fin.copy(), "country")
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    
+    return df_billing, df_fin, df_prod
+
 
 def scene_finance():
     """
@@ -245,9 +260,18 @@ def scene_finance():
         st.warning("⚠️ Please upload data files or load default data to continue")
         return
 
-    # Get data from session state
+    # Get data from session state and apply access control filtering
     national_df = st.session_state.national_data.copy()
     fin_service_df = st.session_state.fin_service_data.copy()
+    
+    # Apply access control filtering based on user permissions
+    national_df = filter_df_by_user_access(national_df, "country")
+    fin_service_df = filter_df_by_user_access(fin_service_df, "country")
+    
+    # Check if any data remains after filtering
+    if national_df.empty or fin_service_df.empty:
+        st.warning("⚠️ No data available for your access level. Please contact an administrator.")
+        return
 
     # ============================================================================
     # DATA PREPROCESSING
@@ -280,8 +304,25 @@ def scene_finance():
     filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
 
     with filter_col1:
-        countries = ['All'] + sorted(national_df['country'].unique().tolist())
+        # Get user's country restriction (None means master user with full access)
+        user_country = get_user_country_filter()
+        available_countries = sorted(national_df['country'].unique().tolist())
+        
+        # Only show countries user has access to
+        if user_country is None:
+            # Master user - show all available with "All" option
+            countries = ['All'] + available_countries
+        else:
+            # Non-master user - show only their assigned country
+            countries = [c for c in available_countries if c.lower() == user_country.lower()]
+            if not countries:
+                countries = [user_country]  # Fallback to assigned country
+        
         selected_country = st.selectbox("Country", countries)
+        
+        # Validate selection for non-master users
+        if user_country is not None:
+            selected_country = validate_selected_country(selected_country)
 
     with filter_col2:
         if selected_country != 'All':

@@ -7,10 +7,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import prepare_service_data as _prepare_service_data, DATA_DIR
+from utils import prepare_service_data as _prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
 
-def load_extra_data():
-    """Load billing, financial services, and production data for the quality dashboard."""
+
+@st.cache_data
+def _load_raw_extra_data():
+    """Load raw billing, financial services, and production data (internal, cached)."""
     billing_path = DATA_DIR / "billing.csv"
     fin_path = DATA_DIR / "financial_services.csv"
     prod_path = DATA_DIR / "production.csv"
@@ -45,10 +47,23 @@ def load_extra_data():
 
     if nat_path.exists():
         df_national = pd.read_csv(nat_path)
-        # National data is annual, usually has 'date_YY' or similar
-        # Check columns based on data_descriptions.csv or inspection
-        pass 
         
+    return df_billing, df_fin, df_prod, df_national
+
+
+def load_extra_data():
+    """
+    Load billing, financial services, and production data for the quality dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    df_billing, df_fin, df_prod, df_national = _load_raw_extra_data()
+    
+    # Apply access control filtering
+    df_billing = filter_df_by_user_access(df_billing.copy(), "country")
+    df_fin = filter_df_by_user_access(df_fin.copy(), "country")
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    df_national = filter_df_by_user_access(df_national.copy(), "country")
+    
     return df_billing, df_fin, df_prod, df_national
 
 def scene_quality():
@@ -71,14 +86,30 @@ def scene_quality():
         view_type = st.radio("View Period", ["Annual", "Quarterly", "Monthly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle_quality")
         
     with filt_c2:
-        # Country Filter
-        countries = ['All'] + sorted(df_service['country'].unique().tolist()) if 'country' in df_service.columns else ['All']
+        # Country Filter - Access controlled
+        user_country = get_user_country_filter()
+        available_countries = sorted(df_service['country'].unique().tolist()) if 'country' in df_service.columns else []
+        
+        # Filter to only accessible countries
+        if user_country is None:
+            # Master user - show all with "All" option
+            countries = ['All'] + available_countries
+        else:
+            # Non-master user - show only their assigned country
+            countries = [c for c in available_countries if c.lower() == user_country.lower()]
+            if not countries:
+                countries = [user_country]  # Fallback to assigned country
+        
         # Try to get default from session state if available
         default_country_idx = 0
         if "selected_country" in st.session_state and st.session_state.selected_country in countries:
             default_country_idx = countries.index(st.session_state.selected_country)
             
         selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select_quality")
+        
+        # Validate selection for non-master users
+        if user_country is not None:
+            selected_country = validate_selected_country(selected_country)
         
     with filt_c3:
         # Zone Filter (dependent on country)

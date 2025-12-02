@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import DATA_DIR
+from utils import DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
+
 
 @st.cache_data
-def load_production_data():
-    """Load production data for the dashboard."""
+def _load_raw_production_data():
+    """Load raw production data (internal, cached without access filtering)."""
     prod_path = DATA_DIR / "production.csv"
     df_prod = pd.DataFrame()
     
@@ -35,6 +36,19 @@ def load_production_data():
         except Exception as e:
             st.error(f"Error loading production data: {e}")
             
+    return df_prod
+
+
+def load_production_data():
+    """
+    Load production data for the dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    df_prod = _load_raw_production_data()
+    
+    # Apply access control filtering
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    
     return df_prod
 
 def scene_production():
@@ -143,14 +157,32 @@ def scene_production():
             )
             
         with f2:
-            # Country Filter
-            countries = ["All", "Uganda", "Cameroon", "Lesotho", "Malawi"]
+            # Country Filter - Access controlled
+            user_country = get_user_country_filter()
+            # Get available countries from data
+            available_countries = sorted(df_prod['country'].unique().tolist()) if 'country' in df_prod.columns else []
+            
+            # Filter to only accessible countries
+            if user_country is None:
+                # Master user - show all available with "All" option
+                default_countries = available_countries if available_countries else ["Uganda", "Cameroon", "Lesotho", "Malawi"]
+                countries = ["All"] + default_countries
+            else:
+                # Non-master user - show only their assigned country
+                countries = [c for c in available_countries if c.lower() == user_country.lower()] if available_countries else [user_country]
+                if not countries:
+                    countries = [user_country]  # Fallback to assigned country
+            
             selected_country = st.selectbox(
                 "Country",
                 countries,
                 key="prod_country_select",
                 label_visibility="collapsed"
             )
+            
+            # Validate selection for non-master users
+            if user_country is not None:
+                selected_country = validate_selected_country(selected_country)
             
         with f3:
             # Zone/City Filter

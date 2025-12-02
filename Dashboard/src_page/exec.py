@@ -3,65 +3,82 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
-from utils import load_json, conic_css as _conic_css, download_button as _download_button, scene_page_path as _scene_page_path, DATA_DIR, prepare_access_data, prepare_service_data
+from utils import (
+    load_json, 
+    conic_css as _conic_css, 
+    download_button as _download_button, 
+    scene_page_path as _scene_page_path, 
+    DATA_DIR, 
+    prepare_access_data, 
+    prepare_service_data,
+    filter_df_by_user_access,
+    validate_selected_country
+)
 from ai_insights import InsightsEngine, generate_board_brief_text
 
 @st.cache_data
-def load_dashboard_data():
+def _load_raw_dashboard_data():
     """
-    Load and prepare data for the executive dashboard.
+    Load raw dashboard data (internal, cached).
+    This loads all data without access filtering.
     """
     # 1. Load Billing Data (for Collection Efficiency & NRW consumption)
     billing_path = DATA_DIR / "all_data - billing.csv"
     if billing_path.exists():
-        # Read only necessary columns to save memory
         billing_cols = ["date", "consumption_m3", "billed", "paid", "country", "zone", "source"]
-        # Set low_memory=False to handle mixed types warning, and handle date parsing manually for robustness
         billing_df = pd.read_csv(billing_path, usecols=billing_cols, low_memory=False)
-        
-        # Clean up Date column
         billing_df["date"] = pd.to_datetime(billing_df["date"], errors="coerce")
-        
-        # Clean up Numeric columns (force numeric, coerce errors to NaN)
         for col in ["consumption_m3", "billed", "paid"]:
             billing_df[col] = pd.to_numeric(billing_df[col], errors="coerce")
-            
-        # Drop rows with invalid dates (essential for time-based filtering)
         billing_df = billing_df.dropna(subset=["date"])
     else:
         billing_df = pd.DataFrame(columns=["date", "consumption_m3", "billed", "paid", "country", "zone", "source"])
 
-    # 2. Load Financial Services Data (for Opex, Complaints)
+    # 2. Load Financial Services Data
     fin_path = DATA_DIR / "financial_services.csv"
     if fin_path.exists():
         fin_df = pd.read_csv(fin_path)
-        # Parse date "Jan/20" -> datetime
         fin_df["date"] = pd.to_datetime(fin_df["date_MMYY"], format="%b/%y")
     else:
         fin_df = pd.DataFrame(columns=["country", "city", "date", "sewer_revenue", "opex", "complaints", "resolved"])
 
-    # 3. Load Production Data (for NRW production, Service Hours)
+    # 3. Load Production Data
     prod_path = DATA_DIR / "production.csv"
     if prod_path.exists():
         prod_df = pd.read_csv(prod_path)
         prod_df["date"] = pd.to_datetime(prod_df["date_YYMMDD"])
-        
-        # Map Source to Zone using Billing Data
         if not billing_df.empty:
             source_map = billing_df[["source", "zone", "country"]].drop_duplicates().dropna()
-            # Merge zone info into production
             prod_df = prod_df.merge(source_map, on=["source", "country"], how="left")
-            # Fill missing zones with "Unknown" or keep NaN
             prod_df["zone"] = prod_df["zone"].fillna("Unknown")
     else:
         prod_df = pd.DataFrame(columns=["date", "production_m3", "service_hours", "country", "zone"])
 
-    # 4. Load National Data (for Budget, Asset Health)
+    # 4. Load National Data
     nat_path = DATA_DIR / "all_national.csv"
     if nat_path.exists():
         nat_df = pd.read_csv(nat_path)
     else:
         nat_df = pd.DataFrame()
+
+    return billing_df, fin_df, prod_df, nat_df
+
+
+def load_dashboard_data():
+    """
+    Load and prepare data for the executive dashboard.
+    Data is automatically filtered based on user access permissions.
+    
+    Note: Access filtering is applied AFTER caching to ensure proper user isolation.
+    """
+    # Load raw cached data
+    billing_df, fin_df, prod_df, nat_df = _load_raw_dashboard_data()
+    
+    # Apply access control filtering (this happens on each call)
+    billing_df = filter_df_by_user_access(billing_df.copy(), "country")
+    fin_df = filter_df_by_user_access(fin_df.copy(), "country")
+    prod_df = filter_df_by_user_access(prod_df.copy(), "country")
+    nat_df = filter_df_by_user_access(nat_df.copy(), "country")
 
     return billing_df, fin_df, prod_df, nat_df
 
@@ -154,13 +171,17 @@ def _render_trend_card(title, score, status, sub_metrics, link_target, link_text
         st.page_link(link_target, label=link_text, icon="👉", use_container_width=True)
 
 def scene_executive():
-    # --- 1. Load Data ---
+    # --- 1. Load Data (automatically filtered by user access) ---
     billing_df, fin_df, prod_df, nat_df = load_dashboard_data()
     access_data = prepare_access_data()
     service_data_dict = prepare_service_data()
 
-    # --- 2. Get Filters from Session State ---
+    # --- 2. Get Filters from Session State (validated against user access) ---
     selected_country = st.session_state.get("selected_country", "All")
+    # Validate country selection against user access permissions
+    selected_country = validate_selected_country(selected_country)
+    st.session_state["selected_country"] = selected_country
+    
     selected_zone = st.session_state.get("selected_zone", "All")
     selected_year = st.session_state.get("selected_year", "All")
     selected_month = st.session_state.get("selected_month", "All")

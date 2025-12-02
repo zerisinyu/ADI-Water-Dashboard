@@ -1,3 +1,20 @@
+"""
+Water Utility Dashboard - Main Application
+==========================================
+
+This is the main entry point for the Water Utility Performance Dashboard.
+It includes:
+- User authentication and role-based access control
+- Data access filtering based on user permissions
+- Country and zone restrictions for data privacy compliance
+
+Authentication Flow:
+1. User lands on login page if not authenticated
+2. After successful login, user sees dashboard filtered to their access level
+3. Non-master users can only see data from their assigned country
+4. All data queries are filtered through access control checks
+"""
+
 from __future__ import annotations
 
 import os
@@ -7,6 +24,23 @@ from urllib.parse import urlencode
 from datetime import datetime
 
 import streamlit as st
+
+# Import authentication module - provides role-based access control
+from auth import (
+    init_session_state as init_auth_state,
+    is_authenticated,
+    get_current_user,
+    get_allowed_countries,
+    can_access_country,
+    validate_country_selection,
+    check_feature_access,
+    render_login_page,
+    render_user_info_sidebar,
+    render_access_denied_message,
+    render_feature_disabled_message,
+    render_admin_settings_page,
+    UserRole,
+)
 
 from utils import get_zones, prepare_service_data
 from llm import ChatLLM, LLMNotConfiguredError
@@ -78,6 +112,11 @@ def _inject_styles() -> None:
 
 
 def _chat_enabled() -> bool:
+    """Check if chat widget is enabled and user has access."""
+    # Check if user has access to AI assistant feature
+    if not check_feature_access("ai_assistant"):
+        return False
+    
     try:
         flag = st.secrets.get("ENABLE_CHAT_WIDGET", os.getenv("ENABLE_CHAT_WIDGET", "true"))
     except Exception:
@@ -126,7 +165,19 @@ def _build_chat_open_href() -> str:
 
 
 def _ensure_chat_state() -> None:
+    """Initialize chat state with user context for access control."""
     if "chat_messages" not in st.session_state:
+        # Include user context in system prompt for personalized responses
+        user = get_current_user()
+        user_context = ""
+        if user:
+            user_context = (
+                f"\n\nUser Context:\n"
+                f"- User: {user.full_name} ({user.role.display_name})\n"
+                f"- Access: {'All countries' if user.role == UserRole.MASTER_USER else user.assigned_country}\n"
+                f"- Important: Only provide insights about data the user has access to."
+            )
+        
         st.session_state["chat_messages"] = [
             {
                 "role": "system",
@@ -140,6 +191,7 @@ def _ensure_chat_state() -> None:
                     "4. Use executive language: 'critical', 'opportunity', 'risk', not technical jargon.\n"
                     "5. Reference specific zones, time periods, and metrics from the current dashboard context.\n"
                     "Keep responses concise (2-3 sentences) unless asked for detailed analysis."
+                    + user_context
                 ),
             }
         ]
@@ -320,19 +372,42 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
 
 
 def _render_overview_banner() -> None:
-    # Sync state for country
+    """Render the main dashboard header with access-controlled filters."""
+    # Get current user for access control
+    user = get_current_user()
+    
+    # Sync state for country - initialize based on user access
     if "selected_country" not in st.session_state:
-        st.session_state["selected_country"] = "All"
+        # For non-master users, default to their assigned country
+        if user and user.role != UserRole.MASTER_USER and user.assigned_country:
+            st.session_state["selected_country"] = user.assigned_country
+        else:
+            st.session_state["selected_country"] = "All"
     
     current_country = st.session_state["selected_country"]
+    
+    # Validate country selection against user access (prevents unauthorized access)
+    current_country = validate_country_selection(current_country)
+    st.session_state["selected_country"] = current_country
     
     # Header Layout
     with st.container():
         # Top Row: Title & Clock
         col_title, col_clock = st.columns([3, 1])
         with col_title:
-            st.markdown("""
-<h1 style='margin-bottom: 0; font-size: 2.2rem;'>Executive Dashboard</h1>
+            # Show access level badge for non-master users
+            access_badge = ""
+            if user and user.role != UserRole.MASTER_USER:
+                access_badge = f"""
+                <span style='background: #3b82f620; color: #3b82f6; padding: 4px 12px; 
+                             border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+                             margin-left: 12px; vertical-align: middle;'>
+                    🔒 {user.assigned_country} Only
+                </span>
+                """
+            
+            st.markdown(f"""
+<h1 style='margin-bottom: 0; font-size: 2.2rem;'>Executive Dashboard{access_badge}</h1>
 <p style='color: #64748b; font-size: 1.1em; margin-top: 0.5rem; font-weight: 500;'>Water Utility Performance</p>
 """, unsafe_allow_html=True)
         
@@ -350,7 +425,6 @@ def _render_overview_banner() -> None:
         
         # Controls Row
         with st.container():
-            # Custom styling for the control bar
             st.markdown("""
                 <style>
                     div[data-testid="stHorizontalBlock"] {
@@ -363,27 +437,56 @@ def _render_overview_banner() -> None:
             
             with c1:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Region Selection</div>', unsafe_allow_html=True)
-                # Country Selector
-                countries = ["All", "Uganda", "Cameroon", "Lesotho", "Malawi"]
-                # Ensure current is in list
-                if current_country not in countries:
-                    countries.append(current_country)
-                    
-                def on_country_change():
-                    st.session_state["selected_country"] = st.session_state["header_country_select"]
                 
-                st.selectbox(
-                    "Country",
-                    options=countries,
-                    index=countries.index(current_country),
-                    key="header_country_select",
-                    label_visibility="collapsed",
-                    on_change=on_country_change
-                )
+                # Country Selector - Restricted based on user access level
+                allowed_countries = get_allowed_countries()
+                
+                if user and user.role == UserRole.MASTER_USER:
+                    # Master users can select "All" or any specific country
+                    countries = ["All"] + allowed_countries
+                else:
+                    # Non-master users can only see their assigned country
+                    countries = allowed_countries
+                
+                # Ensure current selection is valid
+                if current_country not in countries:
+                    if countries:
+                        current_country = countries[0]
+                        st.session_state["selected_country"] = current_country
+                
+                # Check if country selector should be locked (non-master users)
+                is_country_locked = user is not None and user.role != UserRole.MASTER_USER
+                
+                def on_country_change():
+                    """Handle country selection change with access validation."""
+                    new_country = st.session_state["header_country_select"]
+                    # Validate the selection against user access
+                    validated = validate_country_selection(new_country)
+                    st.session_state["selected_country"] = validated
+                
+                if is_country_locked:
+                    # Show locked indicator for restricted users
+                    st.markdown(f"""
+                    <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+                                padding: 10px 14px; display: flex; align-items: center; gap: 8px;'>
+                        <span style='font-size: 1rem;'>🔒</span>
+                        <span style='font-weight: 600; color: #334155;'>{current_country}</span>
+                        <span style='font-size: 0.7rem; color: #94a3b8;'>(Assigned Region)</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Master users can select any country
+                    st.selectbox(
+                        "Country",
+                        options=countries,
+                        index=countries.index(current_country) if current_country in countries else 0,
+                        key="header_country_select",
+                        label_visibility="collapsed",
+                        on_change=on_country_change
+                    )
 
             with c2:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Time Period</div>', unsafe_allow_html=True)
-                # Time Period Toggle
                 if "view_period" not in st.session_state:
                     st.session_state["view_period"] = "Monthly"
                     
@@ -397,12 +500,19 @@ def _render_overview_banner() -> None:
 
             with c3:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Quick Actions</div>', unsafe_allow_html=True)
-                # Quick Actions
                 ac1, ac2, ac3 = st.columns(3)
+                
                 with ac1:
-                    st.button("📥 Report", key="btn_report", use_container_width=True, help="Download Executive Report")
+                    # Check if user can export data
+                    if check_feature_access("export_data"):
+                        st.button("📥 Report", key="btn_report", use_container_width=True, help="Download Executive Report")
+                    else:
+                        st.button("📥 Report", key="btn_report", use_container_width=True, disabled=True, 
+                                  help="Export not available for your role")
+                
                 with ac2:
                     st.button("📅 Meeting", key="btn_meet", use_container_width=True, help="Schedule Meeting")
+                
                 with ac3:
                     st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Alert Settings")
         
@@ -459,7 +569,12 @@ def _sidebar_filters() -> None:
 
 
 def _render_majibot_popup() -> None:
-    """Render MajiBot chat in a modal popup."""
+    """Render MajiBot chat in a modal popup with access control."""
+    # Check if user has access to AI assistant feature
+    if not check_feature_access("ai_assistant"):
+        render_feature_disabled_message("ai_assistant")
+        return
+    
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
     
@@ -592,9 +707,21 @@ def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = Tr
 
 
 def render_uhn_dashboard() -> None:
+    """Main dashboard entry point with authentication."""
     st.set_page_config(page_title="Executive Dashboard - Water Utility Performance", page_icon="💧", layout="wide")
     _inject_styles()
-    # _sidebar_filters() # Removed as per request
+    
+    # Initialize authentication state
+    init_auth_state()
+    
+    # Check if user is authenticated
+    if not is_authenticated():
+        # Show login page
+        render_login_page()
+        return
+    
+    # User is authenticated - render user info in sidebar
+    render_user_info_sidebar()
 
     def run_scene():
         if scene_exec_page:
@@ -606,11 +733,21 @@ def render_uhn_dashboard() -> None:
 
 
 def render_scene_page(scene_key: str) -> None:
+    """Render a specific scene page with authentication and access control."""
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
-    # Production page has its own filters in the header
-    # if scene_key != "production":
-    #    _sidebar_filters()
+    
+    # Initialize authentication state
+    init_auth_state()
+    
+    # Check if user is authenticated
+    if not is_authenticated():
+        # Show login page
+        render_login_page()
+        return
+    
+    # User is authenticated - render user info in sidebar
+    render_user_info_sidebar()
 
     def run_scene():
         if scene_key == "exec":
@@ -630,13 +767,18 @@ def render_scene_page(scene_key: str) -> None:
             scene_governance_page()
         elif scene_key == "sector":
             scene_sector_page()
+        elif scene_key == "admin":
+            # Admin settings page - access controlled within render_admin_settings_page
+            render_admin_settings_page()
         else:
             if scene_exec_page:
                 scene_exec_page()
             else:
                 st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
 
-    _render_main_layout(run_scene, show_header=(scene_key == "exec"))
+    # Admin page doesn't need the overview header
+    show_header = scene_key == "exec"
+    _render_main_layout(run_scene, show_header=show_header)
 
 
 if __name__ == "__main__":

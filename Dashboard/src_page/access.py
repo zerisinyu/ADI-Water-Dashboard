@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from utils import prepare_access_data, prepare_service_data, DATA_DIR
+from utils import prepare_access_data, prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country
 
 def load_financial_data():
     """Load financial services data for the access dashboard."""
@@ -15,6 +15,9 @@ def load_financial_data():
             df_fin['date'] = pd.to_datetime(df_fin['date_MMYY'], format='%b/%y', errors='coerce')
         df_fin['year'] = df_fin['date'].dt.year
         df_fin['month'] = df_fin['date'].dt.month
+        
+        # Apply access control filtering
+        df_fin = filter_df_by_user_access(df_fin, "country")
     return df_fin
 
 def create_sparkline(data, color='#3b82f6'):
@@ -52,8 +55,9 @@ def create_sparkline(data, color='#3b82f6'):
 def scene_access():
     """
     Access & Coverage scene - Redesigned based on User Journey.
+    Data access is restricted based on user permissions.
     """
-    # Load data
+    # Load data (already filtered by user access in prepare_* functions)
     access_data = prepare_access_data()
     df_water = access_data["water_full"]
     df_sewer = access_data["sewer_full"]
@@ -66,6 +70,17 @@ def scene_access():
     # --- Header Section ---
     header_container = st.container()
     
+    # Get user access restrictions for filtering
+    try:
+        from auth import get_current_user, UserRole, get_allowed_countries
+        user = get_current_user()
+        allowed_countries = get_allowed_countries()
+        is_master_user = user is not None and user.role == UserRole.MASTER_USER
+    except ImportError:
+        user = None
+        allowed_countries = []
+        is_master_user = True  # Default to no restrictions if auth not available
+    
     # Filters Row
     filt_c1, filt_c2, filt_c3, filt_c4 = st.columns([2, 2, 2, 2])
     
@@ -74,14 +89,37 @@ def scene_access():
         view_type = st.radio("View Period", ["Annual", "Quarterly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle")
         
     with filt_c2:
-        # Country Filter
-        countries = ['All'] + sorted(df_water['country'].unique().tolist()) if 'country' in df_water.columns else ['All']
+        # Country Filter - Restricted based on user access
+        if is_master_user:
+            countries = ['All'] + sorted(df_water['country'].unique().tolist()) if 'country' in df_water.columns else ['All']
+        else:
+            # Non-master users can only see their assigned country
+            countries = allowed_countries if allowed_countries else ['All']
+        
         # Try to get default from session state if available
         default_country_idx = 0
-        if "selected_country" in st.session_state and st.session_state.selected_country in countries:
-            default_country_idx = countries.index(st.session_state.selected_country)
-            
-        selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select")
+        if "selected_country" in st.session_state:
+            validated_country = validate_selected_country(st.session_state.selected_country)
+            if validated_country in countries:
+                default_country_idx = countries.index(validated_country)
+        
+        # Check if country selector should be locked
+        is_country_locked = not is_master_user and len(countries) == 1
+        
+        if is_country_locked:
+            # Show locked indicator
+            st.markdown(f"""
+            <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+                        padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-top: 24px;'>
+                <span style='font-size: 1rem;'>🔒</span>
+                <span style='font-weight: 600; color: #334155;'>{countries[0]}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            selected_country = countries[0]
+        else:
+            selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select")
+            # Validate the selection
+            selected_country = validate_selected_country(selected_country)
         
     with filt_c3:
         # Zone Filter (dependent on country)
@@ -540,11 +578,11 @@ def scene_access():
     else:
         group_by = None  # Single entity
     
-    # Color schemes - Updated based on requirements
-    # Water: Safely Managed (Dark Blue) -> Basic (Med Blue) -> Limited (Light Blue) -> Unimproved (Orange) -> Surface (Red)
-    water_colors = ['#2874A6', '#5DADE2', '#AED6F1', '#F8C471', '#E74C3C']
-    # Sanitation: Safely Managed (Dark Green) -> Basic (Green) -> Limited (Light Green) -> Unimproved (Yellow) -> Open Def (Dark Red)
-    sanitation_colors = ['#1E8449', '#58D68D', '#ABEBC6', '#F4D03F', '#C0392B']
+    # Color schemes - Updated based on user requirements
+    # Water: Safely Managed -> Basic -> Limited -> Unimproved -> Surface Water
+    water_colors = ['#088BCE', '#48BFE7', '#FDEE79', '#FFD94F', '#FFB02B']
+    # Sanitation: Safely Managed -> Basic -> Limited -> Unimproved -> Open Defecation
+    sanitation_colors = ['#349438', '#49B754', '#FDEE79', '#FFD94F', '#FFB02B']
     
     # Determine bar width and gap based on what's shown
     both_shown = show_water and show_sanitation
