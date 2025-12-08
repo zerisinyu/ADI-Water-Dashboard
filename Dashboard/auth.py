@@ -204,6 +204,63 @@ def _verify_password(password: str, stored_hash: str) -> bool:
 
 
 # =============================================================================
+# USER CONFIG LOADING
+# =============================================================================
+
+def _user_from_config(username: str, config: Dict[str, Any]) -> Optional[User]:
+    """Create a User object from config mapping."""
+    role_value = str(config.get("role", "")).lower()
+    role_lookup = {r.value: r for r in UserRole}
+    role = role_lookup.get(role_value)
+    password_hash = config.get("password_hash")
+    if role is None or not password_hash:
+        return None
+
+    assigned_country = config.get("assigned_country")
+    if isinstance(assigned_country, str) and not assigned_country.strip():
+        assigned_country = None
+
+    return User(
+        username=username,
+        password_hash=password_hash,
+        role=role,
+        assigned_country=assigned_country,
+        full_name=config.get("full_name", ""),
+        email=config.get("email", ""),
+        is_active=bool(config.get("is_active", True)),
+    )
+
+
+def _load_users_from_secrets() -> Optional[Dict[str, User]]:
+    """
+    Load users from Streamlit secrets if available.
+    
+    Expected structure in .streamlit/secrets.toml:
+    [users.username]
+    password_hash = "hashed_password"
+    role = "master_user"
+    assigned_country = "Uganda"
+    """
+    try:
+        secrets_users = st.secrets.get("users")  # type: ignore[attr-defined]
+    except Exception:
+        return None
+
+    if not secrets_users:
+        return None
+
+    users: Dict[str, User] = {}
+    for username, config in secrets_users.items():
+        if not isinstance(config, dict):
+            continue
+        user = _user_from_config(username, config)
+        if user:
+            users[username.lower()] = user
+
+    return users or None
+
+
+# =============================================================================
 # USER DATABASE (In-Memory Demo - Replace with real database in production)
 # =============================================================================
 
@@ -211,8 +268,10 @@ def _get_demo_users() -> Dict[str, User]:
     """
     Get demo user database.
     
-    ⚠️ IMPORTANT: In production, replace this with a proper database!
-    This is for demonstration purposes only.
+    ⚠️ IMPORTANT: In production, replace this with a proper database or
+    configure users via Streamlit secrets. If secrets are provided under
+    [users] in .streamlit/secrets.toml, those will be used instead of the
+    built-in demo users.
     
     Default users:
     - admin / admin123 -> Master User (all countries)
@@ -223,6 +282,11 @@ def _get_demo_users() -> Dict[str, User]:
     - analyst1 / analyst123 -> Analyst (Uganda)
     - viewer1 / viewer123 -> Viewer (Uganda)
     """
+    # Prefer secrets-backed user config to keep credentials out of source
+    secret_users = _load_users_from_secrets()
+    if secret_users:
+        return secret_users
+
     users = {
         "admin": User(
             username="admin",
