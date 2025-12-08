@@ -526,6 +526,41 @@
   font-size: 32px;
 }
 
+/* Streamlit button variant for the FAB (when rendered via st.button) */
+.majibot-fab-wrapper {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  z-index: 1000;
+}
+.majibot-fab-wrapper + .stButton {
+  position: fixed;
+  right: 32px;
+  bottom: 32px;
+  z-index: 1000;
+}
+.majibot-fab-wrapper + .stButton > button,
+.majibot-fab-wrapper .stButton > button {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  font-size: 32px;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.majibot-fab-wrapper + .stButton > button:hover,
+.majibot-fab-wrapper .stButton > button:hover {
+  transform: scale(1.15) translateY(-4px);
+  box-shadow: 0 12px 32px rgba(102, 126, 234, 0.6);
+}
+.majibot-fab-wrapper + .stButton > button:active,
+.majibot-fab-wrapper .stButton > button:active {
+  transform: scale(1.05);
+}
+
 /* === Chat Panel (Sidebar rendering styles) === */
 .chat-sidebar-header {
   display: flex;
