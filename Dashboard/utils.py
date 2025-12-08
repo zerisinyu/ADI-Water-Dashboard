@@ -13,6 +13,81 @@ import streamlit as st
 DATA_DIR = Path(__file__).resolve().parents[1] / "Data"
 
 
+# =============================================================================
+# ACCESS CONTROL HELPERS
+# =============================================================================
+
+def get_user_country_filter() -> Optional[str]:
+    """
+    Get the country filter for the current user.
+    
+    Returns:
+        Country name if user is restricted to a specific country,
+        None if user has access to all countries (master user).
+    """
+    try:
+        from auth import get_current_user, UserRole
+        user = get_current_user()
+        if user is None:
+            return None  # No user logged in - let page handle this
+        if user.role == UserRole.MASTER_USER:
+            return None  # Master users have access to all countries
+        return user.assigned_country
+    except ImportError:
+        # Auth module not available - no filtering
+        return None
+
+
+def filter_df_by_user_access(df: pd.DataFrame, country_column: str = "country") -> pd.DataFrame:
+    """
+    Filter a DataFrame based on the current user's access permissions.
+    
+    This is the primary data access control function. All data loading
+    should pass through this filter to ensure proper access control.
+    
+    Args:
+        df: pandas DataFrame to filter
+        country_column: Name of the column containing country information
+    
+    Returns:
+        Filtered DataFrame with only accessible data
+    """
+    if df is None or df.empty:
+        return df
+    
+    user_country = get_user_country_filter()
+    
+    # No filtering needed if user has access to all countries
+    if user_country is None:
+        return df
+    
+    # Apply country filter if column exists
+    if country_column in df.columns:
+        return df[df[country_column].str.lower() == user_country.lower()]
+    
+    return df
+
+
+def validate_selected_country(selected_country: str) -> str:
+    """
+    Validate that the selected country is accessible by the current user.
+    
+    Args:
+        selected_country: The country selected in the UI
+    
+    Returns:
+        The validated country (may be different if user doesn't have access)
+    """
+    user_country = get_user_country_filter()
+    
+    # Master users can select any country
+    if user_country is None:
+        return selected_country
+    
+    # Non-master users are locked to their assigned country
+    return user_country
+
+
 def load_json(name: str) -> Optional[Dict[str, Any]]:
     """Load a JSON file from the Data directory, returning None on failure."""
     p = DATA_DIR / name
@@ -28,8 +103,8 @@ def load_json(name: str) -> Optional[Dict[str, Any]]:
 def load_csv_data() -> Dict[str, pd.DataFrame]:
     """Read sewer and water access CSV datasets from disk and cache the resulting DataFrames."""
     csv_map = {
-        "sewer": "Sewer Access Data.csv",
-        "water": "Water Access Data.csv",
+        "sewer": "s_access.csv",
+        "water": "w_access.csv",
     }
     frames: Dict[str, pd.DataFrame] = {}
     for key, filename in csv_map.items():
@@ -94,14 +169,35 @@ def zone_identifier(country: Optional[str], zone: Optional[str]) -> str:
 
 
 @st.cache_data
-def prepare_access_data() -> Dict[str, Any]:
+def _load_raw_access_data() -> Dict[str, Any]:
     """
-    Prepare derived access datasets for the Access & Coverage scene.
-    Returns cached water/sewer snapshots, full histories, and zone-level summaries.
+    Load and process raw access data (internal, cached).
+    This loads all data without access filtering.
     """
     csv_data = load_csv_data()
     water_df = normalise_access_df(csv_data["water"], prefix="w_", extra_pct_cols=["municipal_coverage"])
     sewer_df = normalise_access_df(csv_data["sewer"], prefix="s_")
+    
+    return {"water": water_df, "sewer": sewer_df}
+
+
+def prepare_access_data() -> Dict[str, Any]:
+    """
+    Prepare derived access datasets for the Access & Coverage scene.
+    Returns cached water/sewer snapshots, full histories, and zone-level summaries.
+    
+    Note: Data is filtered based on the current user's access permissions.
+    Access filtering is applied AFTER caching to ensure proper isolation.
+    """
+    # Load raw cached data
+    raw_data = _load_raw_access_data()
+    water_df = raw_data["water"].copy()
+    sewer_df = raw_data["sewer"].copy()
+    
+    # Apply access control filtering based on user permissions
+    # This happens on each call to ensure proper user isolation
+    water_df = filter_df_by_user_access(water_df, "country")
+    sewer_df = filter_df_by_user_access(sewer_df, "country")
 
     water_latest = latest_snapshot(
         water_df,
@@ -175,15 +271,12 @@ def get_zones() -> List[Dict[str, Any]]:
 
 
 @st.cache_data
-def prepare_service_data() -> Dict[str, Any]:
+def _load_raw_service_data() -> pd.DataFrame:
     """
-    Prepare service quality data for visualization.
-    Returns a dictionary containing processed service data including:
-    - Full service data DataFrame
-    - Latest snapshots by zone
-    - Aggregated time series for key metrics
+    Load and process raw service data (internal, cached).
+    This loads all data without access filtering.
     """
-    service_path = DATA_DIR / "Service_data.csv"
+    service_path = DATA_DIR / "sw_service.csv"
     if not service_path.exists():
         raise FileNotFoundError(f"Service data file not found: {service_path}")
 
@@ -206,6 +299,27 @@ def prepare_service_data() -> Dict[str, Any]:
     df["complaint_resolution_rate"] = (df["resolved"] / df["complaints"] * 100)
     df["nrw_rate"] = ((df["w_supplied"] - df["total_consumption"]) / df["w_supplied"] * 100)
     df["sewer_coverage_rate"] = (df["sewer_connections"] / df["households"] * 100)
+    
+    return df
+
+
+def prepare_service_data() -> Dict[str, Any]:
+    """
+    Prepare service quality data for visualization.
+    Returns a dictionary containing processed service data including:
+    - Full service data DataFrame
+    - Latest snapshots by zone
+    - Aggregated time series for key metrics
+    
+    Note: Data is filtered based on the current user's access permissions.
+    Access filtering is applied AFTER caching to ensure proper isolation.
+    """
+    # Load raw cached data
+    df = _load_raw_service_data().copy()
+    
+    # Apply access control filtering based on user permissions
+    # This happens on each call to ensure proper user isolation
+    df = filter_df_by_user_access(df, "country")
 
     latest_by_zone = df.sort_values("date").groupby(["country", "city", "zone"]).last().reset_index()
 

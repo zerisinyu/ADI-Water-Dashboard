@@ -2,11 +2,29 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import DATA_DIR
+import io
+from datetime import datetime
+from utils import DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
+
+# Required columns for schema validation
+PRODUCTION_REQUIRED_COLS = ['country', 'zone', 'source', 'production_m3']
+
+
+def validate_upload_schema(df: pd.DataFrame, required_cols: list, file_type: str) -> tuple:
+    """Validate that uploaded data has required columns.
+    
+    Returns:
+        tuple: (is_valid, missing_columns, warning_message)
+    """
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        return False, missing, f"❌ {file_type} is missing required columns: {', '.join(missing)}"
+    return True, [], None
+
 
 @st.cache_data
-def load_production_data():
-    """Load production data for the dashboard."""
+def _load_raw_production_data():
+    """Load raw production data (internal, cached without access filtering)."""
     prod_path = DATA_DIR / "production.csv"
     df_prod = pd.DataFrame()
     
@@ -37,11 +55,40 @@ def load_production_data():
             
     return df_prod
 
+
+def load_production_data():
+    """
+    Load production data for the dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    df_prod = _load_raw_production_data()
+    
+    # Apply access control filtering
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    
+    return df_prod
+
 def scene_production():
     """
     Production Manager Dashboard - Redesigned.
     Focus: Plant Uptime, Extraction Optimization, Source Sustainability.
     """
+    
+    # ============================================================================
+    # HEADER WITH DATA FRESHNESS
+    # ============================================================================
+    
+    header_col1, header_col2 = st.columns([3, 1])
+    with header_col1:
+        st.markdown("## ♻️ Production & Operations")
+    with header_col2:
+        st.markdown(
+            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
+            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
     # --- CSS Styling (Consistent with other pages) ---
     st.markdown("""
     <style>
@@ -112,16 +159,106 @@ def scene_production():
     </style>
     """, unsafe_allow_html=True)
 
+    # ============================================================================
+    # DATA INITIALIZATION (Before UI elements)
+    # ============================================================================
+    
+    # Initialize session state for data BEFORE expander to ensure data is available
+    if 'production_data' not in st.session_state:
+        st.session_state.production_data = None
+    if 'production_default_data_loaded' not in st.session_state:
+        st.session_state.production_default_data_loaded = False
+
+    # AUTO-LOAD DEFAULT DATA ON FIRST PAGE LOAD (silently, outside expander)
+    if not st.session_state.production_default_data_loaded:
+        try:
+            st.session_state.production_data = pd.read_csv(DATA_DIR / 'production.csv')
+            st.session_state.production_default_data_loaded = True
+        except Exception as e:
+            st.session_state.production_default_data_loaded = True  # Prevent repeated attempts
+    
+    # ============================================================================
+    # DATA IMPORT SECTION (Collapsed by default)
+    # ============================================================================
+    
+    with st.expander("📁 Data Import", expanded=False):
+        # Show current data status
+        if st.session_state.production_data is not None:
+            st.success(f"✅ Production data loaded: {len(st.session_state.production_data)} records")
+        else:
+            st.warning("⚠️ No production data loaded")
+
+        # Tab for different import methods
+        import_tab1, import_tab2 = st.tabs(["📤 Upload Custom Files", "📋 Default Data"])
+
+        with import_tab1:
+            st.markdown("**Production Data**")
+            production_file = st.file_uploader(
+                "Upload Production Data CSV",
+                type=['csv', 'xlsx'],
+                key="production_upload",
+                help="Required columns: country, zone, source, date_YYMMDD, production_m3, service_hours"
+            )
+
+            if production_file:
+                try:
+                    if production_file.name.endswith('.csv'):
+                        uploaded_prod = pd.read_csv(production_file)
+                    else:
+                        uploaded_prod = pd.read_excel(production_file)
+                    
+                    # Schema validation
+                    is_valid, missing, warning = validate_upload_schema(uploaded_prod, PRODUCTION_REQUIRED_COLS, "Production Data")
+                    if not is_valid:
+                        st.warning(warning)
+                    else:
+                        st.session_state.production_data = uploaded_prod
+                        st.success(f"✓ Loaded {len(st.session_state.production_data)} production records")
+                except Exception as e:
+                    st.error(f"Error loading production data: {e}")
+
+        with import_tab2:
+            st.info("📌 Using default production data from repository")
+            if st.button("🔄 Reload Default Data", key="reload_production_default"):
+                with st.spinner("Reloading default data..."):
+                    try:
+                        st.session_state.production_data = pd.read_csv(DATA_DIR / 'production.csv')
+                        st.success(f"✓ Reloaded {len(st.session_state.production_data)} production records")
+                    except Exception as e:
+                        st.error(f"Error loading default data: {e}")
+
     # --- Load Data ---
-    df_prod = load_production_data()
+    # Use session state data if available, otherwise use load_production_data()
+    if st.session_state.production_data is not None:
+        df_prod = st.session_state.production_data.copy()
+        # Apply preprocessing for session state data
+        cols_to_numeric = ['production_m3', 'service_hours']
+        for col in cols_to_numeric:
+            if col in df_prod.columns:
+                if df_prod[col].dtype == 'object':
+                    df_prod[col] = df_prod[col].astype(str).str.replace(r'[$,]', '', regex=True)
+                df_prod[col] = pd.to_numeric(df_prod[col], errors='coerce').fillna(0)
+        
+        if 'date_YYMMDD' in df_prod.columns:
+            df_prod['date_dt'] = pd.to_datetime(df_prod['date_YYMMDD'], format='%Y/%m/%d', errors='coerce')
+        elif 'date' in df_prod.columns:
+            df_prod['date_dt'] = pd.to_datetime(df_prod['date'], errors='coerce')
+        
+        if 'date_dt' in df_prod.columns:
+            df_prod['year'] = df_prod['date_dt'].dt.year.astype('Int64')
+            df_prod['month'] = df_prod['date_dt'].dt.month.astype('Int64')
+            df_prod['day'] = df_prod['date_dt'].dt.day.astype('Int64')
+        
+        # Apply access control filtering
+        df_prod = filter_df_by_user_access(df_prod, "country")
+    else:
+        df_prod = load_production_data()
     
     if df_prod.empty:
         st.warning("⚠️ Production data not available.")
         return
 
-    # --- Filters (from Header) ---
-    st.markdown("<h1 style='font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 16px;'>Production & Operations</h1>", unsafe_allow_html=True)
-    
+    # --- Filters ---
     with st.container():
         st.markdown("""
             <style>
@@ -135,6 +272,7 @@ def scene_production():
         
         with f1:
             # Date Range / Aggregation View
+            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>View Period</label>", unsafe_allow_html=True)
             view_type = st.selectbox(
                 "View",
                 ["Daily", "Monthly", "Quarterly", "Annual"],
@@ -143,8 +281,23 @@ def scene_production():
             )
             
         with f2:
-            # Country Filter
-            countries = ["All", "Uganda", "Cameroon", "Lesotho", "Malawi"]
+            # Country Filter - Access controlled
+            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>Country</label>", unsafe_allow_html=True)
+            user_country = get_user_country_filter()
+            # Get available countries from data
+            available_countries = sorted(df_prod['country'].unique().tolist()) if 'country' in df_prod.columns else []
+            
+            # Filter to only accessible countries
+            if user_country is None:
+                # Master user - show all available with "All" option
+                default_countries = available_countries if available_countries else ["Uganda", "Cameroon", "Lesotho", "Malawi"]
+                countries = ["All"] + default_countries
+            else:
+                # Non-master user - show only their assigned country
+                countries = [c for c in available_countries if c.lower() == user_country.lower()] if available_countries else [user_country]
+                if not countries:
+                    countries = [user_country]  # Fallback to assigned country
+            
             selected_country = st.selectbox(
                 "Country",
                 countries,
@@ -152,12 +305,18 @@ def scene_production():
                 label_visibility="collapsed"
             )
             
+            # Validate selection for non-master users
+            if user_country is not None:
+                selected_country = validate_selected_country(selected_country)
+            
         with f3:
             # Zone/City Filter
+            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374141;'>Zone/City</label>", unsafe_allow_html=True)
             available_zones = []
             if selected_country != "All":
                 if 'country' in df_prod.columns and 'zone' in df_prod.columns:
-                    available_zones = sorted(df_prod[df_prod['country'] == selected_country]['zone'].unique().tolist())
+                    # Case-insensitive zone lookup
+                    available_zones = sorted(df_prod[df_prod['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
             else:
                 if 'zone' in df_prod.columns:
                     available_zones = sorted(df_prod['zone'].unique().tolist())
@@ -197,13 +356,15 @@ def scene_production():
         st.warning("No valid data after parsing dates.")
         return
     
-    # Apply Country Filter
+    # Apply Country Filter (case-insensitive)
     if selected_country != 'All' and 'country' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['country'] == selected_country]
+        df_p_filt = df_p_filt[df_p_filt['country'].str.lower() == selected_country.lower()]
         
-    # Apply Zone Filter
+    # Apply Zone Filter (case-insensitive)
     if selected_zones and 'zone' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['zone'].isin(selected_zones)]
+        # Convert to lowercase for comparison
+        selected_zones_lower = [z.lower() for z in selected_zones]
+        df_p_filt = df_p_filt[df_p_filt['zone'].str.lower().isin(selected_zones_lower)]
 
     if df_p_filt.empty:
         st.warning(f"No data available for the selected filters.")
@@ -435,11 +596,26 @@ def scene_production():
             groupnorm = 'percent' if unit_mode == "Percentage" else None
             y_label = f'Volume ({unit_label})' if unit_mode != "Percentage" else "Percentage Share"
             
-            fig_mix = px.area(prod_trend, x=x_axis, y='volume_display', color='source',
-                              labels={'volume_display': y_label, x_axis: 'Date'},
-                              color_discrete_sequence=px.colors.qualitative.Safe,
-                              groupnorm=groupnorm)
-            fig_mix.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=1.1))
+            # Use bar chart for better readability when daily data is dense
+            if view_type == "Daily" and len(prod_trend) > 60:
+                # Switch to line chart for cleaner visualization with many data points
+                fig_mix = px.line(prod_trend, x=x_axis, y='volume_display', color='source',
+                                  labels={'volume_display': y_label, x_axis: 'Date'},
+                                  color_discrete_sequence=px.colors.qualitative.Safe)
+                fig_mix.update_traces(mode='lines')
+            else:
+                # Use stacked bar chart for clearer comparison
+                fig_mix = px.bar(prod_trend, x=x_axis, y='volume_display', color='source',
+                                 labels={'volume_display': y_label, x_axis: 'Date'},
+                                 color_discrete_sequence=px.colors.qualitative.Safe,
+                                 barmode='stack')
+            
+            fig_mix.update_layout(
+                height=350, 
+                margin=dict(l=0, r=0, t=10, b=60), 
+                legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
+                xaxis_tickangle=-45
+            )
             st.plotly_chart(fig_mix, use_container_width=True)
         
     with c2:
@@ -655,9 +831,9 @@ def scene_production():
                 showgrid=False
             ),
             hovermode="x unified",
-            legend=dict(orientation="h", y=1.1),
-            height=500,
-            margin=dict(l=20, r=20, t=40, b=20)
+            legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center"),
+            height=550,
+            margin=dict(l=20, r=20, t=60, b=80)
         )
         
         st.plotly_chart(fig, use_container_width=True)
@@ -717,4 +893,195 @@ def scene_production():
             submitted = st.form_submit_button("Log Downtime Event")
             if submitted:
                 st.success(f"Logged: {log_source} - {log_reason} on {log_date}")
+
+    # ============================================================================
+    # DATA EXPORT SECTION
+    # ============================================================================
+    
+    st.markdown("---")
+    st.markdown("<div class='section-header'>📦 Data Export</div>", unsafe_allow_html=True)
+    
+    export_tab1, export_tab2 = st.tabs(["📊 Production Data", "📈 Calculated Metrics"])
+    
+    # TAB 1: PRODUCTION DATA EXPORT
+    with export_tab1:
+        st.markdown("**Export filtered production data**")
+        
+        # Display options
+        show_all_cols = st.checkbox("Show all columns", value=False, key="show_all_prod")
+        
+        if show_all_cols:
+            display_df = df_p_filt
+        else:
+            key_columns = ['country', 'zone', 'source', 'date_dt', 'production_m3', 'service_hours', 'year', 'month']
+            display_df = df_p_filt[[col for col in key_columns if col in df_p_filt.columns]]
+        
+        st.dataframe(display_df, use_container_width=True, height=400)
+        
+        # Export options
+        export_col1, export_col2, export_col3 = st.columns(3)
+        
+        with export_col1:
+            csv_data = df_p_filt.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_data,
+                file_name=f"production_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_prod_csv"
+            )
+        
+        with export_col2:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_p_filt.to_excel(writer, sheet_name='Production Data', index=False)
+            buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer,
+                file_name=f"production_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_prod_excel"
+            )
+        
+        with export_col3:
+            json_str = df_p_filt.to_json(orient='records', indent=2, default_handler=str)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str,
+                file_name=f"production_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_prod_json"
+            )
+    
+    # TAB 2: CALCULATED METRICS EXPORT
+    with export_tab2:
+        st.markdown("**All calculated production metrics in one file**")
+        st.info("📌 This file contains all derived metrics calculated from the raw data for easy analysis and reporting.")
+        
+        # Source-Level Metrics
+        source_metrics = df_p_filt.groupby('source').agg({
+            'production_m3': ['sum', 'mean', 'max', 'min'],
+            'service_hours': ['mean', 'max', 'min']
+        }).reset_index()
+        source_metrics.columns = ['_'.join(col).strip('_') for col in source_metrics.columns.values]
+        source_metrics['metric_type'] = 'Source Summary'
+        
+        # Zone-Level Metrics (if zone column exists)
+        zone_metrics = pd.DataFrame()
+        if 'zone' in df_p_filt.columns:
+            zone_metrics = df_p_filt.groupby('zone').agg({
+                'production_m3': ['sum', 'mean'],
+                'service_hours': ['mean']
+            }).reset_index()
+            zone_metrics.columns = ['_'.join(col).strip('_') for col in zone_metrics.columns.values]
+            zone_metrics['metric_type'] = 'Zone Summary'
+        
+        # Overall Summary Metrics
+        total_production = df_p_filt['production_m3'].sum()
+        avg_daily_production = df_p_filt['production_m3'].mean()
+        avg_service_hours = df_p_filt['service_hours'].mean()
+        max_daily_production = df_p_filt['production_m3'].max()
+        min_daily_production = df_p_filt['production_m3'].min()
+        total_days = df_p_filt['date_dt'].nunique() if 'date_dt' in df_p_filt.columns else 0
+        
+        summary_metrics = pd.DataFrame({
+            'Metric': [
+                'Total Production (m³)',
+                'Average Daily Production (m³)',
+                'Max Daily Production (m³)',
+                'Min Daily Production (m³)',
+                'Average Service Hours',
+                'Total Days Recorded',
+                'Number of Sources',
+                'Number of Zones',
+                'Report Generated',
+                'Data Period'
+            ],
+            'Value': [
+                f"{total_production:,.2f}",
+                f"{avg_daily_production:,.2f}",
+                f"{max_daily_production:,.2f}",
+                f"{min_daily_production:,.2f}",
+                f"{avg_service_hours:.2f}",
+                f"{total_days:,}",
+                f"{df_p_filt['source'].nunique() if 'source' in df_p_filt.columns else 0}",
+                f"{df_p_filt['zone'].nunique() if 'zone' in df_p_filt.columns else 0}",
+                pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                f"{df_p_filt['date_dt'].min().strftime('%Y-%m-%d') if 'date_dt' in df_p_filt.columns else 'N/A'} to {df_p_filt['date_dt'].max().strftime('%Y-%m-%d') if 'date_dt' in df_p_filt.columns else 'N/A'}"
+            ]
+        })
+        
+        # Display source metrics table
+        st.subheader("Source-Level Metrics")
+        st.dataframe(source_metrics, use_container_width=True, height=200)
+        
+        # Display zone metrics if available
+        if not zone_metrics.empty:
+            st.subheader("Zone-Level Metrics")
+            st.dataframe(zone_metrics, use_container_width=True, height=200)
+        
+        # Display summary metrics
+        st.subheader("Overall Summary Metrics")
+        st.dataframe(summary_metrics, use_container_width=True, height=250)
+        
+        # Export calculated metrics
+        export_metric_col1, export_metric_col2, export_metric_col3 = st.columns(3)
+        
+        with export_metric_col1:
+            # Combined metrics CSV
+            combined_metrics_list = [
+                source_metrics.assign(metric_category='Source_Level'),
+                summary_metrics.assign(metric_category='Overall_Summary')
+            ]
+            if not zone_metrics.empty:
+                combined_metrics_list.insert(1, zone_metrics.assign(metric_category='Zone_Level'))
+            
+            combined_metrics = pd.concat(combined_metrics_list, ignore_index=True, sort=False)
+            
+            csv_metrics = combined_metrics.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Metrics as CSV",
+                data=csv_metrics,
+                file_name=f"production_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_prod_metrics_csv"
+            )
+        
+        with export_metric_col2:
+            # Excel with multiple sheets
+            buffer_metrics = io.BytesIO()
+            with pd.ExcelWriter(buffer_metrics, engine='openpyxl') as writer:
+                source_metrics.to_excel(writer, sheet_name='Source_Metrics', index=False)
+                if not zone_metrics.empty:
+                    zone_metrics.to_excel(writer, sheet_name='Zone_Metrics', index=False)
+                summary_metrics.to_excel(writer, sheet_name='Summary_Metrics', index=False)
+            buffer_metrics.seek(0)
+            
+            st.download_button(
+                label="📥 Download Metrics as Excel",
+                data=buffer_metrics,
+                file_name=f"production_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_prod_metrics_excel"
+            )
+        
+        with export_metric_col3:
+            # JSON export for metrics
+            import json
+            metrics_json = {
+                'source_metrics': source_metrics.to_dict(orient='records'),
+                'zone_metrics': zone_metrics.to_dict(orient='records') if not zone_metrics.empty else [],
+                'summary_metrics': summary_metrics.to_dict(orient='records'),
+                'generated_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            json_str_metrics = json.dumps(metrics_json, indent=2, default=str)
+            st.download_button(
+                label="📥 Download Metrics as JSON",
+                data=json_str_metrics,
+                file_name=f"production_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_prod_metrics_json"
+            )
 

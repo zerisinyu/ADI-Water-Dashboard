@@ -1,20 +1,58 @@
 import io
 from datetime import datetime
 import os
+import json
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import prepare_service_data as _prepare_service_data, DATA_DIR
+from utils import prepare_service_data as _prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
 
-def load_extra_data():
-    """Load billing, financial services, and production data for the quality dashboard."""
+# Required columns for schema validation
+SERVICE_REQUIRED_COLS = ['country', 'zone', 'year', 'month']
+
+
+def _safe_year_filter(df: pd.DataFrame, year_col: str, year_value) -> pd.DataFrame:
+    """Filter DataFrame by year, handling int/string type mismatches.
+    
+    Args:
+        df: DataFrame to filter
+        year_col: Name of the year column
+        year_value: Year value to filter by (can be int or string)
+    
+    Returns:
+        Filtered DataFrame
+    """
+    if year_value is None or df.empty or year_col not in df.columns:
+        return df
+    try:
+        year_int = int(year_value)
+        return df[df[year_col] == year_int]
+    except (ValueError, TypeError):
+        return df[df[year_col] == year_value]
+
+
+def validate_upload_schema(df: pd.DataFrame, required_cols: list, file_type: str) -> tuple:
+    """Validate that uploaded data has required columns.
+    
+    Returns:
+        tuple: (is_valid, missing_columns, warning_message)
+    """
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        return False, missing, f"❌ {file_type} is missing required columns: {', '.join(missing)}"
+    return True, [], None
+
+
+@st.cache_data
+def _load_raw_extra_data():
+    """Load raw billing, financial services, and production data (internal, cached)."""
     billing_path = DATA_DIR / "billing.csv"
-    fin_path = DATA_DIR / "financial_services.csv"
+    fin_path = DATA_DIR / "all_fin_service.csv"
     prod_path = DATA_DIR / "production.csv"
-    nat_path = DATA_DIR / "all_national.csv"
+    nat_path = DATA_DIR / "all_nationalacc.csv"
     
     df_billing = pd.DataFrame()
     df_fin = pd.DataFrame()
@@ -24,40 +62,160 @@ def load_extra_data():
     if billing_path.exists():
         df_billing = pd.read_csv(billing_path, low_memory=False)
         # Parse dates
-        if 'date_MMYY' in df_billing.columns:
+        if 'date' in df_billing.columns:
+            df_billing['date'] = pd.to_datetime(df_billing['date'], errors='coerce')
+            df_billing['year'] = df_billing['date'].dt.year
+            df_billing['month'] = df_billing['date'].dt.month
+        elif 'date_MMYY' in df_billing.columns:
             df_billing['date'] = pd.to_datetime(df_billing['date_MMYY'], format='%b/%y', errors='coerce')
-        df_billing['year'] = df_billing['date'].dt.year
-        df_billing['month'] = df_billing['date'].dt.month
+            df_billing['year'] = df_billing['date'].dt.year
+            df_billing['month'] = df_billing['date'].dt.month
     
     if fin_path.exists():
         df_fin = pd.read_csv(fin_path)
         if 'date_MMYY' in df_fin.columns:
             df_fin['date'] = pd.to_datetime(df_fin['date_MMYY'], format='%b/%y', errors='coerce')
-        df_fin['year'] = df_fin['date'].dt.year
-        df_fin['month'] = df_fin['date'].dt.month
+            df_fin['year'] = df_fin['date'].dt.year
+            df_fin['month'] = df_fin['date'].dt.month
 
     if prod_path.exists():
         df_prod = pd.read_csv(prod_path)
         if 'date_YYMMDD' in df_prod.columns:
             df_prod['date'] = pd.to_datetime(df_prod['date_YYMMDD'], format='%Y/%m/%d', errors='coerce')
-        df_prod['year'] = df_prod['date'].dt.year
-        df_prod['month'] = df_prod['date'].dt.month
+            df_prod['year'] = df_prod['date'].dt.year
+            df_prod['month'] = df_prod['date'].dt.month
 
     if nat_path.exists():
         df_national = pd.read_csv(nat_path)
-        # National data is annual, usually has 'date_YY' or similar
-        # Check columns based on data_descriptions.csv or inspection
-        pass 
         
+    return df_billing, df_fin, df_prod, df_national
+
+
+def load_extra_data():
+    """
+    Load billing, financial services, and production data for the quality dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    df_billing, df_fin, df_prod, df_national = _load_raw_extra_data()
+    
+    # Apply access control filtering
+    df_billing = filter_df_by_user_access(df_billing.copy(), "country")
+    df_fin = filter_df_by_user_access(df_fin.copy(), "country")
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    df_national = filter_df_by_user_access(df_national.copy(), "country")
+    
     return df_billing, df_fin, df_prod, df_national
 
 def scene_quality():
     """
     Service Quality & Reliability scene - Redesigned based on User Journey.
     """
-    # Load data
-    service_data = _prepare_service_data()
-    df_service = service_data["full_data"]
+    
+    # ============================================================================
+    # HEADER WITH DATA FRESHNESS
+    # ============================================================================
+    
+    header_col1, header_col2 = st.columns([3, 1])
+    with header_col1:
+        st.markdown("## 🛠️ Service Quality & Reliability")
+    with header_col2:
+        st.markdown(
+            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
+            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    # ============================================================================
+    # DATA INITIALIZATION (Before UI elements)
+    # ============================================================================
+    
+    # Initialize session state for data BEFORE expander to ensure data is available
+    if 'quality_service_data' not in st.session_state:
+        st.session_state.quality_service_data = None
+    if 'quality_default_data_loaded' not in st.session_state:
+        st.session_state.quality_default_data_loaded = False
+
+    # AUTO-LOAD DEFAULT DATA ON FIRST PAGE LOAD (silently, outside expander)
+    if not st.session_state.quality_default_data_loaded:
+        try:
+            st.session_state.quality_service_data = pd.read_csv(DATA_DIR / 'sw_service.csv')
+            st.session_state.quality_default_data_loaded = True
+        except Exception as e:
+            st.session_state.quality_default_data_loaded = True  # Prevent repeated attempts
+    
+    # ============================================================================
+    # DATA IMPORT SECTION (Collapsed by default)
+    # ============================================================================
+    
+    with st.expander("📁 Data Import", expanded=False):
+        st.markdown("""
+        <style>
+            .upload-section {
+                background: #f9fafb;
+                border: 2px dashed #d1d5db;
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Show current data status
+        if st.session_state.quality_service_data is not None:
+            st.success(f"✅ Service data loaded: {len(st.session_state.quality_service_data)} records")
+        else:
+            st.warning("⚠️ No service data loaded")
+
+        # Tab for different import methods
+        import_tab1, import_tab2 = st.tabs(["📤 Upload Custom Files", "📋 Default Data"])
+
+        with import_tab1:
+            st.markdown("**Service Quality Data**")
+            service_file = st.file_uploader(
+                "Upload Service Data CSV",
+                type=['csv', 'xlsx'],
+                key="quality_service_upload",
+                help="Required columns: country, zone, year, month, tests_conducted_chlorine, test_passed_chlorine, complaints, resolved, etc."
+            )
+
+            if service_file:
+                try:
+                    if service_file.name.endswith('.csv'):
+                        uploaded_service = pd.read_csv(service_file)
+                    else:
+                        uploaded_service = pd.read_excel(service_file)
+                    
+                    # Schema validation
+                    is_valid, missing, warning = validate_upload_schema(uploaded_service, SERVICE_REQUIRED_COLS, "Service Data")
+                    if not is_valid:
+                        st.warning(warning)
+                    else:
+                        st.session_state.quality_service_data = uploaded_service
+                        st.success(f"✓ Loaded {len(st.session_state.quality_service_data)} service records")
+                except Exception as e:
+                    st.error(f"Error loading service data: {e}")
+
+        with import_tab2:
+            st.info("📌 Using default service data from repository")
+            if st.button("🔄 Reload Default Data", key="reload_quality_default"):
+                with st.spinner("Reloading default data..."):
+                    try:
+                        st.session_state.quality_service_data = pd.read_csv(DATA_DIR / 'sw_service.csv')
+                        st.success(f"✓ Reloaded {len(st.session_state.quality_service_data)} service records")
+                    except Exception as e:
+                        st.error(f"Error loading default data: {e}")
+
+    # Load data (use session state if available, otherwise use default loading)
+    if st.session_state.quality_service_data is not None:
+        # Use custom service data from session state
+        raw_data = st.session_state.quality_service_data.copy()
+        service_data = {"full_data": filter_df_by_user_access(raw_data, "country")}
+        df_service = service_data["full_data"]
+    else:
+        service_data = _prepare_service_data()
+        df_service = service_data["full_data"]
+    
     df_billing, df_fin, df_prod, df_national = load_extra_data()
 
     # --- Header Section ---
@@ -71,8 +229,20 @@ def scene_quality():
         view_type = st.radio("View Period", ["Annual", "Quarterly", "Monthly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle_quality")
         
     with filt_c2:
-        # Country Filter
-        countries = ['All'] + sorted(df_service['country'].unique().tolist()) if 'country' in df_service.columns else ['All']
+        # Country Filter - Access controlled
+        user_country = get_user_country_filter()
+        available_countries = sorted(df_service['country'].unique().tolist()) if 'country' in df_service.columns else []
+        
+        # Filter to only accessible countries
+        if user_country is None:
+            # Master user - show all with "All" option
+            countries = ['All'] + available_countries
+        else:
+            # Non-master user - show only their assigned country
+            countries = [c for c in available_countries if c.lower() == user_country.lower()]
+            if not countries:
+                countries = [user_country]  # Fallback to assigned country
+        
         # Try to get default from session state if available
         default_country_idx = 0
         if "selected_country" in st.session_state and st.session_state.selected_country in countries:
@@ -80,10 +250,14 @@ def scene_quality():
             
         selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select_quality")
         
+        # Validate selection for non-master users
+        if user_country is not None:
+            selected_country = validate_selected_country(selected_country)
+        
     with filt_c3:
-        # Zone Filter (dependent on country)
+        # Zone Filter (dependent on country) - case-insensitive
         if selected_country != 'All':
-            zones = ['All'] + sorted(df_service[df_service['country'] == selected_country]['zone'].unique().tolist())
+            zones = ['All'] + sorted(df_service[df_service['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
         else:
             zones = ['All'] + sorted(df_service['zone'].unique().tolist())
             
@@ -104,6 +278,21 @@ def scene_quality():
     selected_year = st.session_state.get("selected_year")
     selected_month_name = st.session_state.get("selected_month", "All")
 
+    # Validate selected_year exists in the data
+    if selected_year and selected_year != 'All':
+        try:
+            year_int = int(selected_year)
+            available_years = df_service['year'].unique().tolist() if 'year' in df_service.columns else []
+            if year_int not in available_years:
+                # Invalid year - reset to most recent available year or None
+                if available_years:
+                    selected_year = max(available_years)
+                    st.session_state["selected_year"] = selected_year
+                else:
+                    selected_year = None
+        except (ValueError, TypeError):
+            pass
+
     # Map month name to number
     month_map = {
         'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
@@ -111,12 +300,12 @@ def scene_quality():
     }
     selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
 
-    # --- Apply Filters ---
+    # --- Apply Filters (case-insensitive for country/zone) ---
     # Service Data
     df_s_filt = df_service.copy()
-    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'] == selected_country]
-    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'] == selected_zone]
-    if selected_year: df_s_filt = df_s_filt[df_s_filt['year'] == selected_year]
+    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'].str.lower() == selected_zone.lower()]
+    if selected_year: df_s_filt = _safe_year_filter(df_s_filt, 'year', selected_year)
     if selected_month != 'All': df_s_filt = df_s_filt[df_s_filt['month'] == selected_month]
 
     # Billing Data (No Zone/City usually, but check columns)
@@ -128,7 +317,7 @@ def scene_quality():
         # Billing often lacks city/zone, so we don't filter by them to avoid empty data
         # unless we are sure. For now, we filter by year.
         if 'year' in df_b_filt.columns and selected_year:
-            df_b_filt = df_b_filt[df_b_filt['year'] == selected_year]
+            df_b_filt = _safe_year_filter(df_b_filt, 'year', selected_year)
         if selected_month != 'All' and 'month' in df_b_filt.columns:
             df_b_filt = df_b_filt[df_b_filt['month'] == selected_month]
 
@@ -139,7 +328,7 @@ def scene_quality():
             # Case-insensitive filtering
             df_f_filt = df_f_filt[df_f_filt['country'].str.lower() == selected_country.lower()]
         if 'year' in df_f_filt.columns and selected_year:
-            df_f_filt = df_f_filt[df_f_filt['year'] == selected_year]
+            df_f_filt = _safe_year_filter(df_f_filt, 'year', selected_year)
         if selected_month != 'All' and 'month' in df_f_filt.columns:
             df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
 
@@ -150,7 +339,7 @@ def scene_quality():
             # Case-insensitive filtering
             df_p_filt = df_p_filt[df_p_filt['country'].str.lower() == selected_country.lower()]
         if 'year' in df_p_filt.columns and selected_year:
-            df_p_filt = df_p_filt[df_p_filt['year'] == selected_year]
+            df_p_filt = _safe_year_filter(df_p_filt, 'year', selected_year)
         if selected_month != 'All' and 'month' in df_p_filt.columns:
             df_p_filt = df_p_filt[df_p_filt['month'] == selected_month]
 
@@ -160,7 +349,7 @@ def scene_quality():
         if selected_country != 'All' and 'country' in df_n_filt.columns:
             df_n_filt = df_n_filt[df_n_filt['country'].str.lower() == selected_country.lower()]
         if 'date_YY' in df_n_filt.columns and selected_year:
-            df_n_filt = df_n_filt[df_n_filt['date_YY'] == selected_year]
+            df_n_filt = _safe_year_filter(df_n_filt, 'date_YY', selected_year)
 
     # --- Populate Header with Export Button ---
     with header_container:
@@ -531,12 +720,12 @@ def scene_quality():
         
         if selected_month == 'All':
             # Line Chart with Range Slider (Multi-year view for YoY comparison)
-            # Use df_service (unfiltered by year) but filtered by country/zone
+            # Use df_service (unfiltered by year) but filtered by country/zone (case-insensitive)
             df_chart = df_service.copy()
             if selected_country != 'All':
-                df_chart = df_chart[df_chart['country'] == selected_country]
+                df_chart = df_chart[df_chart['country'].str.lower() == selected_country.lower()]
             if selected_zone != 'All':
-                df_chart = df_chart[df_chart['zone'] == selected_zone]
+                df_chart = df_chart[df_chart['zone'].str.lower() == selected_zone.lower()]
             
             ts_quality = df_chart.groupby('date').agg({
                 'test_passed_chlorine': 'sum',
@@ -549,21 +738,47 @@ def scene_quality():
             ts_quality['E. Coli %'] = (ts_quality['tests_passed_ecoli'] / ts_quality['test_conducted_ecoli'] * 100).fillna(0)
             
             fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(x=ts_quality['date'], y=ts_quality['Chlorine %'], name='Chlorine', line=dict(color='#60a5fa', width=2)))
-            fig_trend.add_trace(go.Scatter(x=ts_quality['date'], y=ts_quality['E. Coli %'], name='E. Coli', line=dict(color='#f87171', width=2)))
+            fig_trend.add_trace(go.Scatter(
+                x=ts_quality['date'], 
+                y=ts_quality['Chlorine %'], 
+                name='Chlorine', 
+                line=dict(color='#60a5fa', width=2),
+                mode='lines',
+                hovertemplate='<b>Chlorine</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
+            ))
+            fig_trend.add_trace(go.Scatter(
+                x=ts_quality['date'], 
+                y=ts_quality['E. Coli %'], 
+                name='E. Coli', 
+                line=dict(color='#f87171', width=2),
+                mode='lines',
+                hovertemplate='<b>E. Coli</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
+            ))
             
             # Add WHO Threshold
             fig_trend.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
 
             fig_trend.update_layout(
-                height=300, 
-                margin=dict(l=0, r=0, t=0, b=0), 
-                legend=dict(orientation="h", y=1.1),
+                height=350,  # Increased height for better visibility
+                margin=dict(l=0, r=0, t=20, b=40), 
+                legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
                 xaxis=dict(
-                    rangeslider=dict(visible=True),
+                    rangeslider=dict(visible=True, thickness=0.08),
                     type="date",
-                    range=[f"{selected_year}-01-01", f"{selected_year}-12-31"]
-                )
+                    range=[f"{selected_year}-01-01", f"{selected_year}-12-31"],
+                    tickformat='%b %Y',
+                    dtick='M2',  # Show tick every 2 months for less clutter
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.1)'
+                ),
+                yaxis=dict(
+                    title="Pass Rate (%)",
+                    range=[0, 105],
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.1)'
+                ),
+                hovermode='x unified',
+                plot_bgcolor='rgba(250,250,250,0.3)'
             )
             st.plotly_chart(fig_trend, use_container_width=True)
             
@@ -653,52 +868,53 @@ def scene_quality():
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- Step 4: The Sanitation Check ---
-    st.markdown("<div class='section-header'>🚽 Sanitation Check <span style='font-size:14px;color:#6b7280;font-weight:400'>| The 'Forgotten' Half</span></div>", unsafe_allow_html=True)
-    
-    s_col1, s_col2 = st.columns(2)
-    
-    with s_col1:
-        #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-        st.markdown("**Wastewater Treatment Efficiency**")
+    # --- Step 4: The Sanitation Check (Only show when Sanitation or Both selected) ---
+    if service_type in ["Sanitation", "Both"]:
+        st.markdown("<div class='section-header'>🚽 Sanitation Check <span style='font-size:14px;color:#6b7280;font-weight:400'>| The 'Forgotten' Half</span></div>", unsafe_allow_html=True)
         
-        ww_metrics = df_s_filt.agg({
-            'ww_collected': 'sum',
-            'ww_treated': 'sum',
-            'ww_reused': 'sum'
-        }).reset_index()
-        ww_metrics.columns = ['Stage', 'Volume']
+        s_col1, s_col2 = st.columns(2)
         
-        fig_funnel = go.Figure(go.Funnel(
-            y=ww_metrics['Stage'],
-            x=ww_metrics['Volume'],
-            textinfo="value+percent initial",
-            marker=dict(color=["#60a5fa", "#818cf8", "#a78bfa"])
-        ))
-        fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
-        st.plotly_chart(fig_funnel, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        with s_col1:
+            #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+            st.markdown("**Wastewater Treatment Efficiency**")
+            
+            ww_metrics = df_s_filt.agg({
+                'ww_collected': 'sum',
+                'ww_treated': 'sum',
+                'ww_reused': 'sum'
+            }).reset_index()
+            ww_metrics.columns = ['Stage', 'Volume']
+            
+            fig_funnel = go.Figure(go.Funnel(
+                y=ww_metrics['Stage'],
+                x=ww_metrics['Volume'],
+                textinfo="value+percent initial",
+                marker=dict(color=["#60a5fa", "#818cf8", "#a78bfa"])
+            ))
+            fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+            st.plotly_chart(fig_funnel, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
-    with s_col2:
-        #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-        st.markdown("**Sewer Health: Blockages**")
-        
-        # Blockages from financial data
-        total_blocks = df_f_filt['blocks'].sum() if not df_f_filt.empty else 0
-        
-        # Trend if possible
-        if not df_f_filt.empty:
-            blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
-            fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
-            fig_blocks.update_traces(line_color='#f87171')
-            fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
+        with s_col2:
+            #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+            st.markdown("**Sewer Health: Blockages**")
             
-            st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
-            st.plotly_chart(fig_blocks, use_container_width=True)
-        else:
-            st.info("No blockage data available for selected filters.")
+            # Blockages from financial data
+            total_blocks = df_f_filt['blocks'].sum() if not df_f_filt.empty else 0
             
-        st.markdown("</div>", unsafe_allow_html=True)
+            # Trend if possible
+            if not df_f_filt.empty:
+                blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
+                fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
+                fig_blocks.update_traces(line_color='#f87171')
+                fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
+                
+                st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
+                st.plotly_chart(fig_blocks, use_container_width=True)
+            else:
+                st.info("No blockage data available for selected filters.")
+                
+            st.markdown("</div>", unsafe_allow_html=True)
 
     # --- Step 5: Customer Service Performance ---
     st.markdown("<div class='section-header'>📞 Customer Service Performance <span style='font-size:14px;color:#6b7280;font-weight:400'>| Complaints & Resolution</span></div>", unsafe_allow_html=True)
@@ -985,6 +1201,213 @@ def scene_quality():
             st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
             st.plotly_chart(fig_gauge, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
+
+    # ============================================================================
+    # DATA EXPORT SECTION
+    # ============================================================================
+    
+    st.markdown("---")
+    st.markdown("<div class='section-header'>📦 Data Export</div>", unsafe_allow_html=True)
+    
+    export_tab1, export_tab2 = st.tabs(["📊 Service Data", "📈 Calculated Metrics"])
+    
+    # TAB 1: SERVICE DATA EXPORT
+    with export_tab1:
+        st.markdown("**Export filtered service data**")
+        
+        # Display options
+        show_all_cols = st.checkbox("Show all columns", value=False, key="show_all_quality")
+        
+        if show_all_cols:
+            display_df = df_s_filt
+        else:
+            key_columns = ['country', 'zone', 'year', 'month', 'tests_conducted_chlorine', 'test_passed_chlorine', 
+                          'test_conducted_ecoli', 'tests_passed_ecoli', 'complaints', 'resolved']
+            display_df = df_s_filt[[col for col in key_columns if col in df_s_filt.columns]]
+        
+        st.dataframe(display_df, use_container_width=True, height=400)
+        
+        # Export options
+        export_col1, export_col2, export_col3 = st.columns(3)
+        
+        with export_col1:
+            csv_data = df_s_filt.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_data,
+                file_name=f"service_quality_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_quality_csv"
+            )
+        
+        with export_col2:
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_s_filt.to_excel(writer, sheet_name='Service Data', index=False)
+            buffer.seek(0)
+            
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer,
+                file_name=f"service_quality_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_quality_excel"
+            )
+        
+        with export_col3:
+            json_str = df_s_filt.to_json(orient='records', indent=2, default_handler=str)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str,
+                file_name=f"service_quality_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_quality_json"
+            )
+    
+    # TAB 2: CALCULATED METRICS EXPORT
+    with export_tab2:
+        st.markdown("**All calculated quality metrics in one file**")
+        st.info("📌 This file contains all derived metrics calculated from the raw data for easy analysis and reporting.")
+        
+        # Zone-Level Metrics
+        zone_metrics = pd.DataFrame()
+        if 'zone' in df_s_filt.columns:
+            zone_agg = df_s_filt.groupby('zone').agg({
+                'tests_conducted_chlorine': 'sum',
+                'test_passed_chlorine': 'sum',
+                'test_conducted_ecoli': 'sum',
+                'tests_passed_ecoli': 'sum',
+                'complaints': 'sum',
+                'resolved': 'sum'
+            }).reset_index()
+            
+            # Calculate rates
+            zone_agg['chlorine_compliance_rate'] = (zone_agg['test_passed_chlorine'] / zone_agg['tests_conducted_chlorine'] * 100).fillna(0)
+            zone_agg['ecoli_compliance_rate'] = (zone_agg['tests_passed_ecoli'] / zone_agg['test_conducted_ecoli'] * 100).fillna(0)
+            zone_agg['resolution_rate'] = (zone_agg['resolved'] / zone_agg['complaints'] * 100).fillna(0)
+            zone_agg['metric_type'] = 'Zone Summary'
+            zone_metrics = zone_agg
+        
+        # Monthly Trend Metrics
+        monthly_metrics = pd.DataFrame()
+        if 'year' in df_s_filt.columns and 'month' in df_s_filt.columns:
+            monthly_agg = df_s_filt.groupby(['year', 'month']).agg({
+                'tests_conducted_chlorine': 'sum',
+                'test_passed_chlorine': 'sum',
+                'complaints': 'sum',
+                'resolved': 'sum'
+            }).reset_index()
+            
+            monthly_agg['compliance_rate'] = (monthly_agg['test_passed_chlorine'] / monthly_agg['tests_conducted_chlorine'] * 100).fillna(0)
+            monthly_agg['resolution_rate'] = (monthly_agg['resolved'] / monthly_agg['complaints'] * 100).fillna(0)
+            monthly_agg['metric_type'] = 'Monthly Trend'
+            monthly_metrics = monthly_agg
+        
+        # Overall Summary Metrics
+        summary_metrics = pd.DataFrame({
+            'Metric': [
+                'Water Quality Compliance Rate (%)',
+                'Chlorine Test Compliance (%)',
+                'E.Coli Test Compliance (%)',
+                'Total Complaints',
+                'Total Resolved',
+                'Complaint Resolution Rate (%)',
+                'Average Service Hours',
+                'Blocks per 100km Sewer',
+                'Asset Health Score',
+                'Total Tests Conducted (Chlorine)',
+                'Total Tests Conducted (E.Coli)',
+                'Report Generated',
+                'Data Period'
+            ],
+            'Value': [
+                f"{compliance_rate:.2f}",
+                f"{rate_cl:.2f}",
+                f"{rate_ec:.2f}",
+                f"{total_complaints:,.0f}",
+                f"{total_resolved:,.0f}",
+                f"{resolution_rate:.2f}",
+                f"{avg_service_hours:.2f}",
+                f"{blocks_per_100km:.2f}",
+                f"{asset_health_score:.2f}" if asset_health_score is not None else "N/A",
+                f"{conducted_cl:,.0f}",
+                f"{conducted_ec:,.0f}",
+                pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                f"Year {selected_year}" if selected_year else "All Years"
+            ]
+        })
+        
+        # Display zone metrics if available
+        if not zone_metrics.empty:
+            st.subheader("Zone-Level Metrics")
+            st.dataframe(zone_metrics, use_container_width=True, height=200)
+        
+        # Display monthly metrics if available
+        if not monthly_metrics.empty:
+            st.subheader("Monthly Trend Metrics")
+            st.dataframe(monthly_metrics, use_container_width=True, height=200)
+        
+        # Display summary metrics
+        st.subheader("Overall Summary Metrics")
+        st.dataframe(summary_metrics, use_container_width=True, height=300)
+        
+        # Export calculated metrics
+        export_metric_col1, export_metric_col2, export_metric_col3 = st.columns(3)
+        
+        with export_metric_col1:
+            # Combined metrics CSV
+            combined_metrics_list = [summary_metrics.assign(metric_category='Overall_Summary')]
+            if not zone_metrics.empty:
+                combined_metrics_list.insert(0, zone_metrics.assign(metric_category='Zone_Level'))
+            if not monthly_metrics.empty:
+                combined_metrics_list.insert(0, monthly_metrics.assign(metric_category='Monthly_Trend'))
+            
+            combined_metrics = pd.concat(combined_metrics_list, ignore_index=True, sort=False)
+            
+            csv_metrics = combined_metrics.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Metrics as CSV",
+                data=csv_metrics,
+                file_name=f"quality_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_quality_metrics_csv"
+            )
+        
+        with export_metric_col2:
+            # Excel with multiple sheets
+            buffer_metrics = io.BytesIO()
+            with pd.ExcelWriter(buffer_metrics, engine='openpyxl') as writer:
+                if not zone_metrics.empty:
+                    zone_metrics.to_excel(writer, sheet_name='Zone_Metrics', index=False)
+                if not monthly_metrics.empty:
+                    monthly_metrics.to_excel(writer, sheet_name='Monthly_Metrics', index=False)
+                summary_metrics.to_excel(writer, sheet_name='Summary_Metrics', index=False)
+            buffer_metrics.seek(0)
+            
+            st.download_button(
+                label="📥 Download Metrics as Excel",
+                data=buffer_metrics,
+                file_name=f"quality_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_quality_metrics_excel"
+            )
+        
+        with export_metric_col3:
+            # JSON export for metrics
+            metrics_json = {
+                'zone_metrics': zone_metrics.to_dict(orient='records') if not zone_metrics.empty else [],
+                'monthly_metrics': monthly_metrics.to_dict(orient='records') if not monthly_metrics.empty else [],
+                'summary_metrics': summary_metrics.to_dict(orient='records'),
+                'generated_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            json_str_metrics = json.dumps(metrics_json, indent=2, default=str)
+            st.download_button(
+                label="📥 Download Metrics as JSON",
+                data=json_str_metrics,
+                file_name=f"quality_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_quality_metrics_json"
+            )
 
     # --- Step 7: Data Quality & Alerts Section (Footer) ---
     st.markdown("---")
