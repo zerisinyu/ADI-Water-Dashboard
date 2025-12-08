@@ -672,16 +672,20 @@ def _render_overview_banner() -> None:
                     if countries:
                         current_country = countries[0]
                         st.session_state["selected_country"] = current_country
+                # Ensure the session key exists to avoid KeyError on rerun callbacks
+                if "header_country_select" not in st.session_state:
+                    st.session_state["header_country_select"] = current_country
                 
                 # Check if country selector should be locked (non-master users)
                 is_country_locked = user is not None and user.role != UserRole.MASTER_USER
                 
                 def on_country_change():
                     """Handle country selection change with access validation."""
-                    new_country = st.session_state["header_country_select"]
+                    new_country = st.session_state.get("header_country_select", current_country)
                     # Validate the selection against user access
                     validated = validate_country_selection(new_country)
                     st.session_state["selected_country"] = validated
+                    st.session_state["header_country_select"] = validated
                 
                 if is_country_locked:
                     # Show locked indicator for restricted users
