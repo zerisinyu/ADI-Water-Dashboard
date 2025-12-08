@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
-from typing import Dict, Iterator, List, Optional, Tuple
-import pandas as pd
-
 from pathlib import Path
+import tomllib
+from dataclasses import dataclass
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 load_dotenv()
@@ -71,12 +71,50 @@ class LLMConfig:
     max_tokens: int = 4096
 
 
+_local_secrets_cache: Optional[Dict[str, Any]] = None  # type: ignore[name-defined]
+
+
+def _load_local_secrets() -> Optional[Dict[str, Any]]:
+    """Load secrets from Dashboard/.streamlit/secrets.toml if st.secrets is empty."""
+    global _local_secrets_cache
+    if _local_secrets_cache is not None:
+        return _local_secrets_cache
+    secrets_path = Path(__file__).resolve().parent / ".streamlit" / "secrets.toml"
+    if secrets_path.exists():
+        try:
+            data = tomllib.loads(secrets_path.read_text())
+            _local_secrets_cache = data
+            return data
+        except Exception:
+            _local_secrets_cache = {}
+            return _local_secrets_cache
+    return None
+
+
 def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Fetch a secret from st.secrets, dashboard-local secrets, or env vars."""
     try:
-        return st.secrets.get(name, os.getenv(name, default))  # type: ignore[attr-defined]
+        val = st.secrets.get(name)  # type: ignore[attr-defined]
+        if val not in (None, ""):
+            return val
+        # Namespaced under [llm] in st.secrets
+        llm_secrets = getattr(st.secrets, "get", lambda *_: None)("llm")  # type: ignore[attr-defined]
+        if isinstance(llm_secrets, dict):
+            val = llm_secrets.get(name)
+            if val not in (None, ""):
+                return val
     except Exception:
-        # st.secrets may be unavailable in some contexts
-        return os.getenv(name, default)
+        pass
+
+    local = _load_local_secrets() or {}
+    if name in local and local.get(name) not in (None, ""):
+        return local.get(name)  # type: ignore[return-value]
+    if "llm" in local and isinstance(local["llm"], dict):
+        val = local["llm"].get(name)
+        if val not in (None, ""):
+            return val  # type: ignore[return-value]
+
+    return os.getenv(name, default)
 
 
 class ChatLLM:
@@ -112,6 +150,7 @@ class ChatLLM:
     def _ensure_gemini(self):
         if self._gemini_model is not None:
             return self._gemini_model
+
         api_key = _get_secret("GEMINI_API_KEY") or _get_secret("GOOGLE_API_KEY")
         if not api_key:
             raise LLMNotConfiguredError(
@@ -348,4 +387,3 @@ class ChatLLM:
         others = [m for m in messages if m.get("role") != "system"]
         trimmed = (system[:1] if system else []) + others[-(max_messages - (1 if system else 0)) :]
         return trimmed
-

@@ -41,6 +41,8 @@ import hmac
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List, Any, Tuple
+from pathlib import Path
+import tomllib
 from dataclasses import dataclass, field
 from enum import Enum
 import streamlit as st
@@ -213,6 +215,7 @@ def _user_from_config(username: str, config: Dict[str, Any]) -> Optional[User]:
     role_lookup = {r.value: r for r in UserRole}
     role = role_lookup.get(role_value)
     password_hash = config.get("password_hash")
+
     if role is None or not password_hash:
         return None
 
@@ -220,6 +223,7 @@ def _user_from_config(username: str, config: Dict[str, Any]) -> Optional[User]:
     if isinstance(assigned_country, str) and not assigned_country.strip():
         assigned_country = None
 
+    
     return User(
         username=username,
         password_hash=password_hash,
@@ -241,18 +245,27 @@ def _load_users_from_secrets() -> Optional[Dict[str, User]]:
     role = "master_user"
     assigned_country = "Uganda"
     """
+    secrets_users: Optional[Dict[str, Any]] = None
+    # First try standard Streamlit secrets
     try:
         secrets_users = st.secrets.get("users")  # type: ignore[attr-defined]
     except Exception:
-        return None
+        secrets_users = None
+    
+    if not secrets_users:
+        secrets_path = Path(__file__).parent / ".streamlit" / "secrets.toml"
+        if secrets_path.exists():
+            try:
+                data = tomllib.loads(secrets_path.read_text())
+                secrets_users = data.get("users")  # type: ignore[assignment]
+            except Exception:
+                secrets_users = None
 
     if not secrets_users:
         return None
 
     users: Dict[str, User] = {}
     for username, config in secrets_users.items():
-        if not isinstance(config, dict):
-            continue
         user = _user_from_config(username, config)
         if user:
             users[username.lower()] = user
@@ -268,91 +281,17 @@ def _get_demo_users() -> Dict[str, User]:
     """
     Get demo user database.
     
-    ⚠️ IMPORTANT: In production, replace this with a proper database or
-    configure users via Streamlit secrets. If secrets are provided under
-    [users] in .streamlit/secrets.toml, those will be used instead of the
-    built-in demo users.
-    
-    Default users:
-    - admin / admin123 -> Master User (all countries)
-    - uganda_admin / uganda123 -> Country Admin (Uganda)
-    - cameroon_admin / cameroon123 -> Country Admin (Cameroon)
-    - lesotho_admin / lesotho123 -> Country Admin (Lesotho)
-    - malawi_admin / malawi123 -> Country Admin (Malawi)
-    - analyst1 / analyst123 -> Analyst (Uganda)
-    - viewer1 / viewer123 -> Viewer (Uganda)
+    ⚠️ IMPORTANT: Credentials are expected to come from Streamlit secrets
+    ([users] section in .streamlit/secrets.toml). The hard-coded demo users
+    have been removed to avoid shipping passwords in source.
     """
-    # Prefer secrets-backed user config to keep credentials out of source
+    # Load secrets-backed user config to keep credentials out of source
     secret_users = _load_users_from_secrets()
     if secret_users:
         return secret_users
-
-    users = {
-        "admin": User(
-            username="admin",
-            password_hash=_hash_password("admin123", "fixed_salt_admin"),
-            role=UserRole.MASTER_USER,
-            assigned_country=None,  # Access to all countries
-            full_name="System Administrator",
-            email="admin@waterutility.org",
-            is_active=True
-        ),
-        "uganda_admin": User(
-            username="uganda_admin",
-            password_hash=_hash_password("uganda123", "fixed_salt_uganda"),
-            role=UserRole.COUNTRY_ADMIN,
-            assigned_country="Uganda",
-            full_name="Uganda Country Admin",
-            email="uganda.admin@waterutility.org",
-            is_active=True
-        ),
-        "cameroon_admin": User(
-            username="cameroon_admin",
-            password_hash=_hash_password("cameroon123", "fixed_salt_cameroon"),
-            role=UserRole.COUNTRY_ADMIN,
-            assigned_country="Cameroon",
-            full_name="Cameroon Country Admin",
-            email="cameroon.admin@waterutility.org",
-            is_active=True
-        ),
-        "lesotho_admin": User(
-            username="lesotho_admin",
-            password_hash=_hash_password("lesotho123", "fixed_salt_lesotho"),
-            role=UserRole.COUNTRY_ADMIN,
-            assigned_country="Lesotho",
-            full_name="Lesotho Country Admin",
-            email="lesotho.admin@waterutility.org",
-            is_active=True
-        ),
-        "malawi_admin": User(
-            username="malawi_admin",
-            password_hash=_hash_password("malawi123", "fixed_salt_malawi"),
-            role=UserRole.COUNTRY_ADMIN,
-            assigned_country="Malawi",
-            full_name="Malawi Country Admin",
-            email="malawi.admin@waterutility.org",
-            is_active=True
-        ),
-        "analyst1": User(
-            username="analyst1",
-            password_hash=_hash_password("analyst123", "fixed_salt_analyst1"),
-            role=UserRole.ANALYST,
-            assigned_country="Uganda",
-            full_name="Data Analyst (Uganda)",
-            email="analyst@waterutility.org",
-            is_active=True
-        ),
-        "viewer1": User(
-            username="viewer1",
-            password_hash=_hash_password("viewer123", "fixed_salt_viewer1"),
-            role=UserRole.VIEWER,
-            assigned_country="Uganda",
-            full_name="Viewer (Uganda)",
-            email="viewer@waterutility.org",
-            is_active=True
-        ),
-    }
-    return users
+    
+    # If no secrets are configured, return empty dict to avoid embedding passwords in code
+    return {}
 
 
 def get_user(username: str) -> Optional[User]:
