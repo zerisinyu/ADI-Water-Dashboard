@@ -94,11 +94,9 @@ def _load_local_secrets() -> Optional[Dict[str, Any]]:
 def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     """Fetch a secret from st.secrets, dashboard-local secrets, or env vars."""
     try:
-        val = st.secrets[name]  # type: ignore[attr-defined]
+        val = st.secrets.get(name)  # type: ignore[attr-defined]
         if val not in (None, ""):
-            return val
-        
-        # Namespaced under [llm] in st.secrets
+            return val        
         llm_secrets = getattr(st.secrets, "get", lambda *_: None)("llm")  # type: ignore[attr-defined]
         val = llm_secrets.get(name)
         if val not in (None, ""):
