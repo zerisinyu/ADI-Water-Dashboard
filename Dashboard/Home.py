@@ -1,13 +1,48 @@
+"""
+Water Utility Dashboard - Main Application
+==========================================
+
+This is the main entry point for the Water Utility Performance Dashboard.
+It includes:
+- User authentication and role-based access control
+- Data access filtering based on user permissions
+- Country and zone restrictions for data privacy compliance
+
+Authentication Flow:
+1. User lands on login page if not authenticated
+2. After successful login, user sees dashboard filtered to their access level
+3. Non-master users can only see data from their assigned country
+4. All data queries are filtered through access control checks
+"""
+
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Callable
 from urllib.parse import urlencode
+from datetime import datetime
 
 import streamlit as st
 
-from utils import get_zones
+# Import authentication module - provides role-based access control
+from auth import (
+    init_session_state as init_auth_state,
+    is_authenticated,
+    get_current_user,
+    get_allowed_countries,
+    can_access_country,
+    validate_country_selection,
+    check_feature_access,
+    render_login_page,
+    render_user_info_sidebar,
+    render_access_denied_message,
+    render_feature_disabled_message,
+    render_admin_settings_page,
+    UserRole,
+)
+
+from utils import get_zones, prepare_service_data
 from llm import ChatLLM, LLMNotConfiguredError
 
 # Scenes are implemented in src_page/*
@@ -77,6 +112,11 @@ def _inject_styles() -> None:
 
 
 def _chat_enabled() -> bool:
+    """Check if chat widget is enabled and user has access."""
+    # Check if user has access to AI assistant feature
+    if not check_feature_access("ai_assistant"):
+        return False
+    
     try:
         flag = st.secrets.get("ENABLE_CHAT_WIDGET", os.getenv("ENABLE_CHAT_WIDGET", "true"))
     except Exception:
@@ -125,7 +165,19 @@ def _build_chat_open_href() -> str:
 
 
 def _ensure_chat_state() -> None:
+    """Initialize chat state with user context for access control."""
     if "chat_messages" not in st.session_state:
+        # Include user context in system prompt for personalized responses
+        user = get_current_user()
+        user_context = ""
+        if user:
+            user_context = (
+                f"\n\nUser Context:\n"
+                f"- User: {user.full_name} ({user.role.display_name})\n"
+                f"- Access: {'All countries' if user.role == UserRole.MASTER_USER else user.assigned_country}\n"
+                f"- Important: Only provide insights about data the user has access to."
+            )
+        
         st.session_state["chat_messages"] = [
             {
                 "role": "system",
@@ -139,6 +191,7 @@ def _ensure_chat_state() -> None:
                     "4. Use executive language: 'critical', 'opportunity', 'risk', not technical jargon.\n"
                     "5. Reference specific zones, time periods, and metrics from the current dashboard context.\n"
                     "Keep responses concise (2-3 sentences) unless asked for detailed analysis."
+                    + user_context
                 ),
             }
         ]
@@ -150,7 +203,12 @@ def _render_majibot_fab() -> None:
         return
     href = _build_chat_open_href()
     st.markdown(
-        f"<a target=\"_self\" rel=\"noopener\" href=\"{href}\" class=\"chat-fab\" title=\"Chat with assistant\" aria-label=\"Open chat\">💬</a>",
+        f"""
+        <a target="_self" rel="noopener" href="{href}" class="majibot-fab" 
+           title="Chat with MajiBot" aria-label="Open MajiBot">
+            <span class="majibot-icon">🤖</span>
+        </a>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -181,7 +239,32 @@ def _render_chat_panel_sidebar() -> None:
                 unsafe_allow_html=True,
             )
 
-        # Input + actions in a form so we can clear on submit safely
+        # If last message is from the user, stream assistant reply first (keeps input at bottom)
+        last_msg = messages[-1] if messages else None
+        if last_msg and last_msg.get("role") == "user":
+            try:
+                client = ChatLLM()
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                placeholder = st.empty()
+                acc = ""
+                for chunk in client.stream_chat(trimmed):
+                    acc += chunk
+                    placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + acc + "▌</div>",
+                        unsafe_allow_html=True,
+                    )
+                placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + acc + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if acc.strip():
+                    messages.append({"role": "assistant", "content": acc})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
+            except Exception as e:
+                _render_llm_error(e)
+
+        # Input + actions in a form so we can clear on submit safely (rendered at bottom)
         with st.form("chat_form_sidebar", clear_on_submit=True):
             prompt = st.text_area(
                 "Ask a question",
@@ -189,10 +272,9 @@ def _render_chat_panel_sidebar() -> None:
                 height=90,
                 placeholder="Ask about metrics, filters, or data…",
             )
-            col_send, col_close = st.columns(2)
-            send_clicked = col_send.form_submit_button("Send", use_container_width=True)
-            close_clicked = col_close.form_submit_button("Close", use_container_width=True)
-        if close_clicked:
+            send_clicked = st.form_submit_button("Send", use_container_width=True)
+
+        if st.button("Close", key="sidebar_close_btn", use_container_width=True):
             _set_query_param("chat", None)
             st.rerun()
 
@@ -208,29 +290,6 @@ def _render_chat_panel_sidebar() -> None:
                     st.warning("You have reached the chat limit for this session.")
                     return
                 messages.append({"role": "user", "content": text})
-                # Keep history short
-                try:
-                    client = ChatLLM()
-                except LLMNotConfiguredError as e:
-                    st.error(str(e))
-                    return
-                trimmed = ChatLLM.trim_history(messages, max_messages=16)
-
-                # Streaming response into a placeholder
-                placeholder = st.empty()
-                acc = ""
-                try:
-                    for chunk in client.stream_chat(trimmed):
-                        acc += chunk
-                        placeholder.markdown(
-                            f"<div class='chat-bubble chat-bubble--assistant'>{acc}</div>",
-                            unsafe_allow_html=True,
-                        )
-                except Exception as e:
-                    st.error(f"Chat error: {e}")
-                    return
-
-                messages.append({"role": "assistant", "content": acc})
                 st.rerun()
 
 
@@ -239,86 +298,225 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
 
-    st.markdown(
-        "<div class='chat-sidebar-header'><h3 style='margin:0'>Assistant</h3>"
-        "<a class='chat-close-link' href='?'>Close</a></div>",
-        unsafe_allow_html=True,
-    )
+    # Custom Header
+    st.markdown("""
+        <div class="gemini-header">
+            <div class="gemini-title">
+                <span>✨</span> Assistant
+            </div>
+            <a class='chat-close-link' href='?'>Close</a>
+        </div>
+    """, unsafe_allow_html=True)
 
-    for m in messages:
-        role = m.get("role")
-        if role == "system":
-            continue
-        content = m.get("content", "")
-        css_class = "chat-bubble--user" if role == "user" else "chat-bubble--assistant"
+    # Filter out system message
+    display_messages = [m for m in messages if m.get("role") != "system"]
+    
+    if not display_messages:
         st.markdown(
-            f"<div class='chat-bubble {css_class}'>{content}</div>",
-            unsafe_allow_html=True,
+            "<div style='text-align:center;color:#64748b;margin-top:2rem;'>"
+            "<p>👋 Hi! I'm your data assistant.</p>"
+            "<p style='font-size:0.9em'>Ask me about NRW, collection efficiency, or specific zones.</p>"
+            "</div>", 
+            unsafe_allow_html=True
         )
 
-    with st.form(f"chat_form_modal{input_key_suffix}", clear_on_submit=True):
-        prompt = st.text_area(
-            "Ask a question",
-            key=f"chat_input_text{input_key_suffix}",
-            height=90,
-            placeholder="Ask about metrics, filters, or data…",
-        )
-        col_send, col_close = st.columns(2)
-        send_clicked = col_send.form_submit_button("Send", use_container_width=True, key=f"send_btn{input_key_suffix}")
-        close_clicked = col_close.form_submit_button("Close", use_container_width=True, key=f"close_btn{input_key_suffix}")
-    if close_clicked:
-        _set_query_param("chat", None)
-        st.rerun()
+    for msg in display_messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        
+        # Map role to streamlit avatar/name
+        st_role = "user" if role == "user" else "assistant"
+        avatar = None if role == "user" else "✨"
+        css_class = "chat-bubble chat-bubble--user" if role == "user" else "chat-bubble chat-bubble--assistant"
+        
+        with st.chat_message(st_role, avatar=avatar):
+            st.markdown(f"<div class='{css_class}'>" + content + "</div>", unsafe_allow_html=True)
 
-    if send_clicked:
-        text = (prompt or "").strip()
-        if not text:
-            st.warning("Please enter a question.")
-        else:
-            max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
-            user_turns = sum(1 for m in messages if m.get("role") == "user")
-            if user_turns >= max_turns:
-                st.warning("You have reached the chat limit for this session.")
-                return
-            messages.append({"role": "user", "content": text})
+    # Handle response generation after rerun
+    last_msg = messages[-1] if messages else None
+    if last_msg and last_msg.get("role") == "user":
+        with st.chat_message("assistant", avatar="✨"):
             try:
                 client = ChatLLM()
-            except LLMNotConfiguredError as e:
-                st.error(str(e))
-                return
-            trimmed = ChatLLM.trim_history(messages, max_messages=16)
-            placeholder = st.empty()
-            acc = ""
-            try:
+                trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                response_placeholder = st.empty()
+                full_response = ""
                 for chunk in client.stream_chat(trimmed):
-                    acc += chunk
-                    placeholder.markdown(
-                        f"<div class='chat-bubble chat-bubble--assistant'>{acc}</div>",
+                    full_response += chunk
+                    response_placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
                         unsafe_allow_html=True,
                     )
+                response_placeholder.markdown(
+                    f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
+                    unsafe_allow_html=True,
+                )
+                if full_response.strip():
+                    messages.append({"role": "assistant", "content": full_response})
+                else:
+                    _render_llm_error(RuntimeError("No content returned by model"))
             except Exception as e:
-                st.error(f"Chat error: {e}")
-                return
-            messages.append({"role": "assistant", "content": acc})
-            st.rerun()
+                _render_llm_error(e)
+
+    # Chat Input (render at bottom)
+    if prompt := st.chat_input("Ask a question about your data...", key=f"chat_input{input_key_suffix}"):
+        max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+        user_turns = sum(1 for m in messages if m.get("role") == "user")
+        if user_turns >= max_turns:
+            st.warning("You have reached the chat limit for this session.")
+            return
+            
+        # Add user message
+        messages.append({"role": "user", "content": prompt})
+        st.rerun()
 
 
 def _render_overview_banner() -> None:
-    zone = st.session_state.get("selected_zone")
-    country = st.session_state.get("selected_country")
+    """Render the main dashboard header with access-controlled filters."""
+    # Get current user for access control
+    user = get_current_user()
     
-    if zone and zone != 'All':
-        location_label = f"{zone}, {country}" if country and country != 'All' else zone
-    elif country and country != 'All':
-        location_label = country
-    else:
-        location_label = "All Locations"
+    # Sync state for country - initialize based on user access
+    if "selected_country" not in st.session_state:
+        # For non-master users, default to their assigned country
+        if user and user.role != UserRole.MASTER_USER and user.assigned_country:
+            st.session_state["selected_country"] = user.assigned_country
+        else:
+            st.session_state["selected_country"] = "All"
+    
+    current_country = st.session_state["selected_country"]
+    
+    # Validate country selection against user access (prevents unauthorized access)
+    current_country = validate_country_selection(current_country)
+    st.session_state["selected_country"] = current_country
+    
+    # Header Layout
+    with st.container():
+        # Top Row: Title & Clock
+        col_title, col_clock = st.columns([3, 1])
+        with col_title:
+            # Show access level badge for non-master users
+            access_badge = ""
+            if user and user.role != UserRole.MASTER_USER:
+                access_badge = f"""
+                <span style='background: #3b82f620; color: #3b82f6; padding: 4px 12px; 
+                             border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+                             margin-left: 12px; vertical-align: middle;'>
+                    🔒 {user.assigned_country} Only
+                </span>
+                """
+            
+            st.markdown(f"""
+<h1 style='margin-bottom: 0; font-size: 2.2rem;'>Executive Dashboard{access_badge}</h1>
+<p style='color: #64748b; font-size: 1.1em; margin-top: 0.5rem; font-weight: 500;'>Water Utility Performance</p>
+""", unsafe_allow_html=True)
         
-    month = st.session_state.get("selected_month") or "All"
-    year = st.session_state.get("selected_year") or "All"
+        with col_clock:
+            now = datetime.now()
+            st.markdown(f"""
+<div style='text-align: right; background: #ffffff; padding: 12px; border-radius: 10px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05);'>
+    <div style='color: #64748b; font-size: 0.85em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;'>{now.strftime('%A, %d %B %Y')}</div>
+    <div style='color: #0f172a; font-size: 1.8em; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums;'>{now.strftime('%H:%M')}</div>
+    <div style='color: #10b981; font-size: 0.75em; font-weight: 600; margin-top: 4px;'>● Live Data Stream</div>
+</div>
+""", unsafe_allow_html=True)
+            
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        
+        # Controls Row
+        with st.container():
+            st.markdown("""
+                <style>
+                    div[data-testid="stHorizontalBlock"] {
+                        align-items: center;
+                    }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            c1, c2, c3 = st.columns([1.5, 1.5, 2])
+            
+            with c1:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Region Selection</div>', unsafe_allow_html=True)
+                
+                # Country Selector - Restricted based on user access level
+                allowed_countries = get_allowed_countries()
+                
+                if user and user.role == UserRole.MASTER_USER:
+                    # Master users can select "All" or any specific country
+                    countries = ["All"] + allowed_countries
+                else:
+                    # Non-master users can only see their assigned country
+                    countries = allowed_countries
+                
+                # Ensure current selection is valid
+                if current_country not in countries:
+                    if countries:
+                        current_country = countries[0]
+                        st.session_state["selected_country"] = current_country
+                
+                # Check if country selector should be locked (non-master users)
+                is_country_locked = user is not None and user.role != UserRole.MASTER_USER
+                
+                def on_country_change():
+                    """Handle country selection change with access validation."""
+                    new_country = st.session_state["header_country_select"]
+                    # Validate the selection against user access
+                    validated = validate_country_selection(new_country)
+                    st.session_state["selected_country"] = validated
+                
+                if is_country_locked:
+                    # Show locked indicator for restricted users
+                    st.markdown(f"""
+                    <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+                                padding: 10px 14px; display: flex; align-items: center; gap: 8px;'>
+                        <span style='font-size: 1rem;'>🔒</span>
+                        <span style='font-weight: 600; color: #334155;'>{current_country}</span>
+                        <span style='font-size: 0.7rem; color: #94a3b8;'>(Assigned Region)</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    # Master users can select any country
+                    st.selectbox(
+                        "Country",
+                        options=countries,
+                        index=countries.index(current_country) if current_country in countries else 0,
+                        key="header_country_select",
+                        label_visibility="collapsed",
+                        on_change=on_country_change
+                    )
 
-    st.title("Water Utility Performance Dashboard")
-    st.caption(f"Overview for {location_label} | Year: {year} | Month: {month}")
+            with c2:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Time Period</div>', unsafe_allow_html=True)
+                if "view_period" not in st.session_state:
+                    st.session_state["view_period"] = "Monthly"
+                    
+                st.radio(
+                    "Period",
+                    ["YTD", "Quarterly", "Monthly"],
+                    horizontal=True,
+                    key="view_period",
+                    label_visibility="collapsed"
+                )
+
+            with c3:
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Quick Actions</div>', unsafe_allow_html=True)
+                ac1, ac2, ac3 = st.columns(3)
+                
+                with ac1:
+                    # Check if user can export data
+                    if check_feature_access("export_data"):
+                        st.button("📥 Report", key="btn_report", use_container_width=True, help="Download Executive Report")
+                    else:
+                        st.button("📥 Report", key="btn_report", use_container_width=True, disabled=True, 
+                                  help="Export not available for your role")
+                
+                with ac2:
+                    st.button("📅 Meeting", key="btn_meet", use_container_width=True, help="Schedule Meeting")
+                
+                with ac3:
+                    st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Alert Settings")
+        
+        st.markdown("---")
 
 
 def _sidebar_filters() -> None:
@@ -371,7 +569,12 @@ def _sidebar_filters() -> None:
 
 
 def _render_majibot_popup() -> None:
-    """Render MajiBot chat in a modal popup."""
+    """Render MajiBot chat in a modal popup with access control."""
+    # Check if user has access to AI assistant feature
+    if not check_feature_access("ai_assistant"):
+        render_feature_disabled_message("ai_assistant")
+        return
+    
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
     
@@ -473,7 +676,7 @@ def _render_majibot_popup() -> None:
         st.rerun()
 
 
-def _render_main_layout(scene_runner: Callable[[], None]) -> None:
+def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = True) -> None:
     chat_open = False
     if _chat_enabled():
         chat_param = (_get_query_param("chat") or "").lower()
@@ -481,46 +684,44 @@ def _render_main_layout(scene_runner: Callable[[], None]) -> None:
             chat_open = True
 
     st.markdown("<div class='shell'>", unsafe_allow_html=True)
-    _render_overview_banner()
+    if show_header:
+        _render_overview_banner()
     st.markdown("<div class='content-area'>", unsafe_allow_html=True)
     scene_runner()
     st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Chat launcher + panel/modal
-    if _chat_enabled():
-        _render_chat_fab()
-        chat_param = (_get_query_param("chat") or "").lower()
-        # Prefer modal positioned bottom-right (CSS override). If not supported, fallback to sidebar.
-        chat_shown = False
-        try:
-            dialog_fn = getattr(st, "dialog")  # type: ignore[attr-defined]
-        except Exception:
-            dialog_fn = getattr(st, "experimental_dialog", None)
-        if dialog_fn and chat_param == "open":
-            # Some Streamlit versions don't support width argument on dialog
-            try:
-                decorator = dialog_fn("Assistant", width="small")  # type: ignore[misc]
-            except TypeError:
-                decorator = dialog_fn("Assistant")
-
-            @decorator  # type: ignore[misc]
-            def _chat_modal():
-                _render_chat_modal_body("_modal")
-
-            _chat_modal()
-            chat_shown = True
-
-        if not chat_shown and chat_param == "open":
-            # Fallback to sidebar rendering
-            _render_chat_panel_sidebar()
-
+    # Render MajiBot popup in a dialog when open
+    if chat_open:
+        @st.dialog("MajiBot", width="large")
+        def show_majibot():
+            _render_majibot_popup()
+        
+        show_majibot()
+        # Still render the FAB behind the dialog, it will be hidden by CSS
+        _render_majibot_fab()
+    else:
+        # Show the floating button when chat is closed
+        if _chat_enabled():
+            _render_majibot_fab()
 
 
 def render_uhn_dashboard() -> None:
-    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
+    """Main dashboard entry point with authentication."""
+    st.set_page_config(page_title="Executive Dashboard - Water Utility Performance", page_icon="💧", layout="wide")
     _inject_styles()
-    _sidebar_filters()
+    
+    # Initialize authentication state
+    init_auth_state()
+    
+    # Check if user is authenticated
+    if not is_authenticated():
+        # Show login page
+        render_login_page()
+        return
+    
+    # User is authenticated - render user info in sidebar
+    render_user_info_sidebar()
 
     def run_scene():
         if scene_exec_page:
@@ -532,9 +733,21 @@ def render_uhn_dashboard() -> None:
 
 
 def render_scene_page(scene_key: str) -> None:
+    """Render a specific scene page with authentication and access control."""
     st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
     _inject_styles()
-    _sidebar_filters()
+    
+    # Initialize authentication state
+    init_auth_state()
+    
+    # Check if user is authenticated
+    if not is_authenticated():
+        # Show login page
+        render_login_page()
+        return
+    
+    # User is authenticated - render user info in sidebar
+    render_user_info_sidebar()
 
     def run_scene():
         if scene_key == "exec":
@@ -554,13 +767,18 @@ def render_scene_page(scene_key: str) -> None:
             scene_governance_page()
         elif scene_key == "sector":
             scene_sector_page()
+        elif scene_key == "admin":
+            # Admin settings page - access controlled within render_admin_settings_page
+            render_admin_settings_page()
         else:
             if scene_exec_page:
                 scene_exec_page()
             else:
                 st.error("Executive scene not found in src_page. Please ensure src_page/exec.py exists.")
 
-    _render_main_layout(run_scene)
+    # Admin page doesn't need the overview header
+    show_header = scene_key == "exec"
+    _render_main_layout(run_scene, show_header=show_header)
 
 
 if __name__ == "__main__":

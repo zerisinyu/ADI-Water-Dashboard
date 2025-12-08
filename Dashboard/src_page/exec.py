@@ -3,60 +3,84 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 from pathlib import Path
-from utils import load_json, conic_css as _conic_css, download_button as _download_button, scene_page_path as _scene_page_path, DATA_DIR
+from utils import (
+    load_json, 
+    conic_css as _conic_css, 
+    download_button as _download_button, 
+    scene_page_path as _scene_page_path, 
+    DATA_DIR, 
+    prepare_access_data, 
+    prepare_service_data,
+    filter_df_by_user_access,
+    validate_selected_country
+)
 from ai_insights import InsightsEngine, generate_board_brief_text
 
 @st.cache_data
-def load_dashboard_data():
+def _load_raw_dashboard_data():
     """
-    Load and prepare data for the executive dashboard.
+    Load raw dashboard data (internal, cached).
+    This loads all data without access filtering.
     """
     # 1. Load Billing Data (for Collection Efficiency & NRW consumption)
     billing_path = DATA_DIR / "all_data - billing.csv"
     if billing_path.exists():
-        # Read only necessary columns to save memory
         billing_cols = ["date", "consumption_m3", "billed", "paid", "country", "zone", "source"]
-        # Set low_memory=False to handle mixed types warning, and handle date parsing manually for robustness
         billing_df = pd.read_csv(billing_path, usecols=billing_cols, low_memory=False)
-        
-        # Clean up Date column
         billing_df["date"] = pd.to_datetime(billing_df["date"], errors="coerce")
-        
-        # Clean up Numeric columns (force numeric, coerce errors to NaN)
         for col in ["consumption_m3", "billed", "paid"]:
             billing_df[col] = pd.to_numeric(billing_df[col], errors="coerce")
-            
-        # Drop rows with invalid dates (essential for time-based filtering)
         billing_df = billing_df.dropna(subset=["date"])
     else:
         billing_df = pd.DataFrame(columns=["date", "consumption_m3", "billed", "paid", "country", "zone", "source"])
 
-    # 2. Load Financial Services Data (for Opex, Complaints)
+    # 2. Load Financial Services Data
     fin_path = DATA_DIR / "financial_services.csv"
     if fin_path.exists():
         fin_df = pd.read_csv(fin_path)
-        # Parse date "Jan/20" -> datetime
         fin_df["date"] = pd.to_datetime(fin_df["date_MMYY"], format="%b/%y")
     else:
         fin_df = pd.DataFrame(columns=["country", "city", "date", "sewer_revenue", "opex", "complaints", "resolved"])
 
-    # 3. Load Production Data (for NRW production, Service Hours)
+    # 3. Load Production Data
     prod_path = DATA_DIR / "production.csv"
     if prod_path.exists():
         prod_df = pd.read_csv(prod_path)
         prod_df["date"] = pd.to_datetime(prod_df["date_YYMMDD"])
-        
-        # Map Source to Zone using Billing Data
         if not billing_df.empty:
             source_map = billing_df[["source", "zone", "country"]].drop_duplicates().dropna()
-            # Merge zone info into production
             prod_df = prod_df.merge(source_map, on=["source", "country"], how="left")
-            # Fill missing zones with "Unknown" or keep NaN
             prod_df["zone"] = prod_df["zone"].fillna("Unknown")
     else:
         prod_df = pd.DataFrame(columns=["date", "production_m3", "service_hours", "country", "zone"])
 
-    return billing_df, fin_df, prod_df
+    # 4. Load National Data
+    nat_path = DATA_DIR / "all_national.csv"
+    if nat_path.exists():
+        nat_df = pd.read_csv(nat_path)
+    else:
+        nat_df = pd.DataFrame()
+
+    return billing_df, fin_df, prod_df, nat_df
+
+
+def load_dashboard_data():
+    """
+    Load and prepare data for the executive dashboard.
+    Data is automatically filtered based on user access permissions.
+    
+    Note: Access filtering is applied AFTER caching to ensure proper user isolation.
+    """
+    # Load raw cached data
+    billing_df, fin_df, prod_df, nat_df = _load_raw_dashboard_data()
+    
+    # Apply access control filtering (this happens on each call)
+    billing_df = filter_df_by_user_access(billing_df.copy(), "country")
+    fin_df = filter_df_by_user_access(fin_df.copy(), "country")
+    prod_df = filter_df_by_user_access(prod_df.copy(), "country")
+    nat_df = filter_df_by_user_access(nat_df.copy(), "country")
+
+    return billing_df, fin_df, prod_df, nat_df
 
 def filter_dataframe(df, country, zone, year, month):
     """
@@ -68,14 +92,20 @@ def filter_dataframe(df, country, zone, year, month):
     filtered = df.copy()
     
     if country and country != "All":
-        filtered = filtered[filtered["country"] == country]
+        if "country" in filtered.columns:
+            filtered = filtered[filtered["country"] == country]
     
     if zone and zone != "All":
         if "zone" in filtered.columns:
             filtered = filtered[filtered["zone"] == zone]
             
     if year and year != "All":
-        filtered = filtered[filtered["date"].dt.year == int(year)]
+        if "date" in filtered.columns:
+            filtered = filtered[filtered["date"].dt.year == int(year)]
+        elif "year" in filtered.columns:
+             filtered = filtered[filtered["year"] == int(year)]
+        elif "date_YY" in filtered.columns: # for national data
+             filtered = filtered[filtered["date_YY"] == int(year)]
         
     if month and month != "All":
         # Map month name to number
@@ -84,56 +114,158 @@ def filter_dataframe(df, country, zone, year, month):
             'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
         }
         m_num = month_map.get(month)
-        if m_num:
+        if m_num and "date" in filtered.columns:
             filtered = filtered[filtered["date"].dt.month == m_num]
             
     return filtered
 
-def scene_executive():
-    # --- 1. Load Data ---
-    billing_df, fin_df, prod_df = load_dashboard_data()
+def _render_gauge_card(title, value, sub_metrics, color_class, link_target, link_text):
+    colors = {
+        "status-good": "#10b981",
+        "status-warning": "#f59e0b",
+        "status-critical": "#ef4444"
+    }
+    gauge_color = colors.get(color_class, "#3b82f6")
+    
+    st.markdown(f"""<div class="metric-card">
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px;">
+        <div style="font-size:14px; font-weight:600; color:#64748b;">{title}</div>
+        <div style="background:{gauge_color}20; color:{gauge_color}; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">{value}%</div>
+    </div>
+    <div style="display:flex; justify-content:center; margin-bottom:12px;">
+        <div style="
+            width: 100px; height: 100px; border-radius: 50%;
+            background: radial-gradient(closest-side, white 79%, transparent 80% 100%),
+            conic-gradient({gauge_color} {value}%, #e2e8f0 0);
+            display: flex; align-items: center; justify-content: center;
+        ">
+            <span style="font-weight:700; color:{gauge_color}; font-size: 24px;">{value}%</span>
+        </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
+        {''.join([f'<div style="background:#f8fafc; padding:6px; border-radius:6px; text-align:center;"><div style="font-size:11px; color:#64748b;">{k}</div><div style="font-size:13px; font-weight:600; color:#334155;">{v}</div></div>' for k,v in sub_metrics.items()])}
+    </div>
+</div>""", unsafe_allow_html=True)
+    if link_target:
+        st.page_link(link_target, label=link_text, icon="👉", use_container_width=True)
 
-    # --- 2. Get Filters from Session State ---
+def _render_trend_card(title, score, status, sub_metrics, link_target, link_text):
+    color = "#10b981" if status == "Healthy" else "#f59e0b" if status == "At Risk" else "#ef4444"
+    st.markdown(f"""<div class="metric-card">
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:16px;">
+        <div style="font-size:14px; font-weight:600; color:#64748b;">{title}</div>
+        <div style="background:{color}20; color:{color}; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">{status}</div>
+    </div>
+    <div style="margin-bottom:16px;">
+        <div style="font-size:32px; font-weight:700; color:#0f172a; line-height:1;">{score}</div>
+        <div style="font-size:12px; color:#64748b; margin-top:4px;">Index Score</div>
+    </div>
+    <div style="height:4px; background:#e2e8f0; border-radius:2px; margin-bottom:16px; overflow:hidden;">
+        <div style="width:{score}%; height:100%; background:{color}; border-radius:2px;"></div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+        {''.join([f'<div style="display:flex; justify-content:space-between; font-size:13px;"><span style="color:#64748b;">{k}</span><span style="font-weight:600; color:#334155;">{v}</span></div>' for k,v in sub_metrics.items()])}
+    </div>
+</div>""", unsafe_allow_html=True)
+    if link_target:
+        st.page_link(link_target, label=link_text, icon="👉", use_container_width=True)
+
+def scene_executive():
+    # --- 1. Load Data (automatically filtered by user access) ---
+    billing_df, fin_df, prod_df, nat_df = load_dashboard_data()
+    access_data = prepare_access_data()
+    service_data_dict = prepare_service_data()
+
+    # --- 2. Get Filters from Session State (validated against user access) ---
     selected_country = st.session_state.get("selected_country", "All")
+    # Validate country selection against user access permissions
+    selected_country = validate_selected_country(selected_country)
+    st.session_state["selected_country"] = selected_country
+    
     selected_zone = st.session_state.get("selected_zone", "All")
     selected_year = st.session_state.get("selected_year", "All")
     selected_month = st.session_state.get("selected_month", "All")
 
     # --- 3. Filter Data ---
     f_billing = filter_dataframe(billing_df, selected_country, selected_zone, selected_year, selected_month)
-    f_fin = filter_dataframe(fin_df, selected_country, selected_zone, selected_year, selected_month) # Fin data has city, not zone, but let's assume city~zone or ignore zone filter for fin if not present
+    f_fin = filter_dataframe(fin_df, selected_country, selected_zone, selected_year, selected_month)
     f_prod = filter_dataframe(prod_df, selected_country, selected_zone, selected_year, selected_month)
+    f_nat = filter_dataframe(nat_df, selected_country, "All", selected_year, "All") # National data usually country level
 
-    # Note: Financial data often is at City level. If Zone is selected, we might need to approximate or show City data.
-    # For this exercise, we'll assume strict filtering if column exists.
+    # Access Data Filtering
+    w_latest = access_data["water_latest"]
+    s_latest = access_data["sewer_latest"]
+    if selected_country and selected_country != "All":
+        w_latest = w_latest[w_latest["country"] == selected_country]
+        s_latest = s_latest[s_latest["country"] == selected_country]
+    if selected_zone and selected_zone != "All":
+        w_latest = w_latest[w_latest["zone"] == selected_zone]
+        s_latest = s_latest[s_latest["zone"] == selected_zone]
 
-    # --- 4. Calculate KPIs ---
+    # Service Data Filtering
+    svc_df = service_data_dict["full_data"]
+    svc_df = filter_dataframe(svc_df, selected_country, selected_zone, selected_year, selected_month)
 
-    # A. Collection Efficiency
+    # --- 4. Calculate KPIs for Cards ---
+
+    # Card 1: Service Coverage Score
+    # Water Coverage (Municipal Coverage)
+    # Use water_safely_pct as a safer proxy if municipal_coverage is population count
+    w_cov = w_latest["water_safely_pct"].mean() if not w_latest.empty else 0
+    # Sanitation Coverage (Safely Managed Pct as proxy for coverage quality or use sewer connections if available)
+    # Using s_safely_managed_pct from access data
+    s_cov = s_latest["sewer_safely_pct"].mean() if not s_latest.empty else 0
+    
+    coverage_score = (w_cov + s_cov) / 2
+    pop_served = (w_latest["popn_total"].sum() / 1_000_000) if not w_latest.empty else 0
+    
+    cov_status = "status-good" if coverage_score > 80 else "status-warning" if coverage_score > 60 else "status-critical"
+
+    # Card 2: Financial Health Index
     total_billed = f_billing["billed"].sum()
     total_paid = f_billing["paid"].sum()
     coll_eff = (total_paid / total_billed * 100) if total_billed > 0 else 0
-
-    # B. Operating Cost Coverage
-    # Revenue = Paid (Billing) + Sewer Revenue (Fin)
-    # Note: Fin data might need scaling if it's monthly and we filter by year.
+    
     total_sewer_rev = f_fin["sewer_revenue"].sum()
     total_revenue = total_paid + total_sewer_rev
     total_opex = f_fin["opex"].sum()
-    opex_coverage = (total_revenue / total_opex) if total_opex > 0 else 0
-
-    # C. NRW (Non-Revenue Water)
-    total_production = f_prod["production_m3"].sum()
-    total_consumption = f_billing["consumption_m3"].sum()
-    nrw_pct = ((total_production - total_consumption) / total_production * 100) if total_production > 0 else 0
+    opex_cov = (total_revenue / total_opex * 100) if total_opex > 0 else 0
     
-    # D. Service Hours
-    avg_service_hours = f_prod["service_hours"].mean() if not f_prod.empty else 0
+    # Budget Utilization (Annual)
+    # If monthly filter is on, we might not have full budget context, but let's try
+    total_budget = f_nat["budget_allocated"].sum()
+    # If we are looking at a month, budget utilization might be low. 
+    # Let's use Opex Coverage as the main driver if budget is missing
+    budget_util = (total_opex / total_budget * 100) if total_budget > 0 else 0
+    
+    # Composite Financial Score (Weighted)
+    # Cap metrics at 100 for scoring purposes
+    fin_score = (min(coll_eff, 100) * 0.4) + (min(opex_cov, 120)/1.2 * 0.4) + (min(budget_util, 100) * 0.2)
+    fin_status = "Healthy" if fin_score > 80 else "At Risk" if fin_score > 60 else "Critical"
 
-    # E. Complaint Resolution
-    total_complaints = f_fin["complaints"].sum()
-    total_resolved = f_fin["resolved"].sum()
-    complaint_res_rate = (total_resolved / total_complaints * 100) if total_complaints > 0 else 0
+    # Card 3: Operational Efficiency
+    total_prod = f_prod["production_m3"].sum()
+    total_cons = f_billing["consumption_m3"].sum()
+    nrw = ((total_prod - total_cons) / total_prod * 100) if total_prod > 0 else 0
+    
+    # Capacity Utilization (Wastewater)
+    ww_cap = svc_df["ww_capacity"].sum()
+    ww_treated = svc_df["ww_treated"].sum()
+    cap_util = (ww_treated / ww_cap * 100) if ww_cap > 0 else 0
+    
+    service_hours = f_prod["service_hours"].mean() if not f_prod.empty else 0
+    
+    # Efficiency Score: Lower NRW is better. Higher Cap Util & Service Hours is better.
+    # Normalize NRW: (100 - NRW)
+    # Normalize Service Hours: (Hours / 24 * 100)
+    eff_score = ((100 - min(nrw, 100)) + min(cap_util, 100) + (service_hours/24*100)) / 3
+    
+    # Card 4: Service Quality Index
+    wq_compliance = svc_df["water_quality_rate"].mean() if not svc_df.empty else 0
+    cust_res_rate = svc_df["complaint_resolution_rate"].mean() if not svc_df.empty else 0
+    asset_health = f_nat["asset_health"].mean() if not f_nat.empty else 0 # Scale 0-100 usually? Data says 66.31 etc.
+    
+    qual_score = (wq_compliance + cust_res_rate + asset_health) / 3
 
     # --- 5. Create AI Insights Engine ---
     insights_engine = InsightsEngine(f_billing, f_prod, f_fin)
@@ -146,8 +278,8 @@ def scene_executive():
     st.session_state["exec_insights_cache"] = {
         "overall_score": overall_score,
         "collection_efficiency": coll_eff,
-        "nrw_percent": nrw_pct,
-        "service_hours": avg_service_hours,
+        "nrw_percent": nrw,
+        "service_hours": service_hours,
         "anomalies": anomalies,
         "zones": insights_engine.zone_performance_summary(),
         "suggested_questions": suggested_questions
@@ -157,248 +289,323 @@ def scene_executive():
 
     # CSS Styling for Scorecards (matching other pages)
     st.markdown("""
-    <style>
-        .metric-container {
-            background-color: #ffffff;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 16px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            height: 100%;
-        }
-        .metric-label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-        .metric-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #111827;
-            line-height: 1.2;
-        }
-        .metric-delta {
-            font-size: 12px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-top: 8px;
-        }
-        .delta-up { color: #059669; }
-        .delta-down { color: #dc2626; }
-        .delta-neutral { color: #6b7280; }
-        .pulse-banner {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 24px;
-            border-radius: 12px;
-            margin-bottom: 24px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-        }
-        .pulse-score {
-            font-size: 48px;
-            font-weight: 800;
-            display: inline-block;
-            margin-right: 16px;
-        }
-        .pulse-text {
-            font-size: 16px;
-            line-height: 1.6;
-            opacity: 0.95;
-        }
-        .anomaly-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 16px;
-            font-size: 12px;
-            font-weight: 600;
-            margin-right: 8px;
-            margin-top: 8px;
-        }
-        .badge-critical { background: #fca5a5; color: #7f1d1d; }
-        .badge-warning { background: #fcd34d; color: #78350f; }
-    </style>
-    """, unsafe_allow_html=True)
+<style>
+    .metric-card {
+        background-color: #ffffff;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        height: 100%;
+        min-height: 340px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .metric-label {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+    }
+    .metric-value {
+        font-size: 28px;
+        font-weight: 700;
+        color: #111827;
+        line-height: 1.2;
+    }
+    .metric-delta {
+        font-size: 12px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 8px;
+    }
+    .delta-up { color: #059669; }
+    .delta-down { color: #dc2626; }
+    .delta-neutral { color: #6b7280; }
+    .pulse-banner {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 24px;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .pulse-score {
+        font-size: 48px;
+        font-weight: 800;
+        display: inline-block;
+        margin-right: 16px;
+    }
+    .pulse-text {
+        font-size: 16px;
+        line-height: 1.6;
+        opacity: 0.95;
+    }
+    .anomaly-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 16px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-right: 8px;
+        margin-top: 8px;
+    }
+    .badge-critical { background: #fca5a5; color: #7f1d1d; }
+    .badge-warning { background: #fcd34d; color: #78350f; }
+</style>
+""", unsafe_allow_html=True)
 
     # Alert Banner - Status check only
-    if nrw_pct > 40:
-        st.markdown(f"<div class='panel bad'>⚠️ Critical Alert: NRW is high ({nrw_pct:.1f}%) in selected region. Immediate action required.</div>", unsafe_allow_html=True)
-    elif avg_service_hours < 12:
-        st.markdown(f"<div class='panel warn'>⚠️ Warning: Service hours dropped to {avg_service_hours:.1f} hrs/day.</div>", unsafe_allow_html=True)
+    if nrw > 40:
+        st.markdown(f"<div class='panel bad'>⚠️ Critical Alert: NRW is high ({nrw:.1f}%) in selected region. Immediate action required.</div>", unsafe_allow_html=True)
+    elif service_hours < 12:
+        st.markdown(f"<div class='panel warn'>⚠️ Warning: Service hours dropped to {service_hours:.1f} hrs/day.</div>", unsafe_allow_html=True)
     else:
         st.markdown("<div class='panel ok'>✅ Systems Operational. All key metrics within acceptable range.</div>", unsafe_allow_html=True)
 
     # Scorecards Row
     st.markdown("### Key Performance Indicators")
     
-    # Define metrics: (Label, Value, Target, Unit, HigherIsBetter)
-    metrics_data = [
-        ("Collection Efficiency", coll_eff, 95, "%", True),
-        ("Operating Cost Coverage", opex_coverage, 1.0, "", True),
-        ("Non-Revenue Water", nrw_pct, 25, "%", False), # Lower is better
-        ("Avg Service Hours", avg_service_hours, 20, "h", True)
-    ]
-
-    cols = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
     
-    for col, (label, value, target, unit, higher_is_better) in zip(cols, metrics_data):
-        delta = value - target
-        
-        # Determine color (Good/Bad)
-        is_good = (delta >= 0) if higher_is_better else (delta <= 0)
-        delta_cls = "delta-up" if is_good else "delta-down"
-        
-        # Determine Icon (Direction)
-        if delta > 0: icon = "↑"
-        elif delta < 0: icon = "↓"
-        else: icon = "-"
-        
-        val_str = f"{value:.2f}" if unit == "" else f"{value:.1f}{unit}"
-        
-        with col:
-            st.markdown(f"""
-            <div class='metric-container'>
-                <div class='metric-label'>{label}</div>
-                <div class='metric-value'>{val_str}</div>
-                <div class='metric-delta {delta_cls}'>
-                    {icon} {abs(delta):.1f}{unit} vs Target
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    # --- Charts Row 1 ---
-    st.markdown("### Financial & Operational Trends")
-    c1, c2 = st.columns(2)
-
     with c1:
-        st.markdown("**Revenue vs Opex Trend**")
-        # Aggregate by month for the chart
-        # We need to group fin_df by date
-        fin_trend = fin_df.copy()
-        if selected_country and selected_country != "All":
-            fin_trend = fin_trend[fin_trend["country"] == selected_country]
-        # (Zone filter might not apply to fin data easily if it's city based, skipping for trend to show broader context or just use filtered)
-        # Actually let's use the filtered f_fin but we need to group by date.
-        # If f_fin is already filtered by specific month, the trend will be a single point. 
-        # Usually trends ignore the "Month" filter to show history.
-        
-        # Re-filter for trend (ignore month/year filter, keep location)
-        trend_fin = fin_df.copy()
-        trend_billing = billing_df.copy()
-        if selected_country and selected_country != "All":
-            trend_fin = trend_fin[trend_fin["country"] == selected_country]
-            trend_billing = trend_billing[trend_billing["country"] == selected_country]
-        if selected_zone and selected_zone != "All":
-             if "zone" in trend_billing.columns:
-                trend_billing = trend_billing[trend_billing["zone"] == selected_zone]
-             # Fin data doesn't have zone usually, so we might keep it as is or try to filter by city if mapped.
-        
-        # Group by Month
-        fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
-        billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"paid": "sum"}).reset_index()
-        
-        merged_trend = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
-        merged_trend["total_revenue"] = merged_trend["paid"] + merged_trend["sewer_revenue"]
-        
-        # Sort by date
-        merged_trend = merged_trend.sort_values("date")
-        
-        fig_fin = go.Figure()
-        fig_fin.add_trace(go.Bar(x=merged_trend["date"], y=merged_trend["total_revenue"], name="Revenue", marker_color="#10b981"))
-        fig_fin.add_trace(go.Bar(x=merged_trend["date"], y=merged_trend["opex"], name="Opex", marker_color="#ef4444"))
-        fig_fin.update_layout(barmode='group', margin=dict(l=0, r=0, t=0, b=0), height=300, legend=dict(orientation="h", y=1.1))
-        st.plotly_chart(fig_fin, use_container_width=True)
-
-    with c2:
-        st.markdown("**NRW Trend (Last 12 Months)**")
-        # Trend for NRW
-        trend_prod = prod_df.copy()
-        if selected_country and selected_country != "All":
-            trend_prod = trend_prod[trend_prod["country"] == selected_country]
-        if selected_zone and selected_zone != "All":
-            trend_prod = trend_prod[trend_prod["zone"] == selected_zone]
-            
-        prod_monthly = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"production_m3": "sum"}).reset_index()
-        cons_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"consumption_m3": "sum"}).reset_index()
-        
-        nrw_trend = pd.merge(prod_monthly, cons_monthly, on="date", how="inner")
-        nrw_trend["nrw_pct"] = (nrw_trend["production_m3"] - nrw_trend["consumption_m3"]) / nrw_trend["production_m3"] * 100
-        
-        fig_nrw = px.line(nrw_trend, x="date", y="nrw_pct", markers=True)
-        fig_nrw.add_hline(y=25, line_dash="dash", line_color="green", annotation_text="Target (25%)")
-        fig_nrw.update_traces(line_color="#f59e0b")
-        fig_nrw.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=300, yaxis_title="NRW %")
-        st.plotly_chart(fig_nrw, use_container_width=True)
-
-    # --- Charts Row 2 & Strategic ---
-    c3, c4 = st.columns([2, 1])
-    
-    with c3:
-        st.markdown("**Service Hours vs Complaints**")
-        # Dual axis chart
-        # Service hours from prod (daily/monthly avg), Complaints from fin (monthly)
-        
-        # Group prod by month for compatibility
-        prod_monthly_svc = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"service_hours": "mean"}).reset_index()
-        fin_monthly_comp = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"complaints": "sum"}).reset_index()
-        
-        svc_comp = pd.merge(prod_monthly_svc, fin_monthly_comp, on="date", how="outer").sort_values("date")
-        
-        fig_dual = go.Figure()
-        fig_dual.add_trace(go.Scatter(x=svc_comp["date"], y=svc_comp["service_hours"], name="Avg Service Hours", line=dict(color="#4f46e5", width=3)))
-        fig_dual.add_trace(go.Scatter(x=svc_comp["date"], y=svc_comp["complaints"], name="Complaints", yaxis="y2", line=dict(color="#ef4444", dash="dot")))
-        
-        fig_dual.update_layout(
-            margin=dict(l=0, r=0, t=0, b=0),
-            height=300,
-            yaxis=dict(title="Hours/Day"),
-            yaxis2=dict(title="Complaints", overlaying="y", side="right"),
-            legend=dict(orientation="h", y=1.1)
+        _render_gauge_card(
+            "Service Coverage", 
+            int(coverage_score), 
+            {"Water": f"{w_cov:.0f}%", "Sanitation": f"{s_cov:.0f}%", "Pop Served": f"{pop_served:.1f}M"},
+            cov_status,
+            "pages/2_🗺️_Access_&_Coverage.py",
+            "Access & Coverage"
         )
-        st.plotly_chart(fig_dual, use_container_width=True)
+        
+    with c2:
+        _render_trend_card(
+            "Financial Health",
+            int(fin_score),
+            fin_status,
+            {"Revenue": f"${total_revenue/1e6:.1f}M", "Op Margin": f"{opex_cov:.0f}%"},
+            "pages/4_💹_Financial_Health.py",
+            "Financial Health"
+        )
+        
+    with c3:
+        # Operational Efficiency - Radial Progress
+        st.markdown(f"""<div class="metric-card">
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px;">
+        <div style="font-size:14px; font-weight:600; color:#64748b;">Operational Eff.</div>
+        <div style="font-size:24px; font-weight:700; color:#0f172a;">{int(eff_score)}</div>
+    </div>
+    <div style="display:flex; justify-content:center; margin-bottom:12px;">
+        <div style="
+            width: 80px; height: 80px; border-radius: 50%;
+            background: radial-gradient(closest-side, white 79%, transparent 80% 100%),
+            conic-gradient(#3b82f6 {eff_score}%, #e2e8f0 0);
+            display: flex; align-items: center; justify-content: center;
+        ">
+            <span style="font-weight:700; color:#3b82f6;">{int(eff_score)}%</span>
+        </div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr; gap:6px; margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px;"><span style="color:#64748b;">NRW</span><span style="font-weight:600;">{nrw:.1f}%</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px;"><span style="color:#64748b;">Cap Util</span><span style="font-weight:600;">{cap_util:.0f}%</span></div>
+        <div style="display:flex; justify-content:space-between; font-size:12px;"><span style="color:#64748b;">Continuity</span><span style="font-weight:600;">{service_hours:.1f}h</span></div>
+    </div>
+</div>""", unsafe_allow_html=True)
+        st.page_link("pages/5_♻️_Production.py", label="Production", icon="👉", use_container_width=True)
 
     with c4:
-        # Mock Data for Strategic Indicators (as file is missing)
-        asset_health = 4.2 # out of 5
-        training_budget = 150000 # $
-        
-        st.markdown("**Strategic Growth**")
-        st.markdown(f"""
-        <div class='panel'>
-        <div style='margin-bottom:1rem'>
-            <div class='meta'>Asset Health Index</div>
-            <div style='font-size:2rem;font-weight:700;color:#4f46e5'>{asset_health}/5.0</div>
-            <div class='meta'>Target: 4.5</div>
-            <div style='background:#e0e7ff;height:8px;border-radius:4px;margin-top:4px'>
-                <div style='background:#4f46e5;width:{asset_health/5*100}%;height:100%;border-radius:4px'></div>
+        # Service Quality Index
+        st.markdown(f"""<div class="metric-card">
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:16px;">
+        <div style="font-size:14px; font-weight:600; color:#64748b;">Service Quality</div>
+        <div style="color:#10b981; font-weight:600; font-size:12px;">↗ Trending</div>
+    </div>
+    <div style="margin-bottom:16px;">
+        <div style="font-size:32px; font-weight:700; color:#0f172a; line-height:1;">{qual_score:.1f}</div>
+        <div style="font-size:12px; color:#64748b; margin-top:4px;">Quality Index</div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+            <span style="color:#64748b;">Water Qual</span>
+            <span style="font-weight:600; color:#334155;">{wq_compliance:.1f}%</span>
             </div>
-        </div>
-        
-        <div>
-            <div class='meta'>Staff Training Investment</div>
-            <div style='font-size:2rem;font-weight:700;color:#10b981'>${training_budget/1000:.0f}k</div>
-            <div class='meta'>YTD Actual</div>
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Complaint Resolution Rate
-        st.markdown("**Complaint Resolution**")
-        st.markdown(f"""
-        <div class='panel' style='display:flex;align-items:center;justify-content:space-between'>
-            <div>
-                <div class='meta'>Resolution Rate</div>
-                <div style='font-size:1.5rem;font-weight:700'>{complaint_res_rate:.1f}%</div>
+            <div style="display:flex; justify-content:space-between; font-size:13px;">
+            <span style="color:#64748b;">Resolution</span>
+            <span style="font-weight:600; color:#334155;">{cust_res_rate:.1f}%</span>
             </div>
-            <div class='gauge' style='{_conic_css(complaint_res_rate, "#10b981")};width:48px;height:48px'>
-                <div class='gauge-inner' style='width:36px;height:36px'></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    </div>
+</div>""", unsafe_allow_html=True)
+        st.page_link("pages/3_🛠️_Service_Quality_&_Reliability.py", label="Service & Quality", icon="👉", use_container_width=True)
+
+    # --- Performance Trends Dashboard ---
+    st.markdown("### Performance Trends Dashboard")
+    
+    # Prepare Trend Data (Global for tabs)
+    trend_billing = billing_df.copy()
+    trend_fin = fin_df.copy()
+    trend_prod = prod_df.copy()
+    trend_svc = service_data_dict["full_data"].copy()
+    trend_water_acc = access_data["water_full"].copy()
+
+    if selected_country and selected_country != "All":
+        trend_billing = trend_billing[trend_billing["country"] == selected_country]
+        trend_fin = trend_fin[trend_fin["country"] == selected_country]
+        trend_prod = trend_prod[trend_prod["country"] == selected_country]
+        trend_svc = trend_svc[trend_svc["country"] == selected_country]
+        trend_water_acc = trend_water_acc[trend_water_acc["country"] == selected_country]
+        
+    if selected_zone and selected_zone != "All":
+        if "zone" in trend_billing.columns: trend_billing = trend_billing[trend_billing["zone"] == selected_zone]
+        if "zone" in trend_prod.columns: trend_prod = trend_prod[trend_prod["zone"] == selected_zone]
+        if "zone" in trend_svc.columns: trend_svc = trend_svc[trend_svc["zone"] == selected_zone]
+        if "zone" in trend_water_acc.columns: trend_water_acc = trend_water_acc[trend_water_acc["zone"] == selected_zone]
+
+    tab_fin, tab_ops, tab_cov, tab_qual = st.tabs(["Financial", "Operational", "Coverage", "Quality"])
+
+    # --- Financial Tab ---
+    with tab_fin:
+        # Group by Month
+        fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
+        billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"billed": "sum", "paid": "sum"}).reset_index()
+        
+        merged_fin = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
+        merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
+        merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"] * 100).fillna(0)
+        merged_fin["op_margin"] = ((merged_fin["total_revenue"] - merged_fin["opex"]) / merged_fin["total_revenue"] * 100).fillna(0)
+        
+        # Sort and take last 12 months for "rolling view"
+        merged_fin = merged_fin.sort_values("date").tail(12)
+        
+        # Dual Axis Chart
+        fig_fin = go.Figure()
+        # Bars: Revenue & Costs
+        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue", marker_color="#10b981", opacity=0.7))
+        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex", marker_color="#ef4444", opacity=0.7))
+        
+        # Lines: Collection Eff & Op Margin
+        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection Eff %", yaxis="y2", line=dict(color="#3b82f6", width=3)))
+        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["op_margin"], name="Op Margin %", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
+        
+        fig_fin.update_layout(
+            title="Financial Performance (Last 12 Months)",
+            yaxis=dict(title="Amount ($)"),
+            yaxis2=dict(title="Percentage (%)", overlaying="y", side="right", range=[0, 120]),
+            barmode='group',
+            legend=dict(orientation="h", y=1.1),
+            height=400
+        )
+        st.plotly_chart(fig_fin, use_container_width=True)
+
+    # --- Operational Tab ---
+    with tab_ops:
+        prod_monthly = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"production_m3": "sum"}).reset_index()
+        billing_monthly_cons = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"consumption_m3": "sum"}).reset_index()
+        
+        merged_ops = pd.merge(prod_monthly, billing_monthly_cons, on="date", how="inner")
+        merged_ops["nrw_pct"] = ((merged_ops["production_m3"] - merged_ops["consumption_m3"]) / merged_ops["production_m3"] * 100).fillna(0)
+        
+        svc_monthly = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg({"ww_treated": "sum", "ww_capacity": "sum"}).reset_index()
+        svc_monthly["cap_util"] = (svc_monthly["ww_treated"] / svc_monthly["ww_capacity"] * 100).fillna(0)
+        
+        merged_ops = pd.merge(merged_ops, svc_monthly[["date", "cap_util"]], on="date", how="left").fillna(0)
+        merged_ops = merged_ops.sort_values("date").tail(12)
+        
+        fig_ops = go.Figure()
+        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["nrw_pct"], name="NRW %", line=dict(color="#ef4444", width=3)))
+        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["cap_util"], name="Capacity Util %", line=dict(color="#3b82f6", width=3)))
+        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["production_m3"], name="Production m3", yaxis="y2", line=dict(color="#10b981", dash="dot")))
+        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["consumption_m3"], name="Consumption m3", yaxis="y2", line=dict(color="#059669", dash="dot")))
+        
+        fig_ops.update_layout(
+            title="Operational Efficiency Trends",
+            yaxis=dict(title="Percentage (%)"),
+            yaxis2=dict(title="Volume (m3)", overlaying="y", side="right", showgrid=False),
+            legend=dict(orientation="h", y=1.1),
+            height=400
+        )
+        
+        if len(merged_ops) > 1:
+            start_nrw = merged_ops["nrw_pct"].iloc[0]
+            end_nrw = merged_ops["nrw_pct"].iloc[-1]
+            if end_nrw < start_nrw:
+                fig_ops.add_annotation(x=merged_ops["date"].iloc[-1], y=end_nrw, text="▼ Efficiency Improved", showarrow=True, arrowhead=1)
+        
+        st.plotly_chart(fig_ops, use_container_width=True)
+
+    # --- Coverage Tab ---
+    with tab_cov:
+        cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
+        for c in cols:
+            if c in trend_water_acc.columns:
+                trend_water_acc[c] = pd.to_numeric(trend_water_acc[c], errors="coerce").fillna(0)
+        
+        if "popn_total" in trend_water_acc.columns:
+            # Calculate absolute pops per row
+            for c in cols:
+                if c in trend_water_acc.columns:
+                    level_name = c.replace("_pct", "")
+                    trend_water_acc[level_name] = trend_water_acc["popn_total"] * (trend_water_acc[c] / 100)
+            
+            level_cols = [c.replace("_pct", "") for c in cols if c in trend_water_acc.columns]
+            w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
+            
+            fig_cov = go.Figure()
+            stack_group = 'one'
+            order = ["surface_water", "w_unimproved", "w_limited", "w_basic", "w_safely_managed"]
+            colors = ["#ef4444", "#f97316", "#f59e0b", "#3b82f6", "#10b981"]
+            labels = ["Surface Water", "Unimproved", "Limited", "Basic", "Safely Managed"]
+            
+            for i, level in enumerate(order):
+                if level in w_trend.columns:
+                    fig_cov.add_trace(go.Scatter(
+                        x=w_trend["year"], y=w_trend[level], 
+                        name=labels[i], 
+                        stackgroup=stack_group,
+                        mode='lines',
+                        line=dict(width=0.5, color=colors[i]),
+                        fillcolor=colors[i]
+                    ))
+            
+            fig_cov.update_layout(
+                title="Population Served by Service Level (Growth Trajectory)",
+                yaxis=dict(title="Population"),
+                xaxis=dict(title="Year"),
+                height=400,
+                legend=dict(orientation="h", y=-0.2)
+            )
+            st.plotly_chart(fig_cov, use_container_width=True)
+        else:
+            st.warning("Population data not available for coverage trends.")
+
+    # --- Quality Tab ---
+    with tab_qual:
+        svc_qual = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg({
+            "water_quality_rate": "mean",
+            "complaint_resolution_rate": "mean"
+        }).reset_index()
+        
+        prod_svc = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"service_hours": "mean"}).reset_index()
+        
+        merged_qual = pd.merge(svc_qual, prod_svc, on="date", how="outer").sort_values("date").tail(12)
+        
+        fig_qual = go.Figure()
+        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["water_quality_rate"], name="Water Quality %", line=dict(color="#10b981", width=3)))
+        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["complaint_resolution_rate"], name="Resolution Rate %", line=dict(color="#3b82f6", width=3)))
+        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["service_hours"], name="Service Hours", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
+        
+        fig_qual.update_layout(
+            title="Service Quality Trends",
+            yaxis=dict(title="Percentage (%)", range=[0, 100]),
+            yaxis2=dict(title="Hours/Day", overlaying="y", side="right", range=[0, 24]),
+            legend=dict(orientation="h", y=1.1),
+            height=400
+        )
+        st.plotly_chart(fig_qual, use_container_width=True)
 
     # --- Board Brief Generation ---
     st.markdown("---")

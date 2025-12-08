@@ -2,7 +2,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from utils import prepare_access_data, prepare_service_data, DATA_DIR
+from utils import prepare_access_data, prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country
 
 def load_financial_data():
     """Load financial services data for the access dashboard."""
@@ -15,13 +15,49 @@ def load_financial_data():
             df_fin['date'] = pd.to_datetime(df_fin['date_MMYY'], format='%b/%y', errors='coerce')
         df_fin['year'] = df_fin['date'].dt.year
         df_fin['month'] = df_fin['date'].dt.month
+        
+        # Apply access control filtering
+        df_fin = filter_df_by_user_access(df_fin, "country")
     return df_fin
+
+def create_sparkline(data, color='#3b82f6'):
+    """Create a simple sparkline chart."""
+    # Calculate dynamic range to highlight changes
+    y_range = None
+    if data:
+        min_val = min(data)
+        max_val = max(data)
+        diff = max_val - min_val
+        # Add padding to make the line not touch the edges
+        padding = diff * 0.1 if diff > 0 else 1.0
+        y_range = [min_val - padding, max_val + padding]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=list(range(len(data))), 
+        y=data, 
+        mode='lines', 
+        line=dict(color=color, width=2),
+        fill='tozeroy',
+        fillcolor=f"rgba({int(color[1:3], 16)}, {int(color[3:5], 16)}, {int(color[5:7], 16)}, 0.1)"
+    ))
+    fig.update_layout(
+        showlegend=False,
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False, range=y_range),
+        margin=dict(l=0, r=0, t=0, b=0),
+        height=40,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
+    )
+    return fig
 
 def scene_access():
     """
     Access & Coverage scene - Redesigned based on User Journey.
+    Data access is restricted based on user permissions.
     """
-    # Load data
+    # Load data (already filtered by user access in prepare_* functions)
     access_data = prepare_access_data()
     df_water = access_data["water_full"]
     df_sewer = access_data["sewer_full"]
@@ -31,24 +67,89 @@ def scene_access():
     
     df_fin = load_financial_data()
 
-    # --- 1. Filters (Retrieved from Sidebar/Session State) ---
-    selected_country = st.session_state.get("selected_country", "All")
-    selected_zone = st.session_state.get("selected_zone", "All")
-    selected_year = st.session_state.get("selected_year")
-    selected_month_name = st.session_state.get("selected_month", "All")
+    # --- Header Section ---
+    header_container = st.container()
+    
+    # Get user access restrictions for filtering
+    try:
+        from auth import get_current_user, UserRole, get_allowed_countries
+        user = get_current_user()
+        allowed_countries = get_allowed_countries()
+        is_master_user = user is not None and user.role == UserRole.MASTER_USER
+    except ImportError:
+        user = None
+        allowed_countries = []
+        is_master_user = True  # Default to no restrictions if auth not available
+    
+    # Filters Row
+    filt_c1, filt_c2, filt_c3, filt_c4 = st.columns([2, 2, 2, 2])
+    
+    with filt_c1:
+        st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>View Period</label>", unsafe_allow_html=True)
+        view_type = st.radio("View Period", ["Annual", "Quarterly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle")
+        
+    with filt_c2:
+        # Country Filter - Restricted based on user access
+        if is_master_user:
+            countries = ['All'] + sorted(df_water['country'].unique().tolist()) if 'country' in df_water.columns else ['All']
+        else:
+            # Non-master users can only see their assigned country
+            countries = allowed_countries if allowed_countries else ['All']
+        
+        # Try to get default from session state if available
+        default_country_idx = 0
+        if "selected_country" in st.session_state:
+            validated_country = validate_selected_country(st.session_state.selected_country)
+            if validated_country in countries:
+                default_country_idx = countries.index(validated_country)
+        
+        # Check if country selector should be locked
+        is_country_locked = not is_master_user and len(countries) == 1
+        
+        if is_country_locked:
+            # Show locked indicator
+            st.markdown(f"""
+            <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
+                        padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-top: 24px;'>
+                <span style='font-size: 1rem;'>🔒</span>
+                <span style='font-weight: 600; color: #334155;'>{countries[0]}</span>
+            </div>
+            """, unsafe_allow_html=True)
+            selected_country = countries[0]
+        else:
+            selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select")
+            # Validate the selection
+            selected_country = validate_selected_country(selected_country)
+        
+    with filt_c3:
+        # Zone Filter (dependent on country)
+        if selected_country != 'All':
+            zones = ['All'] + sorted(df_water[df_water['country'] == selected_country]['zone'].unique().tolist())
+        else:
+            zones = ['All'] + sorted(df_water['zone'].unique().tolist())
+            
+        default_zone_idx = 0
+        if "selected_zone" in st.session_state and st.session_state.selected_zone in zones:
+            default_zone_idx = zones.index(st.session_state.selected_zone)
+            
+        selected_zone = st.selectbox("Zone/City", zones, index=default_zone_idx, key="header_zone_select")
+        
+    with filt_c4:
+        # Year Filter
+        years = sorted(df_water['year'].unique().tolist(), reverse=True)
+        default_year_idx = 0
+        if "selected_year" in st.session_state and st.session_state.selected_year in years:
+            default_year_idx = years.index(st.session_state.selected_year)
+            
+        selected_year = st.selectbox("Year", years, index=default_year_idx, key="header_year_select")
 
     # Map month name to number (for Service Data)
+    selected_month_name = st.session_state.get("selected_month", "All")
     month_map = {
         'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
         'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
     }
     selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
-
-    # Ensure selected_year is valid for this dataset, otherwise default to max
-    if selected_year not in df_water['year'].unique():
-        # If the selected year (from global filter) isn't in access data, fallback or show empty?
-        # Usually better to show empty or nearest. Let's stick to the filter.
-        pass 
 
     # --- Apply Filters ---
     # Water Data
@@ -78,6 +179,22 @@ def scene_access():
         df_f_filt = df_f_filt[df_f_filt['year'] == selected_year]
     if selected_month != 'All' and 'month' in df_f_filt.columns:
         df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
+
+    # --- Populate Header with Export Button ---
+    with header_container:
+        h_col1, h_col2 = st.columns([6, 1])
+        with h_col1:
+            st.markdown("<h1 style='font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 16px;'>Access & Coverage</h1>", unsafe_allow_html=True)
+        with h_col2:
+            st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True) # Spacer for alignment
+            csv = df_w_filt.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="Export CSV",
+                data=csv,
+                file_name=f"access_data_{selected_country}_{selected_year}.csv",
+                mime="text/csv",
+                key="export_btn"
+            )
 
     if df_w_filt.empty and df_s_filt.empty:
         st.warning("⚠️ No access data available for selected filters")
@@ -139,8 +256,8 @@ def scene_access():
     </style>
     """, unsafe_allow_html=True)
 
-    # --- Step 1: Coverage Level Metrics ---
-    st.markdown("<div class='section-header'>📊 Coverage Metrics <span style='font-size:14px;color:#6b7280;font-weight:400'>| Service Reach & Growth</span></div>", unsafe_allow_html=True)
+    # --- Step 1: Key Performance Scorecards Row ---
+    st.markdown("<div class='section-header'>📊 Key Performance Scorecards</div>", unsafe_allow_html=True)
 
     # ===== WATER COVERAGE CALCULATIONS =====
     # Municipal Supply Percentage (Annual data)
@@ -240,180 +357,156 @@ def scene_access():
         san_households = 0
         san_population = 0
 
-    # ===== RENDER TWO-COLUMN LAYOUT =====
-    col_water, col_san = st.columns(2)
+    # --- Additional Calculations for Scorecards ---
     
-    # WATER COVERAGE COLUMN
-    with col_water:
-        st.markdown("""
-        <div style='background-color: #f8fafc; border: 2px solid #3b82f6; border-radius: 12px; padding: 20px; height: 100%;'>
-            <div style='font-size: 16px; font-weight: 700; color: #1e40af; margin-bottom: 16px; text-align: center;'>
-                💧 WATER COVERAGE
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # Row 1: Municipal Supply % and YoY Growth
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px; margin-bottom: 12px;'>", unsafe_allow_html=True)
-        
-        r1c1, r1c2 = st.columns([3, 2])
-        with r1c1:
-            # Progress ring visualization
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Municipal Supply
-                </div>
-                <div style='position: relative; width: 120px; height: 120px; margin: 0 auto;'>
-                    <svg width="120" height="120" style='transform: rotate(-90deg);'>
-                        <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="8"/>
-                        <circle cx="60" cy="60" r="50" fill="none" stroke="#3b82f6" stroke-width="8"
-                                stroke-dasharray="{2 * 3.14159 * 50 * muni_supply_pct / 100} {2 * 3.14159 * 50}"
-                                stroke-linecap="round"/>
-                    </svg>
-                    <div style='position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);'>
-                        <div style='font-size: 28px; font-weight: 700; color: #111827;'>{muni_supply_pct:.1f}%</div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with r1c2:
-            growth_color = "#059669" if muni_yoy_growth >= 0 else "#dc2626"
-            growth_icon = "↑" if muni_yoy_growth >= 0 else "↓"
-            st.markdown(f"""
-            <div style='text-align: center; padding-top: 20px;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    YoY Growth
-                </div>
-                <div style='font-size: 32px; font-weight: 700; color: {growth_color};'>
-                    {growth_icon}{abs(muni_yoy_growth):.1f}%
-                </div>
-                <div style='font-size: 10px; color: #6b7280; margin-top: 4px;'>
-                    vs Last Year
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Row 2: Households Covered and Population Served
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px;'>", unsafe_allow_html=True)
-        
-        r2c1, r2c2 = st.columns(2)
-        with r2c1:
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Households Covered
-                </div>
-                <div style='font-size: 28px; font-weight: 700; color: #111827;'>
-                    {water_households:.1f}K
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with r2c2:
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Population Served
-                </div>
-                <div style='font-size: 28px; font-weight: 700; color: #111827;'>
-                    {water_population:.2f}M
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        st.markdown("</div></div>", unsafe_allow_html=True)
+    # Sparkline Data (Water Coverage Trend - Annual)
+    df_w_trend = df_water.copy()
+    if selected_country != 'All': df_w_trend = df_w_trend[df_w_trend['country'] == selected_country]
+    if selected_zone != 'All': df_w_trend = df_w_trend[df_w_trend['zone'] == selected_zone]
     
-    # SANITATION COVERAGE COLUMN
-    with col_san:
-        st.markdown("""
-        <div style='background-color: #fefce8; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px; height: 100%;'>
-            <div style='font-size: 16px; font-weight: 700; color: #6b21a8; margin-bottom: 16px; text-align: center;'>
-                🚽 SANITATION COVERAGE
+    w_trend_agg = df_w_trend.groupby('year').agg({'municipal_coverage': 'sum', 'popn_total': 'sum'}).reset_index().sort_values('year')
+    w_trend_agg['pct'] = (w_trend_agg['municipal_coverage'] / w_trend_agg['popn_total'] * 100).fillna(0)
+    water_spark_data = w_trend_agg['pct'].tolist()
+
+    # Sparkline Data (Sanitation Coverage Trend - Monthly last 12 months)
+    df_s_trend = df_service.copy()
+    if selected_country != 'All': df_s_trend = df_s_trend[df_s_trend['country'] == selected_country]
+    if selected_zone != 'All': df_s_trend = df_s_trend[df_s_trend['zone'] == selected_zone]
+    
+    # Group by date to get trend
+    s_trend_agg = df_s_trend.groupby('date').agg({'sewer_connections': 'sum', 'households': 'max'}).reset_index().sort_values('date')
+    # Take last 12 points
+    s_trend_agg = s_trend_agg.tail(12)
+    s_trend_agg['pct'] = (s_trend_agg['sewer_connections'] / s_trend_agg['households'].replace(0, 1) * 100).fillna(0)
+    san_spark_data = s_trend_agg['pct'].tolist()
+
+    # 3. Safely Managed Water Access
+    safely_managed_pop = df_w_filt['w_safely_managed'].sum()
+    safely_managed_pct = (safely_managed_pop / total_pop_w * 100) if total_pop_w > 0 else 0
+    
+    # YoY Change for Safely Managed
+    if selected_year and selected_year > df_water['year'].min():
+        last_year = selected_year - 1
+        df_w_last_sm = df_water.copy()
+        if selected_country != 'All': df_w_last_sm = df_w_last_sm[df_w_last_sm['country'] == selected_country]
+        if selected_zone != 'All': df_w_last_sm = df_w_last_sm[df_w_last_sm['zone'] == selected_zone]
+        df_w_last_sm = df_w_last_sm[df_w_last_sm['year'] == last_year]
+        
+        sm_pop_last = df_w_last_sm['w_safely_managed'].sum()
+        total_pop_last = df_w_last_sm['popn_total'].sum()
+        sm_pct_last = (sm_pop_last / total_pop_last * 100) if total_pop_last > 0 else 0
+        sm_yoy_change = safely_managed_pct - sm_pct_last
+    else:
+        sm_yoy_change = 0
+        
+    # Sparkline Data (Safely Managed Trend - Annual)
+    # Need to aggregate safely_managed for all years
+    w_trend_agg_sm = df_w_trend.groupby('year').agg({'w_safely_managed': 'sum', 'popn_total': 'sum'}).reset_index().sort_values('year')
+    w_trend_agg_sm['sm_pct'] = (w_trend_agg_sm['w_safely_managed'] / w_trend_agg_sm['popn_total'] * 100).fillna(0)
+    sm_spark_data = w_trend_agg_sm['sm_pct'].tolist()
+
+    # 4. Service Gap Alert (Unimproved + Surface Water)
+    gap_pop = df_w_filt['w_unimproved'].sum() + df_w_filt['surface_water'].sum()
+    gap_pct = (gap_pop / total_pop_w * 100) if total_pop_w > 0 else 0
+    
+    # Render Cards
+    kpi_c1, kpi_c2, kpi_c3, kpi_c4 = st.columns(4)
+    
+    with kpi_c1:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <div class="metric-label">Water Supply Coverage</div>
+                    <div class="metric-value">{muni_supply_pct:.1f}%</div>
+                </div>
+                <div style="font-size: 24px;">🚰</div>
             </div>
+            <div class="metric-delta">
+                <span class="{'delta-up' if muni_yoy_growth >= 0 else 'delta-down'}">
+                    {muni_yoy_growth:+.1f}%
+                </span>
+                <span style="color: #6b7280;">vs last year</span>
+            </div>
+            <div style="margin-top: 12px;"></div>
+        </div>
         """, unsafe_allow_html=True)
+        if water_spark_data:
+            st.plotly_chart(create_sparkline(water_spark_data, "#3b82f6"), use_container_width=True, config={'displayModeBar': False})
         
-        # Row 1: Sewered Connections % and Growth (YoY or MoM)
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px; margin-bottom: 12px;'>", unsafe_allow_html=True)
-        
-        r1c1, r1c2 = st.columns([3, 2])
-        with r1c1:
-            # Progress ring visualization
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Sewered Connections
+    with kpi_c2:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <div class="metric-label">Sanitation Coverage</div>
+                    <div class="metric-value">{sewer_conn_pct:.1f}%</div>
                 </div>
-                <div style='position: relative; width: 120px; height: 120px; margin: 0 auto;'>
-                    <svg width="120" height="120" style='transform: rotate(-90deg);'>
-                        <circle cx="60" cy="60" r="50" fill="none" stroke="#e5e7eb" stroke-width="8"/>
-                        <circle cx="60" cy="60" r="50" fill="none" stroke="#8b5cf6" stroke-width="8"
-                                stroke-dasharray="{2 * 3.14159 * 50 * sewer_conn_pct / 100} {2 * 3.14159 * 50}"
-                                stroke-linecap="round"/>
-                    </svg>
-                    <div style='position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);'>
-                        <div style='font-size: 28px; font-weight: 700; color: #111827;'>{sewer_conn_pct:.1f}%</div>
-                    </div>
-                </div>
+                <div style="font-size: 24px;">🚽</div>
             </div>
-            """, unsafe_allow_html=True)
-        
-        with r1c2:
-            growth_color = "#059669" if sewer_growth >= 0 else "#dc2626"
-            growth_icon = "↑" if sewer_growth >= 0 else "↓"
-            st.markdown(f"""
-            <div style='text-align: center; padding-top: 20px;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    {growth_label} Growth
-                </div>
-                <div style='font-size: 32px; font-weight: 700; color: {growth_color};'>
-                    {growth_icon}{abs(sewer_growth):.1f}%
-                </div>
-                <div style='font-size: 10px; color: #6b7280; margin-top: 4px;'>
-                    vs Last {'Month' if growth_label == 'MoM' else 'Year'}
-                </div>
+            <div class="metric-delta">
+                <span class="{'delta-up' if sewer_growth >= 0 else 'delta-down'}">
+                    {sewer_growth:+.1f}%
+                </span>
+                <span style="color: #6b7280;">vs last period</span>
             </div>
-            """, unsafe_allow_html=True)
+            <div style="margin-top: 12px;"></div>
+        </div>
+        """, unsafe_allow_html=True)
+        if san_spark_data:
+            st.plotly_chart(create_sparkline(san_spark_data, "#8b5cf6"), use_container_width=True, config={'displayModeBar': False})
         
-        st.markdown("</div>", unsafe_allow_html=True)
-        
-        # Row 2: Households Connected and Population Served
-        st.markdown("<div style='background-color: white; border-radius: 8px; padding: 16px;'>", unsafe_allow_html=True)
-        
-        r2c1, r2c2 = st.columns(2)
-        with r2c1:
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Households Connected
+    with kpi_c3:
+        st.markdown(f"""
+        <div class="metric-container">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <div class="metric-label">Safely Managed Water</div>
+                    <div class="metric-value">{safely_managed_pct:.1f}%</div>
                 </div>
-                <div style='font-size: 28px; font-weight: 700; color: #111827;'>
-                    {san_households:.1f}K
-                </div>
+                <div style="font-size: 24px;">🛡️</div>
             </div>
-            """, unsafe_allow_html=True)
-        
-        with r2c2:
-            st.markdown(f"""
-            <div style='text-align: center;'>
-                <div style='font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;'>
-                    Population Served
-                </div>
-                <div style='font-size: 28px; font-weight: 700; color: #111827;'>
-                    {san_population:.2f}M
-                </div>
+            <div class="metric-delta">
+                <span class="{'delta-up' if sm_yoy_change >= 0 else 'delta-down'}">
+                    {sm_yoy_change:+.1f}%
+                </span>
+                <span style="color: #6b7280;">vs last year</span>
             </div>
-            """, unsafe_allow_html=True)
+            <div style="margin-top: 12px;"></div>
+        </div>
+        """, unsafe_allow_html=True)
+        if sm_spark_data:
+            st.plotly_chart(create_sparkline(sm_spark_data, "#10b981"), use_container_width=True, config={'displayModeBar': False})
         
-        st.markdown("</div></div>", unsafe_allow_html=True)
+    with kpi_c4:
+        st.markdown(f"""
+        <div class="metric-container" style="border-left: 4px solid #ef4444;">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div>
+                    <div class="metric-label">Service Gap Alert</div>
+                    <div class="metric-value" style="color: #ef4444;">{gap_pct:.1f}%</div>
+                </div>
+                <div style="font-size: 24px;">⚠️</div>
+            </div>
+            <div class="metric-delta">
+                <span style="color: #ef4444; font-weight: 600;">{gap_pop/1000:.1f}K</span>
+                <span style="color: #6b7280;">people affected</span>
+            </div>
+            <div style="margin-top: 12px; font-size: 10px; color: #6b7280; display: flex; align-items: center; gap: 4px;">
+                <div style="flex-grow: 1; height: 2px; background: #e5e7eb; position: relative;">
+                    <div style="position: absolute; right: 0; top: -3px; width: 2px; height: 8px; background: #10b981;"></div>
+                </div>
+                <span>SDG Goal: 0%</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # --- Define ladder columns and labels (used by multiple sections) ---
-    w_ladder_cols = ['surface_water', 'w_unimproved', 'w_limited', 'w_basic', 'w_safely_managed']
-    w_ladder_labels = ['Surface Water', 'Unimproved', 'Limited', 'Basic', 'Safely Managed']
-    s_ladder_cols = ['open_def', 's_unimproved', 's_limited', 's_basic', 's_safely_managed']
-    s_ladder_labels = ['Open Defecation', 'Unimproved', 'Limited', 'Basic', 'Safely Managed']
+    # Updated order: Safely Managed (Bottom) -> Open Def/Surface (Top)
+    w_ladder_cols = ['w_safely_managed', 'w_basic', 'w_limited', 'w_unimproved', 'surface_water']
+    w_ladder_labels = ['Safely Managed', 'Basic', 'Limited', 'Unimproved', 'Surface Water']
+    s_ladder_cols = ['s_safely_managed', 's_basic', 's_limited', 's_unimproved', 'open_def']
+    s_ladder_labels = ['Safely Managed', 'Basic', 'Limited', 'Unimproved', 'Open Defecation']
 
     # --- Step 2: The "Ladder" Analysis (Quality of Access) ---
     st.markdown("<div class='section-header'>🪜 Ladder Analysis <span style='font-size:14px;color:#6b7280;font-weight:400'>| Quality of Access</span></div>", unsafe_allow_html=True)
@@ -438,7 +531,6 @@ def scene_access():
             )
         
         with ctrl_row1_col3:
-            st.markdown("<div style='font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;'>SHOW DATA FOR:</div>", unsafe_allow_html=True)
             data_selection = st.radio(
                 "Show Data For",
                 ["💧 Water", "🚽 Sanitation", "Both"],
@@ -486,8 +578,11 @@ def scene_access():
     else:
         group_by = None  # Single entity
     
-    # Color schemes - Use same colors for both water and sanitation
-    colors = ['#ef4444', '#f97316', '#eab308', '#60a5fa', '#1e3a8a']
+    # Color schemes - Updated based on user requirements
+    # Water: Safely Managed -> Basic -> Limited -> Unimproved -> Surface Water
+    water_colors = ['#088BCE', '#48BFE7', '#FDEE79', '#FFD94F', '#FFB02B']
+    # Sanitation: Safely Managed -> Basic -> Limited -> Unimproved -> Open Defecation
+    sanitation_colors = ['#349438', '#49B754', '#FDEE79', '#FFD94F', '#FFB02B']
     
     # Determine bar width and gap based on what's shown
     both_shown = show_water and show_sanitation
@@ -514,7 +609,7 @@ def scene_access():
         if show_water:
             w_trend_agg = df_w_trend.groupby('year')[w_ladder_cols + ['popn_total']].sum().reset_index()
             
-            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, water_colors)):
                 if display_mode == "Percentage":
                     y_values = (w_trend_agg[col] / w_trend_agg['popn_total'] * 100).fillna(0)
                     y_suffix = "%"
@@ -538,7 +633,7 @@ def scene_access():
         if show_sanitation:
             s_trend_agg = df_s_trend.groupby('year')[s_ladder_cols + ['popn_total']].sum().reset_index()
             
-            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, sanitation_colors)):
                 if display_mode == "Percentage":
                     y_values = (s_trend_agg[col] / s_trend_agg['popn_total'] * 100).fillna(0)
                     y_suffix = "%"
@@ -598,7 +693,7 @@ def scene_access():
         if show_water:
             w_grouped = df_w_ladder.groupby(group_by)[w_ladder_cols + ['popn_total']].sum().reset_index()
             
-            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, water_colors)):
                 if display_mode == "Percentage":
                     y_values = (w_grouped[col] / w_grouped['popn_total'] * 100).fillna(0)
                     customdata = w_grouped[col]  # Actual numbers for hover
@@ -630,7 +725,7 @@ def scene_access():
         if show_sanitation:
             s_grouped = df_s_ladder.groupby(group_by)[s_ladder_cols + ['popn_total']].sum().reset_index()
             
-            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, sanitation_colors)):
                 if display_mode == "Percentage":
                     y_values = (s_grouped[col] / s_grouped['popn_total'] * 100).fillna(0)
                     customdata = s_grouped[col]
@@ -650,10 +745,7 @@ def scene_access():
                     text=text_values,
                     textposition='inside',
                     textfont=dict(size=10, color='white'),
-                    marker=dict(
-                        color=color,
-                        pattern=dict(shape='/', solidity=0.5, size=6, bgcolor='rgba(255,255,255,0.2)')
-                    ),
+                    marker_color=color,
                     legendgroup='sanitation',
                     legendgrouptitle_text='Sanitation Access',
                     hovertemplate=hovertemplate,
@@ -669,7 +761,7 @@ def scene_access():
             w_totals = df_w_ladder[w_ladder_cols].sum()
             total_pop_w = df_w_ladder['popn_total'].sum()
             
-            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(w_ladder_cols, w_ladder_labels, water_colors)):
                 if display_mode == "Percentage":
                     y_value = (w_totals[col] / total_pop_w * 100) if total_pop_w > 0 else 0
                     customdata = [w_totals[col]]
@@ -703,7 +795,7 @@ def scene_access():
             s_totals = df_s_ladder[s_ladder_cols].sum()
             total_pop_s = df_s_ladder['popn_total'].sum()
             
-            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, colors)):
+            for idx, (col, label, color) in enumerate(zip(s_ladder_cols, s_ladder_labels, sanitation_colors)):
                 if display_mode == "Percentage":
                     y_value = (s_totals[col] / total_pop_s * 100) if total_pop_s > 0 else 0
                     customdata = [s_totals[col]]
@@ -724,10 +816,7 @@ def scene_access():
                     text=[text_val],
                     textposition='inside',
                     textfont=dict(size=10, color='white'),
-                    marker=dict(
-                        color=color,
-                        pattern=dict(shape='/', solidity=0.5, size=6, bgcolor='rgba(255,255,255,0.2)')
-                    ),
+                    marker_color=color,
                     legendgroup='sanitation',
                     legendgrouptitle_text='Sanitation Access',
                     hovertemplate=hovertemplate,
@@ -739,6 +828,28 @@ def scene_access():
     if chart_type == "Stacked Bar Chart":
         y_title = "Percentage (%)" if display_mode == "Percentage" else "Population"
         chart_year = selected_year if selected_year else available_years[-1] if available_years else 2024
+        
+        # Add Benchmark Line at 100% if Percentage mode
+        if display_mode == "Percentage":
+            fig_ladder.add_shape(
+                type="line",
+                xref="paper",
+                x0=0,
+                y0=100,
+                x1=1,
+                y1=100,
+                line=dict(color="Black", width=2, dash="dash"),
+            )
+            fig_ladder.add_annotation(
+                xref="paper",
+                x=0.05,
+                y=100,
+                yshift=10,
+                text="SDG Target for Basic + Safely Managed (100%)",
+                showarrow=False,
+                font=dict(size=10, color="black")
+            )
+
         fig_ladder.update_layout(
             barmode='stack',
             height=450,
@@ -757,14 +868,305 @@ def scene_access():
                 y=1,
                 xanchor="left",
                 x=1.02,
-                groupclick="toggleitem"
+                groupclick="toggleitem",
+                traceorder="reversed"
             ),
             hovermode='closest'
         )
     
     st.plotly_chart(fig_ladder, use_container_width=True)
 
-    # --- Step 4: The Equity Check (Zonal Disparities) ---
+    # --- Step 3: Coverage Growth Trends ---
+    st.markdown("<div class='section-header'>📈 Coverage Growth Trends</div>", unsafe_allow_html=True)
+    
+    # Chart Controls
+    trend_metric = st.radio(
+        "Select Metric:", 
+        ["Coverage (%)", "Growth Rate (%)", "Combined View"], 
+        horizontal=True,
+        key="trend_metric_selector",
+        label_visibility="collapsed"
+    )
+    
+    cg_col1, cg_col2 = st.columns([3, 1])
+    
+    with cg_col1:
+        # Prepare Water Data (Annual -> Quarterly Interpolation)
+        df_w_growth = df_water.copy()
+        if selected_country != 'All': df_w_growth = df_w_growth[df_w_growth['country'] == selected_country]
+        if selected_zone != 'All': df_w_growth = df_w_growth[df_w_growth['zone'] == selected_zone]
+        
+        w_annual = df_w_growth.groupby('year').agg({'municipal_coverage': 'sum', 'popn_total': 'sum'}).reset_index()
+        # Assume annual data is end of year
+        w_annual['date'] = pd.to_datetime(w_annual['year'].astype(str) + '-12-31')
+        w_annual = w_annual.set_index('date').sort_index()
+        
+        # Prepare Sewer Data (Monthly -> Quarterly)
+        df_s_growth = df_service.copy()
+        if selected_country != 'All': df_s_growth = df_s_growth[df_s_growth['country'] == selected_country]
+        if selected_zone != 'All': df_s_growth = df_s_growth[df_s_growth['zone'] == selected_zone]
+        
+        # Group by date first (sum across zones if multiple)
+        s_monthly = df_s_growth.groupby('date').agg({'sewer_connections': 'sum', 'households': 'sum'}).reset_index()
+        s_monthly = s_monthly.set_index('date').sort_index()
+        
+        if not w_annual.empty and not s_monthly.empty:
+            # Create common quarterly index
+            start_date = min(w_annual.index.min(), s_monthly.index.min())
+            end_date = max(w_annual.index.max(), s_monthly.index.max())
+            dates = pd.date_range(start=start_date, end=end_date, freq='QE')
+            
+            # Reindex and Interpolate Water
+            # Reindex to include annual dates + quarterly dates
+            w_combined_idx = w_annual.index.union(dates).sort_values()
+            w_interp = w_annual.reindex(w_combined_idx)
+            w_interp['municipal_coverage'] = w_interp['municipal_coverage'].interpolate(method='time')
+            w_interp['popn_total'] = w_interp['popn_total'].interpolate(method='time')
+            # Filter to just quarterly dates
+            w_q = w_interp.reindex(dates)
+            w_q['coverage_pct'] = (w_q['municipal_coverage'] / w_q['popn_total'] * 100).fillna(0)
+            w_q['growth_rate'] = w_q['coverage_pct'].pct_change() * 100
+            
+            # Resample Sewer
+            s_q = s_monthly.resample('QE').agg({'sewer_connections': 'last', 'households': 'last'})
+            s_q['coverage_pct'] = (s_q['sewer_connections'] / s_q['households'] * 100).fillna(0)
+            s_q['growth_rate'] = s_q['coverage_pct'].pct_change() * 100
+            
+            # Plot
+            fig_growth = go.Figure()
+            
+            # Colors (using the new softer palette)
+            color_water = '#2874A6' # Safely Managed Water color
+            color_sewer = '#1E8449' # Safely Managed Sanitation color
+            
+            # Water Coverage
+            if trend_metric in ["Coverage (%)", "Combined View"]:
+                fig_growth.add_trace(go.Scatter(
+                    x=w_q.index, y=w_q['coverage_pct'],
+                    name='Water Coverage',
+                    mode='lines',
+                    line=dict(color=color_water, width=3, shape='spline'),
+                    fill='tozeroy',
+                    fillcolor='rgba(40, 116, 166, 0.1)',
+                    hovertemplate='<b>Water Coverage</b><br>%{y:.1f}%<extra></extra>'
+                ))
+            
+            # Sewer Coverage
+            if trend_metric in ["Coverage (%)", "Combined View"]:
+                fig_growth.add_trace(go.Scatter(
+                    x=s_q.index, y=s_q['coverage_pct'],
+                    name='Sewer Coverage',
+                    mode='lines',
+                    line=dict(color=color_sewer, width=3, shape='spline'),
+                    fill='tozeroy',
+                    fillcolor='rgba(30, 132, 73, 0.1)',
+                    hovertemplate='<b>Sewer Coverage</b><br>%{y:.1f}%<extra></extra>'
+                ))
+            
+            # Water Growth
+            if trend_metric in ["Growth Rate (%)", "Combined View"]:
+                yaxis_ref = 'y2' if trend_metric == "Combined View" else 'y'
+                # Conditional colors: Light red for negative growth
+                w_colors = [color_water if val >= 0 else '#F87171' for val in w_q['growth_rate']]
+                
+                fig_growth.add_trace(go.Bar(
+                    x=w_q.index, y=w_q['growth_rate'],
+                    name='Water Growth %',
+                    marker_color=w_colors,
+                    yaxis=yaxis_ref,
+                    hovertemplate='<b>Water Growth</b><br>%{y:+.2f}%<extra></extra>'
+                ))
+            
+            # Sewer Growth
+            if trend_metric in ["Growth Rate (%)", "Combined View"]:
+                yaxis_ref = 'y2' if trend_metric == "Combined View" else 'y'
+                # Conditional colors: Light red for negative growth
+                s_colors = [color_sewer if val >= 0 else '#F87171' for val in s_q['growth_rate']]
+                
+                fig_growth.add_trace(go.Bar(
+                    x=s_q.index, y=s_q['growth_rate'],
+                    name='Sewer Growth %',
+                    marker_color=s_colors,
+                    yaxis=yaxis_ref,
+                    hovertemplate='<b>Sewer Growth</b><br>%{y:+.2f}%<extra></extra>'
+                ))
+            
+            # Layout Updates
+            layout_args = dict(
+                title=dict(text=f"Trends: {trend_metric}", font=dict(size=16, color="#111827")),
+                xaxis=dict(title="Time", showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
+                yaxis=dict(
+                    title="Percentage (%)" if trend_metric != "Growth Rate (%)" else "Growth Rate (%)",
+                    showgrid=True,
+                    gridcolor='rgba(128,128,128,0.1)',
+                    zeroline=False
+                ),
+                hovermode='x unified',
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                height=400,
+                margin=dict(l=0, r=0, t=50, b=0),
+                plot_bgcolor='rgba(255,255,255,1)',
+                paper_bgcolor='rgba(255,255,255,1)',
+                barmode='group'
+            )
+
+            if trend_metric == "Combined View":
+                layout_args['yaxis']['title'] = "Coverage (%)"
+                layout_args['yaxis']['range'] = [0, 100]
+                layout_args['yaxis2'] = dict(
+                    title="Growth Rate (%)",
+                    overlaying='y',
+                    side='right',
+                    showgrid=False,
+                    zeroline=False
+                )
+            elif trend_metric == "Coverage (%)":
+                 layout_args['yaxis']['range'] = [0, 100]
+
+            fig_growth.update_layout(**layout_args)
+            
+            st.plotly_chart(fig_growth, use_container_width=True)
+        else:
+            st.info("Insufficient data for growth trends.")
+            
+    with cg_col2:
+        st.markdown("""
+        <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; height: 100%;">
+            <h4 style="margin-top: 0; color: #111827;">Analysis Notes</h4>
+            <p style="font-size: 12px; color: #4b5563;">
+                <strong>Water Coverage:</strong> Interpolated from annual data points. Growth rate reflects year-over-year trends smoothed quarterly.
+            </p>
+            <p style="font-size: 12px; color: #4b5563;">
+                <strong>Sewer Coverage:</strong> Derived from monthly connection data. Growth rate shows quarter-over-quarter expansion.
+            </p>
+            <p style="font-size: 12px; color: #4b5563;">
+                <strong>Growth Rate:</strong> Calculated as percentage change in coverage relative to the previous quarter.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- Step 4: Infrastructure Metrics Row ---
+    st.markdown("<div class='section-header'>🏗️ Infrastructure Metrics</div>", unsafe_allow_html=True)
+    
+    inf_c1, inf_c2, inf_c3 = st.columns(3)
+    
+    with inf_c1:
+        st.markdown("**Metering Status**")
+        # Simulated Data for Metering
+        meter_fig = go.Figure(data=[go.Pie(
+            labels=['Metered', 'Non-metered'], 
+            values=[65, 35], 
+            hole=.6,
+            marker_colors=['#3B82F6', '#9CA3AF'],
+            textinfo='none'
+        )])
+        meter_fig.update_layout(
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+            margin=dict(l=20, r=20, t=0, b=20),
+            height=200,
+            annotations=[dict(
+                text="⚠️ No data available<br>for metered connections",
+                x=0.5, y=0.5,
+                showarrow=False,
+                font=dict(size=10, color="#854d0e"),
+                bgcolor="#fef9c3",
+                bordercolor="#facc15",
+                borderwidth=1,
+                borderpad=4
+            )]
+        )
+        meter_fig.update_traces(opacity=0.3, hoverinfo='skip')
+        st.plotly_chart(meter_fig, use_container_width=True)
+        # st.warning("⚠️ No data available for metered connections")
+
+    with inf_c2:
+        st.markdown("**Public Sanitation**")
+        # Real Data Calculation
+        if not df_svc_filt.empty and 'public_toilets' in df_svc_filt.columns:
+            # Get latest public toilets count per zone
+            pt_by_zone = df_svc_filt.groupby('zone')['public_toilets'].max().reset_index()
+            total_toilets = pt_by_zone['public_toilets'].sum()
+            
+            # Population from water data (annual)
+            pop_by_zone = df_w_filt.groupby('zone')['popn_total'].sum().reset_index()
+            total_pop = pop_by_zone['popn_total'].sum()
+            
+            if total_pop > 0:
+                # Toilets per 100,000 people
+                toilets_per_capita = (total_toilets / total_pop) * 100000
+                
+                st.metric("Safely Managed Public Toilets", f"{toilets_per_capita:.1f}", "per 100k people")
+                
+                # Comparison Chart
+                pt_merged = pd.merge(pt_by_zone, pop_by_zone, on='zone')
+                pt_merged['per_100k'] = (pt_merged['public_toilets'] / pt_merged['popn_total'] * 100000).fillna(0)
+                
+                fig_pt = px.bar(
+                    pt_merged, 
+                    x='zone', 
+                    y='per_100k',
+                    color='per_100k',
+                    color_continuous_scale=['#ef4444', '#eab308', '#22c55e'],
+                    labels={'per_100k': 'Toilets/100k', 'zone': 'Zone'}
+                )
+                fig_pt.update_layout(
+                    height=180, 
+                    margin=dict(l=0, r=0, t=0, b=0),
+                    xaxis_title=None,
+                    yaxis_title="Per 100k",
+                    coloraxis_showscale=False,
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                st.plotly_chart(fig_pt, use_container_width=True)
+            else:
+                st.info("Population data unavailable")
+        else:
+            st.info("⚠️ Data collection in progress")
+
+    with inf_c3:
+        st.markdown("**Service Provider Status**")
+        # Simulated Data for Providers
+        prov_fig = go.Figure(data=[go.Pie(
+            labels=['Active', 'Inactive'], 
+            values=[12, 4], 
+            hole=.6,
+            marker_colors=['#22C55E', '#EF4444'],
+            textinfo='none'
+        )])
+        prov_fig.update_layout(
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+            margin=dict(l=20, r=20, t=0, b=20),
+            height=200,
+            annotations=[dict(
+                text="⚠️ No data available<br>for service providers",
+                x=0.5, y=0.5,
+                showarrow=False,
+                font=dict(size=10, color="#854d0e"),
+                bgcolor="#fef9c3",
+                bordercolor="#facc15",
+                borderwidth=1,
+                borderpad=4
+            )]
+        )
+        prov_fig.update_traces(opacity=0.3, hoverinfo='skip')
+        st.plotly_chart(prov_fig, use_container_width=True)
+        
+        st.markdown("""
+        <div style="opacity: 0.4; filter: blur(1px); margin-top: -10px;">
+            <p style="font-size: 11px; margin-bottom: 2px;"><strong>Top 5 Providers (Simulated):</strong></p>
+            <ul style="font-size: 10px; padding-left: 14px; margin: 0; color: #6b7280;">
+                <li>AquaServe Ltd</li>
+                <li>City Water Co</li>
+                <li>EcoSan Services</li>
+                <li>Zone A Utility</li>
+                <li>Global Water</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # --- Step 5: The Equity Check (Zonal Disparities) ---
     st.markdown("<div class='section-header'>⚖️ Equity Check <span style='font-size:14px;color:#6b7280;font-weight:400'>| Zonal Disparities</span></div>", unsafe_allow_html=True)
     
     e_col1, e_col2 = st.columns(2)
@@ -849,155 +1251,187 @@ def scene_access():
             st.plotly_chart(fig_zone, use_container_width=True)
 
     with e_col2:
-        st.markdown("**Pro-Poor Overlay: Coverage vs Vulnerability**")
+        st.markdown("**Access Disparities: Urban/Rural & Income Levels**")
         
-        # Determine aggregation level based on filters
-        if selected_country == 'All':
-            # Aggregate by country
-            if not df_water.empty and not df_fin.empty:
-                # Water coverage by country
-                country_cov = df_water.groupby('country').agg({
-                    'municipal_coverage': 'sum',
-                    'popn_total': 'sum'
-                }).reset_index()
-                country_cov['Coverage %'] = (country_cov['municipal_coverage'] / country_cov['popn_total'] * 100).fillna(0)
-                
-                # Pro-poor population by country
-                country_fin = df_fin.groupby('country')['propoor_popn'].mean().reset_index()
-                
-                # Get total population by country from financial data for accurate percentage
-                country_pop = df_water.groupby('country')['popn_total'].mean().reset_index()
-                country_fin = pd.merge(country_fin, country_pop, on='country', how='inner')
-                country_fin['Pro-Poor %'] = (country_fin['propoor_popn'] / country_fin['popn_total'] * 100).fillna(0)
-                
-                # Merge
-                merged_equity = pd.merge(country_cov, country_fin[['country', 'Pro-Poor %', 'propoor_popn']], 
-                                        on='country', how='inner')
-                
-                if not merged_equity.empty:
-                    # Calculate priority score: high pro-poor % + low coverage = high priority
-                    # Normalize both metrics to 0-1 scale, then create priority score
-                    merged_equity['Priority Score'] = (merged_equity['Pro-Poor %'] / 100) * (1 - merged_equity['Coverage %'] / 100)
-                    
-                    fig_scatter = go.Figure()
-                    fig_scatter.add_trace(go.Scatter(
-                        x=merged_equity['Pro-Poor %'],
-                        y=merged_equity['Coverage %'],
-                        mode='markers+text',
-                        marker=dict(
-                            size=merged_equity['popn_total'] / 500000,  # Much smaller size scale
-                            sizemode='diameter',
-                            sizemin=4,
-                            color=merged_equity['Priority Score'],
-                            colorscale='RdYlBu_r',  # Red (high priority) to Blue (low priority)
-                            showscale=True,
-                            colorbar=dict(
-                                title="Priority<br>Score",
-                                tickmode="linear",
-                                tick0=0,
-                                dtick=0.2
-                            ),
-                            line=dict(width=1, color='white')
-                        ),
-                        text=merged_equity['country'],
-                        textposition='top center',
-                        textfont=dict(size=9),
-                        customdata=merged_equity[['popn_total']],
-                        hovertemplate='<b>%{text}</b><br>Pro-Poor: %{x:.1f}%<br>Coverage: %{y:.1f}%<br>Population: %{customdata[0]:,.0f}<br>Priority: %{marker.color:.2f}<extra></extra>'
-                    ))
-                    
-                    fig_scatter.update_layout(
-                        height=350,
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        xaxis_title="Pro-Poor Population (%)",
-                        yaxis_title="Municipal Coverage (%)",
-                        xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
-                        yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
-                        plot_bgcolor='rgba(250,250,250,0.5)'
-                    )
-                    st.plotly_chart(fig_scatter, use_container_width=True)
-                else:
-                    st.info("Insufficient data overlap between Access and Financial datasets for Pro-Poor analysis.")
+        # Prepare Data for Classification
+        if not df_w_filt.empty:
+            equity_df = df_w_filt.copy()
+            
+            # Merge with Sewer data if available
+            if not df_s_filt.empty:
+                # Select relevant columns from sewer
+                s_cols = df_s_filt[['zone', 's_basic_pct', 's_safely_managed_pct']]
+                equity_df = pd.merge(equity_df, s_cols, on='zone', how='left')
             else:
-                st.info("No financial or access data available for Pro-Poor analysis.")
-                
-        else:
-            # Aggregate by zone (when specific country or zone selected)
-            # Need to map Zones to Cities to link with Financial Data (Pro-Poor)
-            if not df_service.empty:
-                zone_city_map = df_service[['zone', 'city']].drop_duplicates().set_index('zone')['city'].to_dict()
-                
-                # Add City to Water Data
-                df_w_city = df_w_filt.copy()
-                df_w_city['city'] = df_w_city['zone'].map(zone_city_map)
-                
-                # Aggregate Water Data by Zone
-                zone_cov = df_w_filt.groupby('zone').agg({
-                    'municipal_coverage': 'sum',
-                    'popn_total': 'sum'
-                }).reset_index()
-                zone_cov['Coverage %'] = (zone_cov['municipal_coverage'] / zone_cov['popn_total'] * 100).fillna(0)
-                zone_cov['city'] = zone_cov['zone'].map(zone_city_map)
-                
-                # Aggregate Financial Data by City (Pro-Poor Pop)
-                if not df_f_filt.empty:
-                    city_fin = df_f_filt.groupby('city')['propoor_popn'].mean().reset_index()
+                equity_df['s_basic_pct'] = 0
+                equity_df['s_safely_managed_pct'] = 0
+            
+            # Calculate Access Metrics (Basic + Safely Managed)
+            equity_df['Water Access'] = equity_df['w_basic_pct'] + equity_df['w_safely_managed_pct']
+            equity_df['Sanitation Access'] = equity_df['s_basic_pct'].fillna(0) + equity_df['s_safely_managed_pct'].fillna(0)
+            
+            # --- Classification Logic ---
+            
+            # 1. Urban vs Rural
+            # Heuristic: Municipal Coverage > 40% -> Urban, else Rural
+            equity_df['muni_pct'] = (equity_df['municipal_coverage'] / equity_df['popn_total'] * 100).fillna(0)
+            equity_df['Area Type'] = equity_df['muni_pct'].apply(lambda x: 'Urban' if x > 40 else 'Rural')
+            
+            # 2. Low Income vs Average Income
+            # Heuristic: Use Financial Data (Pro-Poor) if available, else Unimproved Water proxy
+            income_source = "Proxy (Unimproved Water > 20%)"
+            has_financial_data = False
+            
+            if not df_service.empty and not df_fin.empty:
+                try:
+                    # Map Zone to City
+                    zone_city_map = df_service[['zone', 'city']].drop_duplicates().set_index('zone')['city'].to_dict()
+                    equity_df['city'] = equity_df['zone'].map(zone_city_map)
                     
-                    # Merge
-                    merged_equity = pd.merge(zone_cov, city_fin, on='city', how='inner')
+                    # Get City Pro-Poor Data
+                    city_propoor = df_fin.groupby('city')['propoor_popn'].mean().reset_index()
                     
-                    if not merged_equity.empty:
-                        # Calculate Pro-Poor % (Pro-Poor Pop / Total Pop)
-                        merged_equity['Pro-Poor %'] = (merged_equity['propoor_popn'] / merged_equity['popn_total'] * 100).fillna(0)
+                    # We need City Total Pop to calculate %
+                    # Sum zone populations for each city
+                    city_pop = equity_df.groupby('city')['popn_total'].sum().reset_index()
+                    
+                    city_income = pd.merge(city_propoor, city_pop, on='city')
+                    city_income['propoor_pct'] = (city_income['propoor_popn'] / city_income['popn_total'] * 100).fillna(0)
+                    
+                    # Define Threshold (e.g., Median Pro-Poor %)
+                    threshold = city_income['propoor_pct'].median()
+                    if pd.isna(threshold): threshold = 20 # Default
+                    
+                    # Map back to Equity DF
+                    equity_df = pd.merge(equity_df, city_income[['city', 'propoor_pct']], on='city', how='left')
+                    
+                    def classify_income(row):
+                        if pd.isna(row['propoor_pct']):
+                            # Fallback for zones without city map
+                            return 'Low Income' if (row['w_unimproved_pct'] + row['surface_water_pct']) > 20 else 'Average Income'
+                        return 'Low Income' if row['propoor_pct'] > threshold else 'Average Income'
                         
-                        # Calculate priority score: high pro-poor % + low coverage = high priority
-                        merged_equity['Priority Score'] = (merged_equity['Pro-Poor %'] / 100) * (1 - merged_equity['Coverage %'] / 100)
-                        
-                        fig_scatter = go.Figure()
-                        fig_scatter.add_trace(go.Scatter(
-                            x=merged_equity['Pro-Poor %'],
-                            y=merged_equity['Coverage %'],
-                            mode='markers+text',
-                            marker=dict(
-                                size=merged_equity['popn_total'] / 100000,  # Much smaller size scale
-                                sizemode='diameter',
-                                sizemin=4,
-                                color=merged_equity['Priority Score'],
-                                colorscale='RdYlBu_r',  # Red (high priority) to Blue (low priority)
-                                showscale=True,
-                                colorbar=dict(
-                                    title="Priority<br>Score",
-                                    tickmode="linear",
-                                    tick0=0,
-                                    dtick=0.2
-                                ),
-                                line=dict(width=1, color='white')
-                            ),
-                            text=merged_equity['zone'],
-                            textposition='top center',
-                            textfont=dict(size=9),
-                            customdata=merged_equity[['popn_total']],
-                            hovertemplate='<b>%{text}</b><br>Pro-Poor: %{x:.1f}%<br>Coverage: %{y:.1f}%<br>Population: %{customdata[0]:,.0f}<br>Priority: %{marker.color:.2f}<extra></extra>'
-                        ))
-                        
-                        fig_scatter.update_layout(
-                            height=350,
-                            margin=dict(l=0, r=0, t=0, b=0),
-                            xaxis_title="Pro-Poor Population (%)",
-                            yaxis_title="Municipal Coverage (%)",
-                            xaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
-                            yaxis=dict(showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
-                            plot_bgcolor='rgba(250,250,250,0.5)'
-                        )
-                        st.plotly_chart(fig_scatter, use_container_width=True)
+                    equity_df['Income Level'] = equity_df.apply(classify_income, axis=1)
+                    income_source = f"Financial Data (Pro-Poor > {threshold:.1f}%)"
+                    has_financial_data = True
+                except Exception:
+                    pass
+            
+            if not has_financial_data:
+                # Fallback: Low Income if Unimproved + Surface > 20%
+                equity_df['Income Level'] = equity_df.apply(
+                    lambda x: 'Low Income' if (x['w_unimproved_pct'] + x['surface_water_pct']) > 20 else 'Average Income', 
+                    axis=1
+                )
+            
+            # --- Aggregation ---
+            # Group by Area Type and Income Level
+            grouped_list = []
+            for (area, income), group in equity_df.groupby(['Area Type', 'Income Level']):
+                pop_sum = group['popn_total'].sum()
+                if pop_sum > 0:
+                    w_avg = (group['Water Access'] * group['popn_total']).sum() / pop_sum
+                    s_avg = (group['Sanitation Access'] * group['popn_total']).sum() / pop_sum
+                else:
+                    w_avg = 0
+                    s_avg = 0
+                grouped_list.append({
+                    'Area Type': area,
+                    'Income Level': income,
+                    'Water Access': w_avg,
+                    'Sanitation Access': s_avg,
+                    'Population': pop_sum
+                })
+            grouped = pd.DataFrame(grouped_list)
+            
+            # --- Visualization ---
+            fig_grouped = go.Figure()
+            
+            # Define categories for X-axis
+            categories = []
+            water_vals = []
+            san_vals = []
+            
+            # Ensure all combinations exist
+            for area in ['Rural', 'Urban']:
+                for inc in ['Low Income', 'Average Income']:
+                    label = f"{area}<br>{inc}"
+                    if not grouped.empty:
+                        row = grouped[(grouped['Area Type'] == area) & (grouped['Income Level'] == inc)]
+                        val_w = row['Water Access'].values[0] if not row.empty else 0
+                        val_s = row['Sanitation Access'].values[0] if not row.empty else 0
                     else:
-                        st.info("Insufficient data overlap between Service and Financial datasets for Pro-Poor analysis.")
-                else:
-                    st.info("No financial data available for Pro-Poor analysis.")
-            else:
-                st.info("Service data unavailable for mapping zones to cities.")
+                        val_w, val_s = 0, 0
+                    
+                    categories.append(label)
+                    water_vals.append(val_w)
+                    san_vals.append(val_s)
+            
+            # Water Trace
+            fig_grouped.add_trace(go.Bar(
+                name='Water (Basic+)',
+                x=categories,
+                y=water_vals,
+                marker_color='#3b82f6',
+                text=[f"{v:.1f}%" for v in water_vals],
+                textposition='auto'
+            ))
+            
+            # Sanitation Trace
+            fig_grouped.add_trace(go.Bar(
+                name='Sanitation (Basic+)',
+                x=categories,
+                y=san_vals,
+                marker_color='#10b981',
+                text=[f"{v:.1f}%" for v in san_vals],
+                textposition='auto'
+            ))
+            
+            # Add Gap Analysis Text (Annotation)
+            try:
+                best_w = max(water_vals)
+                worst_w = min([v for v in water_vals if v > 0] or [0])
+                gap_w = best_w - worst_w
+                
+                fig_grouped.add_annotation(
+                    x=0.5, y=1.15,
+                    xref="paper", yref="paper",
+                    text=f"<b>Gap Analysis:</b> Max disparity is <b>{gap_w:.1f}%</b> in Water Access",
+                    showarrow=False,
+                    font=dict(size=12, color="#ef4444"),
+                    bgcolor="#fee2e2",
+                    bordercolor="#ef4444",
+                    borderwidth=1,
+                    borderpad=4
+                )
+            except:
+                pass
 
-    # --- Step 5: Access Transition Report (Population Flow Summary) ---
+            fig_grouped.update_layout(
+                barmode='group',
+                height=350,
+                margin=dict(l=0, r=0, t=40, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis=dict(title="Access (%)", range=[0, 100]),
+                plot_bgcolor='rgba(250,250,250,0.5)'
+            )
+            
+            st.plotly_chart(fig_grouped, use_container_width=True)
+            
+            # Methodology Note
+            st.markdown(f"""
+            <div style='font-size:11px; color:#6b7280; background-color:#f9fafb; padding:8px; border-radius:4px;'>
+            <b>Methodology:</b><br>
+            • <b>Urban/Rural:</b> Classified based on Municipal Water Coverage (>40% = Urban).<br>
+            • <b>Income Level:</b> {income_source}.<br>
+            • <b>Access Metric:</b> Population with at least Basic service level.
+            </div>
+            """, unsafe_allow_html=True)
+            
+        else:
+            st.info("No data available for Equity Analysis.")
+
+    # --- Step 6: Access Transition Report (Population Flow Summary) ---
     st.markdown("<div class='section-header'>📈 Access Transition Report <span style='font-size:14px;color:#6b7280;font-weight:400'>| Population Movement Analysis</span></div>", unsafe_allow_html=True)
     
     # Calculate population flow for water and sanitation
@@ -1081,3 +1515,41 @@ def scene_access():
                     st.markdown(f"**{label}** ({start_pct:.1f}% → {end_pct:.1f}%): {change_text}")
     else:
         st.info("Need at least 2 years of data for population flow analysis")
+
+    # --- Step 8: Data Quality & Alerts Section (Footer) ---
+    st.markdown("---")
+    st.markdown("<div class='section-header'>⚠️ Data Quality & Alerts</div>", unsafe_allow_html=True)
+    
+    # Define alerts (based on known data gaps in current dashboard version)
+    alerts = [
+        "⚠️ Metered connections data unavailable",
+        "⚠️ Active service provider count pending"
+    ]
+    
+    # Check if Financial Data is missing (used for Low-Income classification)
+    if df_fin.empty or 'propoor_popn' not in df_fin.columns:
+        alerts.append("⚠️ Low-income area classification in progress")
+    
+    if alerts:
+        st.markdown(f"""
+        <div style='background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px; margin-bottom: 16px;'>
+            <h4 style='color: #854d0e; margin-top: 0; font-size: 16px; margin-bottom: 8px;'>Data Gaps Detected</h4>
+            <ul style='color: #a16207; margin-bottom: 0; padding-left: 20px;'>
+                {''.join([f"<li style='margin-bottom: 4px;'>{alert}</li>" for alert in alerts])}
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    # Footer with Timestamp and Sources
+    st.markdown(f"""
+    <div style='font-size: 12px; color: #6b7280; margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 16px;'>
+        <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;'>
+            <div>
+                <strong>Data Sources:</strong> Utility Master Database, National Census (2020), Municipal Records
+            </div>
+            <div>
+                <strong>Last Updated:</strong> {pd.Timestamp.now().strftime('%Y-%m-%d')}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)

@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import prepare_service_data, DATA_DIR
+import io
+from utils import prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
 
 @st.cache_data
-def load_finance_data():
-    """Load billing, financial services, and production data for the finance dashboard."""
+def _load_raw_finance_data():
+    """Load raw finance data (internal, cached without access filtering)."""
     # Paths
     billing_path = DATA_DIR / "all_data - billing.csv"
     if not billing_path.exists():
@@ -22,8 +23,6 @@ def load_finance_data():
     # Load Billing
     if billing_path.exists():
         try:
-            # Read only necessary columns to save memory if file is huge
-            # We need: date, billed, paid, consumption_m3, customer_id, country (maybe)
             df_billing = pd.read_csv(billing_path, low_memory=False)
             
             # Ensure numeric columns are actually numeric
@@ -96,441 +95,886 @@ def load_finance_data():
             
     return df_billing, df_fin, df_prod
 
+
+def load_finance_data():
+    """
+    Load billing, financial services, and production data for the finance dashboard.
+    Data is automatically filtered based on user access permissions.
+    """
+    # Load raw cached data
+    df_billing, df_fin, df_prod = _load_raw_finance_data()
+    
+    # Apply access control filtering (this happens on each call)
+    df_billing = filter_df_by_user_access(df_billing.copy(), "country")
+    df_fin = filter_df_by_user_access(df_fin.copy(), "country")
+    df_prod = filter_df_by_user_access(df_prod.copy(), "country")
+    
+    return df_billing, df_fin, df_prod
+
+
 def scene_finance():
     """
-    Financial Health scene - Redesigned for Commercial Director / CFO.
-    Focus: Cash Flow, Collection Efficiency, Cost Recovery.
+    Enhanced Financial Dashboard - Comprehensive Financial Analysis
+
+    Features:
+    - Import national and financial service data
+    - Advanced billing, debt, and financial analysis
+    - Interactive filters by country, city, date range
+    - Export filtered/analyzed data
+    - Upload custom data functionality
     """
-    # --- CSS Styling (Consistent with Quality/Access) ---
+
+    # Custom CSS
     st.markdown("""
     <style>
-        .metric-container {
-            background-color: #ffffff;
-            border: 1px solid #e5e7eb;
+        .panel {
+            background: white;
             border-radius: 8px;
-            padding: 16px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .metric-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             height: 100%;
         }
-        .metric-label {
-            font-size: 12px;
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
             font-weight: 600;
-            color: #6b7280;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
         }
-        .metric-value {
-            font-size: 28px;
-            font-weight: 700;
-            color: #111827;
-            line-height: 1.2;
-        }
-        .metric-sub {
-            font-size: 12px;
-            color: #6b7280;
-            margin-top: 4px;
-        }
-        .metric-delta {
-            font-size: 12px;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-top: 8px;
-        }
-        .delta-up { color: #059669; }
-        .delta-down { color: #dc2626; }
-        .delta-neutral { color: #6b7280; }
-        
-        .section-header {
-            font-size: 18px;
-            font-weight: 600;
-            color: #111827;
-            margin: 24px 0 16px 0;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .chart-container {
-            background-color: #ffffff;
-            border: 1px solid #e5e7eb;
+        .status-good { background: #d1fae5; color: #065f46; }
+        .status-warning { background: #fed7aa; color: #92400e; }
+        .status-critical { background: #fee2e2; color: #991b1b; }
+        .upload-section {
+            background: #f9fafb;
+            border: 2px dashed #d1d5db;
             border-radius: 8px;
-            padding: 16px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            padding: 20px;
+            margin-bottom: 20px;
         }
-        .alert-box {
-            background-color: #fef2f2;
-            border: 1px solid #fee2e2;
-            border-radius: 6px;
-            padding: 12px;
-            color: #991b1b;
-            font-size: 14px;
-            margin-bottom: 16px;
+        .filter-section {
+            background: #f3f4f6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        .info-box {
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .success-box {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- Load Data ---
-    df_billing, df_fin, df_prod = load_finance_data()
-    
-    if df_billing.empty and df_fin.empty:
-        st.warning("⚠️ Financial data not available.")
+    # Header
+    st.title("💰 Water Utility Financial Dashboard - Enhanced")
+    st.markdown("**Comprehensive Financial Analysis with Real Data Integration**")
+
+    # ============================================================================
+    # DATA IMPORT SECTION
+    # ============================================================================
+
+    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+    st.subheader("📁 Data Import")
+
+    # Initialize session state for data
+    if 'national_data' not in st.session_state:
+        st.session_state.national_data = None
+    if 'fin_service_data' not in st.session_state:
+        st.session_state.fin_service_data = None
+
+    # Tab for different import methods
+    import_tab1, import_tab2 = st.tabs(["📤 Upload Files", "📋 Use Default Data"])
+
+    with import_tab1:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**National Budget Data**")
+            national_file = st.file_uploader(
+                "Upload National Data CSV", 
+                type=['csv', 'xlsx'],
+                key="national_upload",
+                help="Required columns: country, city, date_YY, budget_allocated, san_allocation, wat_allocation, staff_cost, etc."
+            )
+
+            if national_file:
+                try:
+                    if national_file.name.endswith('.csv'):
+                        st.session_state.national_data = pd.read_csv(national_file)
+                    else:
+                        st.session_state.national_data = pd.read_excel(national_file)
+                    st.success(f"✓ Loaded {len(st.session_state.national_data)} national records")
+                except Exception as e:
+                    st.error(f"Error loading national data: {e}")
+
+        with col2:
+            st.markdown("**Financial Service Data**")
+            fin_service_file = st.file_uploader(
+                "Upload Financial Service CSV",
+                type=['csv', 'xlsx'],
+                key="fin_service_upload",
+                help="Required columns: country, city, date_MMYY, sewer_billed, sewer_revenue, opex, complaints, resolved, etc."
+            )
+
+            if fin_service_file:
+                try:
+                    if fin_service_file.name.endswith('.csv'):
+                        st.session_state.fin_service_data = pd.read_csv(fin_service_file)
+                    else:
+                        st.session_state.fin_service_data = pd.read_excel(fin_service_file)
+                    st.success(f"✓ Loaded {len(st.session_state.fin_service_data)} service records")
+                except Exception as e:
+                    st.error(f"Error loading financial service data: {e}")
+
+    with import_tab2:
+        st.info("📌 Using default demonstration data (Cameroon - Yaounde)")
+        if st.button("Load Default Data"):
+            # Load default data from the provided files inside the repository Data folder
+            try:
+                st.session_state.national_data = pd.read_csv(DATA_DIR / 'Master_Data_DontEdit.xlsx-all_national.csv')
+                st.session_state.fin_service_data = pd.read_csv(DATA_DIR / 'Master_Data_DontEdit.xlsx-all_fin_service.csv')
+                st.success(f"✓ Loaded {len(st.session_state.national_data)} national records and {len(st.session_state.fin_service_data)} service records")
+            except Exception as e:
+                st.error(f"Error loading default data: {e}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Check if data is loaded
+    if st.session_state.national_data is None or st.session_state.fin_service_data is None:
+        st.warning("⚠️ Please upload data files or load default data to continue")
         return
 
-    # --- Filters (from Session State) ---
-    selected_country = st.session_state.get("selected_country", "All")
-    selected_zone = st.session_state.get("selected_zone", "All") # Billing might not have zone
-    selected_year = st.session_state.get("selected_year")
-    selected_month_name = st.session_state.get("selected_month", "All")
-
-    month_map = {
-        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-    }
-    selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
-
-    # --- Apply Filters ---
+    # Get data from session state and apply access control filtering
+    national_df = st.session_state.national_data.copy()
+    fin_service_df = st.session_state.fin_service_data.copy()
     
-    # 1. Billing Data
-    df_b_filt = df_billing.copy()
-    if not df_b_filt.empty:
-        if selected_country != 'All' and 'country' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['country'] == selected_country]
-        # Note: Billing often lacks 'zone'. If it has it, filter. If not, we can't filter by zone.
-        if selected_zone != 'All' and 'zone' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['zone'] == selected_zone]
-        if selected_year and 'year' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['month'] == selected_month]
-
-    # 2. Financial Services Data
-    df_f_filt = df_fin.copy()
-    if not df_f_filt.empty:
-        if selected_country != 'All' and 'country' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['country'] == selected_country]
-        # Financial services usually has 'city', not 'zone'. Mapping might be needed if strict zone filter required.
-        # For now, we ignore zone filter for financial services unless we have a map.
-        if selected_year and 'year' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
-
-    # 3. Production Data
-    df_p_filt = df_prod.copy()
-    if not df_p_filt.empty:
-        if selected_country != 'All' and 'country' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['country'] == selected_country]
-        if selected_year and 'year' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['year'] == selected_year]
-        if selected_month != 'All' and 'month' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['month'] == selected_month]
-
-    # --- Step 1: The "Cash Flow" Pulse (Scorecard) ---
-    st.markdown("<div class='section-header'>💸 Cash Flow Pulse <span style='font-size:14px;color:#6b7280;font-weight:400'>| Morning Check</span></div>", unsafe_allow_html=True)
-
-    # Calculations
-    # A. Collection Efficiency
-    total_billed_water = df_b_filt['billed'].sum() if not df_b_filt.empty else 0
-    total_paid_water = df_b_filt['paid'].sum() if not df_b_filt.empty else 0
+    # Apply access control filtering based on user permissions
+    national_df = filter_df_by_user_access(national_df, "country")
+    fin_service_df = filter_df_by_user_access(fin_service_df, "country")
     
-    # Sewer billing/revenue from financial services
-    total_billed_sewer = df_f_filt['sewer_billed'].sum() if not df_f_filt.empty and 'sewer_billed' in df_f_filt.columns else 0
-    total_paid_sewer = df_f_filt['sewer_revenue'].sum() if not df_f_filt.empty and 'sewer_revenue' in df_f_filt.columns else 0
-    
-    total_billed = total_billed_water + total_billed_sewer
-    total_collected = total_paid_water + total_paid_sewer
-    
-    coll_efficiency = (total_collected / total_billed * 100) if total_billed > 0 else 0
-    
-    # B. Total Revenue (Cash)
-    # Already calculated as total_collected
-    
-    # C. Operating Cost Coverage (OCC)
-    total_opex = df_f_filt['opex'].sum() if not df_f_filt.empty and 'opex' in df_f_filt.columns else 0
-    occ = (total_collected / total_opex) if total_opex > 0 else 0
-    
-    # D. Unit Cost of Production
-    total_production = df_p_filt['production_m3'].sum() if not df_p_filt.empty else 0
-    unit_cost = (total_opex / total_production) if total_production > 0 else 0
+    # Check if any data remains after filtering
+    if national_df.empty or fin_service_df.empty:
+        st.warning("⚠️ No data available for your access level. Please contact an administrator.")
+        return
 
-    # Render Scorecard
-    sc1, sc2, sc3, sc4 = st.columns(4)
-    
-    # 1. Collection Efficiency
-    with sc1:
-        target = 95
-        delta = coll_efficiency - target
-        delta_cls = "delta-up" if delta >= 0 else "delta-down"
-        icon = "↑" if delta >= 0 else "↓"
-        st.markdown(f"""
-        <div class='metric-container'>
-            <div class='metric-label'>Collection Efficiency</div>
-            <div class='metric-value'>{coll_efficiency:.1f}%</div>
-            <div class='metric-delta {delta_cls}'>{icon} {abs(delta):.1f}% vs Target ({target}%)</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # ============================================================================
+    # DATA PREPROCESSING
+    # ============================================================================
 
-    # 2. Total Revenue
-    with sc2:
-        # Format large numbers
-        if total_collected > 1e9:
-            val_str = f"{total_collected/1e9:.2f}B"
-        elif total_collected > 1e6:
-            val_str = f"{total_collected/1e6:.2f}M"
-        else:
-            val_str = f"{total_collected:,.0f}"
-            
-        st.markdown(f"""
-        <div class='metric-container'>
-            <div class='metric-label'>Total Revenue (Cash)</div>
-            <div class='metric-value'>{val_str}</div>
-            <div class='metric-sub'>Water + Sewer</div>
-        </div>
-        """, unsafe_allow_html=True)
+    # Convert date columns
+    try:
+        fin_service_df['date_parsed'] = pd.to_datetime(fin_service_df['date_MMYY'], format='%b/%y', errors='coerce')
+        fin_service_df['year'] = fin_service_df['date_parsed'].dt.year
+        fin_service_df['month'] = fin_service_df['date_parsed'].dt.month
+        fin_service_df['month_name'] = fin_service_df['date_parsed'].dt.strftime('%B')
+    except:
+        st.warning("Date parsing issue - some date features may not work")
 
-    # 3. Operating Cost Coverage
-    with sc3:
-        target_occ = 1.0
-        delta_occ = occ - target_occ
-        delta_cls_occ = "delta-up" if delta_occ >= 0 else "delta-down"
-        icon_occ = "↑" if delta_occ >= 0 else "↓"
+    # Calculate derived metrics
+    fin_service_df['collection_rate'] = (fin_service_df['sewer_revenue'] / fin_service_df['sewer_billed'] * 100).fillna(0)
+    fin_service_df['debt'] = fin_service_df['sewer_billed'] - fin_service_df['sewer_revenue']
+    fin_service_df['complaint_resolution_rate'] = (fin_service_df['resolved'] / fin_service_df['complaints'] * 100).fillna(0)
+    fin_service_df['cost_recovery_ratio'] = (fin_service_df['sewer_revenue'] / fin_service_df['opex'] * 100).fillna(0)
+    fin_service_df['total_staff'] = fin_service_df['san_staff'] + fin_service_df['w_staff']
+    fin_service_df['revenue_per_staff'] = fin_service_df['sewer_revenue'] / fin_service_df['total_staff']
+
+    # ============================================================================
+    # FILTER SECTION
+    # ============================================================================
+
+    st.markdown('<div class="filter-section">', unsafe_allow_html=True)
+    st.subheader("🔍 Data Filters")
+
+    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
+
+    with filter_col1:
+        # Get user's country restriction (None means master user with full access)
+        user_country = get_user_country_filter()
+        available_countries = sorted(national_df['country'].unique().tolist())
         
-        st.markdown(f"""
-        <div class='metric-container'>
-            <div class='metric-label'>Op. Cost Coverage</div>
-            <div class='metric-value'>{occ:.2f}</div>
-            <div class='metric-delta {delta_cls_occ}'>{icon_occ} {abs(delta_occ):.2f} vs Target (1.0)</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # 4. Unit Cost of Production
-    with sc4:
-        st.markdown(f"""
-        <div class='metric-container'>
-            <div class='metric-label'>Unit Cost of Prod.</div>
-            <div class='metric-value'>${unit_cost:.2f}</div>
-            <div class='metric-sub'>per m³</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # --- Step 2: Revenue Gap Analysis ---
-    st.markdown("<div class='section-header'>📉 Revenue Gap Analysis <span style='font-size:14px;color:#6b7280;font-weight:400'>| Billing vs Collection</span></div>", unsafe_allow_html=True)
-    
-    col_rev1, col_rev2 = st.columns(2)
-    
-    with col_rev1:
-        st.markdown("**Billed vs. Collected Trend**")
-        if not df_b_filt.empty:
-            # Group by date
-            rev_trend = df_b_filt.groupby('date_dt')[['billed', 'paid']].sum().reset_index()
-            
-            fig_rev = go.Figure()
-            fig_rev.add_trace(go.Scatter(x=rev_trend['date_dt'], y=rev_trend['billed'], name='Billed',
-                                         line=dict(color='#3b82f6', width=2)))
-            fig_rev.add_trace(go.Scatter(x=rev_trend['date_dt'], y=rev_trend['paid'], name='Collected',
-                                         line=dict(color='#10b981', width=2), fill='tonexty')) # Fill to show gap
-            
-            fig_rev.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), 
-                                  legend=dict(orientation="h", y=1.1),
-                                  yaxis_title="Amount")
-            st.plotly_chart(fig_rev, use_container_width=True)
+        # Only show countries user has access to
+        if user_country is None:
+            # Master user - show all available with "All" option
+            countries = ['All'] + available_countries
         else:
-            st.info("No billing data for trend analysis.")
-
-    with col_rev2:
-        st.markdown("**Revenue Composition (Water vs Sewer)**")
-        # Prepare monthly data
-        # Water
-        water_monthly = df_b_filt.groupby('date_dt')['paid'].sum().reset_index().rename(columns={'paid': 'Water'})
-        # Sewer
-        sewer_monthly = df_f_filt.groupby('date_dt')['sewer_revenue'].sum().reset_index().rename(columns={'sewer_revenue': 'Sewer'})
+            # Non-master user - show only their assigned country
+            countries = [c for c in available_countries if c.lower() == user_country.lower()]
+            if not countries:
+                countries = [user_country]  # Fallback to assigned country
         
-        # Merge
-        if not water_monthly.empty or not sewer_monthly.empty:
-            rev_mix = pd.merge(water_monthly, sewer_monthly, on='date_dt', how='outer').fillna(0)
-            
-            fig_mix = px.bar(rev_mix, x='date_dt', y=['Water', 'Sewer'], 
-                             color_discrete_map={'Water': '#3b82f6', 'Sewer': '#f59e0b'})
-            fig_mix.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), 
-                                  legend=dict(orientation="h", y=1.1),
-                                  yaxis_title="Revenue Collected")
-            st.plotly_chart(fig_mix, use_container_width=True)
+        selected_country = st.selectbox("Country", countries)
+        
+        # Validate selection for non-master users
+        if user_country is not None:
+            selected_country = validate_selected_country(selected_country)
+
+    with filter_col2:
+        if selected_country != 'All':
+            cities = ['All'] + sorted(national_df[national_df['country'] == selected_country]['city'].unique().tolist())
         else:
-            st.info("No revenue data available.")
+            cities = ['All'] + sorted(national_df['city'].unique().tolist())
+        selected_city = st.selectbox("City", cities)
 
-    # --- Step 3: Cost Control Center ---
-    st.markdown("<div class='section-header'>🛡️ Cost Control Center <span style='font-size:14px;color:#6b7280;font-weight:400'>| Opex & Staff</span></div>", unsafe_allow_html=True)
-    
-    col_cost1, col_cost2 = st.columns(2)
-    
-    with col_cost1:
-        st.markdown("**Opex Trend vs Budget**")
-        if not df_f_filt.empty:
-            opex_trend = df_f_filt.groupby('date_dt')['opex'].sum().reset_index()
-            
-            # Simulated Budget Line (e.g., average opex * 0.9 as target)
-            avg_opex = opex_trend['opex'].mean()
-            budget_limit = avg_opex * 0.95 
-            
-            fig_opex = go.Figure()
-            fig_opex.add_trace(go.Scatter(x=opex_trend['date_dt'], y=opex_trend['opex'], name='Actual Opex',
-                                          line=dict(color='#ef4444', width=2)))
-            fig_opex.add_trace(go.Scatter(x=opex_trend['date_dt'], y=[budget_limit]*len(opex_trend), name='Budget Limit',
-                                          line=dict(color='#6b7280', width=2, dash='dash')))
-            
-            fig_opex.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), 
-                                   legend=dict(orientation="h", y=1.1),
-                                   yaxis_title="Opex")
-            st.plotly_chart(fig_opex, use_container_width=True)
-            
-            # Budget Variance Alert
-            last_month_opex = opex_trend.iloc[-1]['opex'] if not opex_trend.empty else 0
-            if last_month_opex > budget_limit:
-                st.markdown(f"""
-                <div class='alert-box'>
-                    ⚠️ <strong>Budget Alert:</strong> Last month's Opex ({last_month_opex:,.0f}) exceeded the implied budget limit ({budget_limit:,.0f}).
-                </div>
-                """, unsafe_allow_html=True)
+    with filter_col3:
+        years = sorted(national_df['date_YY'].unique().tolist())
+        year_range = st.select_slider("Year Range", options=years, value=(min(years), max(years)))
+
+    with filter_col4:
+        if 'month' in fin_service_df.columns:
+            months = ['All'] + list(range(1, 13))
+            selected_month = st.selectbox("Month", months, format_func=lambda x: 'All' if x == 'All' else pd.to_datetime(f'2020-{x}-01').strftime('%B'))
         else:
-            st.info("No Opex data available.")
+            selected_month = 'All'
 
-    with col_cost2:
-        st.markdown("**Staff Cost Ratio (Estimated)**")
-        # Since we lack direct staff cost, we'll estimate or show a placeholder gauge
-        # Assuming staff cost is roughly 40% of Opex for this demo if data missing
-        
-        # Create a gauge
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = 42, # Placeholder value
-            title = {'text': "Staff Cost % (Est.)"},
-            gauge = {
-                'axis': {'range': [None, 100]},
-                'bar': {'color': "#3b82f6"},
-                'steps': [
-                    {'range': [0, 30], 'color': "#d1fae5"},
-                    {'range': [30, 50], 'color': "#fed7aa"},
-                    {'range': [50, 100], 'color': "#fee2e2"}],
-                'threshold': {
-                    'line': {'color': "red", 'width': 4},
-                    'thickness': 0.75,
-                    'value': 50}}))
-        
-        fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig_gauge, use_container_width=True)
-        st.caption("*Note: Staff cost data simulated for demonstration.*")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Step 3.1: Budget Allocation Breakdown (New) ---
+    # Apply filters
+    national_filtered = national_df.copy()
+    fin_service_filtered = fin_service_df.copy()
+
+    if selected_country != 'All':
+        national_filtered = national_filtered[national_filtered['country'] == selected_country]
+        fin_service_filtered = fin_service_filtered[fin_service_filtered['country'] == selected_country]
+
+    if selected_city != 'All':
+        national_filtered = national_filtered[national_filtered['city'] == selected_city]
+        fin_service_filtered = fin_service_filtered[fin_service_filtered['city'] == selected_city]
+
+    national_filtered = national_filtered[
+        (national_filtered['date_YY'] >= year_range[0]) & 
+        (national_filtered['date_YY'] <= year_range[1])
+    ]
+
+    if 'year' in fin_service_filtered.columns:
+        fin_service_filtered = fin_service_filtered[
+            (fin_service_filtered['year'] >= year_range[0]) & 
+            (fin_service_filtered['year'] <= year_range[1])
+        ]
+
+    if selected_month != 'All' and 'month' in fin_service_filtered.columns:
+        fin_service_filtered = fin_service_filtered[fin_service_filtered['month'] == selected_month]
+
+    # Display filter summary
+    st.info(f"📊 Viewing: **{len(national_filtered)}** national records, **{len(fin_service_filtered)}** service records")
+
+    # ============================================================================
+    # KEY METRICS DASHBOARD
+    # ============================================================================
+
     st.markdown("---")
-    st.markdown("**Budget Allocation Breakdown**")
-    
-    if not df_f_filt.empty:
-        # Simulate breakdown based on Total Opex since we lack granular cost data
-        # Typical Utility Breakdown: Staff (40%), Energy (30%), Maintenance (15%), Chemicals (10%), Other (5%)
-        total_opex_val = df_f_filt['opex'].sum()
-        
-        if total_opex_val > 0:
-            alloc_data = pd.DataFrame({
-                'Category': ['Staff', 'Energy', 'Maintenance', 'Chemicals', 'Other'],
-                'Percentage': [0.40, 0.30, 0.15, 0.10, 0.05]
-            })
-            alloc_data['Amount'] = alloc_data['Percentage'] * total_opex_val
-            
-            fig_pie = px.pie(alloc_data, values='Amount', names='Category', 
-                             title='Opex Breakdown (Estimated Model)',
-                             color_discrete_sequence=px.colors.qualitative.Set3,
-                             hole=0.4)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
-            fig_pie.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
-            st.plotly_chart(fig_pie, use_container_width=True)
-        else:
-            st.info("No Opex data to visualize breakdown.")
-    else:
-        st.info("No Financial data available.")
+    st.subheader("📈 Key Financial Metrics")
 
-    # --- Step 4: "Lost Money" (NRW Financials) ---
-    st.markdown("<div class='section-header'>💧 The Cost of Inefficiency <span style='font-size:14px;color:#6b7280;font-weight:400'>| NRW Financial Impact</span></div>", unsafe_allow_html=True)
-    
-    # Calculation
-    total_consumption = df_b_filt['consumption_m3'].sum() if not df_b_filt.empty else 0
-    # Production already summed as total_production
-    
-    nrw_vol = total_production - total_consumption
-    nrw_pct = (nrw_vol / total_production * 100) if total_production > 0 else 0
-    
-    # Avg Tariff
-    avg_tariff = (total_billed_water / total_consumption) if total_consumption > 0 else 0
-    
-    lost_revenue = nrw_vol * avg_tariff
-    
-    col_nrw1, col_nrw2, col_nrw3 = st.columns(3)
-    
-    col_nrw1.metric("Physical Water Loss", f"{nrw_vol:,.0f} m³", f"{nrw_pct:.1f}% of Prod", delta_color="inverse")
-    col_nrw2.metric("Average Tariff", f"${avg_tariff:.2f}", "per m³")
-    col_nrw3.metric("Commercial Value Lost", f"${lost_revenue:,.0f}", "Potential Revenue", delta_color="inverse")
+    # Calculate aggregate metrics
+    total_budget = national_filtered['budget_allocated'].sum()
+    total_billed = fin_service_filtered['sewer_billed'].sum()
+    total_revenue = fin_service_filtered['sewer_revenue'].sum()
+    total_debt = fin_service_filtered['debt'].sum()
+    avg_collection_rate = fin_service_filtered['collection_rate'].mean()
+    total_opex = fin_service_filtered['opex'].sum()
 
-    # --- Additional: Receivables Management (Debt Aging & Top Debtors) ---
-    st.markdown("<div class='section-header'>📋 Receivables Management <span style='font-size:14px;color:#6b7280;font-weight:400'>| Aging & Action List</span></div>", unsafe_allow_html=True)
-    
-    if not df_b_filt.empty:
-        # --- Debt Aging Analysis ---
-        col_age, col_list = st.columns([1, 1])
-        
-        with col_age:
-            st.markdown("**Debt Aging Analysis**")
-            # Calculate Outstanding
-            df_debt = df_b_filt.copy()
-            df_debt['outstanding'] = df_debt['billed'] - df_debt['paid']
-            df_debt = df_debt[df_debt['outstanding'] > 0] # Only unpaid
-            
-            if not df_debt.empty:
-                # Determine reference date (Max date in selection or dataset)
-                ref_date = df_debt['date_dt'].max()
-                
-                # Calculate Days Overdue
-                df_debt['days_overdue'] = (ref_date - df_debt['date_dt']).dt.days
-                
-                # Binning
-                bins = [0, 30, 60, 90, 9999]
-                labels = ['0-30 Days', '31-60 Days', '61-90 Days', '90+ Days']
-                df_debt['aging_bucket'] = pd.cut(df_debt['days_overdue'], bins=bins, labels=labels, right=False)
-                
-                # Aggregate
-                aging_summary = df_debt.groupby('aging_bucket', observed=False)['outstanding'].sum().reset_index()
-                
-                # Chart
-                fig_aging = px.bar(aging_summary, x='aging_bucket', y='outstanding',
-                                   title="Outstanding Debt by Age",
-                                   labels={'outstanding': 'Amount ($)', 'aging_bucket': 'Age Category'},
-                                   color='aging_bucket',
-                                   color_discrete_sequence=px.colors.sequential.Reds_r)
-                
-                fig_aging.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), showlegend=False)
-                st.plotly_chart(fig_aging, use_container_width=True)
-            else:
-                st.success("No outstanding debt found in selected period.")
+    metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
 
-        with col_list:
-            st.markdown("**Top Debtors Action List**")
-            # Group by customer
-            cust_debt = df_b_filt.groupby('customer_id')[['billed', 'paid']].sum().reset_index()
-            cust_debt['Outstanding'] = cust_debt['billed'] - cust_debt['paid']
-            
-            top_debtors = cust_debt.sort_values('Outstanding', ascending=False).head(10)
-            
-            st.dataframe(
-                top_debtors,
-                column_config={
-                    "customer_id": "Customer ID",
-                    "billed": st.column_config.NumberColumn("Total Billed", format="$%d"),
-                    "paid": st.column_config.NumberColumn("Total Paid", format="$%d"),
-                    "Outstanding": st.column_config.NumberColumn("Outstanding Debt", format="$%d"),
-                },
-                hide_index=True,
-                use_container_width=True,
-                height=350
+    with metric_col1:
+        st.metric("Total Budget", f"${total_budget/1e9:.2f}B", help="Total allocated budget")
+
+    with metric_col2:
+        st.metric("Total Billed", f"${total_billed/1e9:.2f}B", help="Total amount billed to customers")
+
+    with metric_col3:
+        st.metric("Revenue Collected", f"${total_revenue/1e9:.2f}B", help="Total revenue collected")
+
+    with metric_col4:
+        collection_status = "🟢" if avg_collection_rate >= 80 else "🟡" if avg_collection_rate >= 60 else "🔴"
+        st.metric("Collection Rate", f"{avg_collection_rate:.1f}%", delta=f"{collection_status}")
+
+    with metric_col5:
+        st.metric("Outstanding Debt", f"${total_debt/1e9:.2f}B", delta="Monitor", delta_color="inverse")
+
+    # ============================================================================
+    # BILLING ANALYSIS
+    # ============================================================================
+
+    st.markdown("---")
+    st.subheader("💵 Billing Analysis")
+
+    billing_tab1, billing_tab2, billing_tab3 = st.tabs(["📊 Billing Trends", "🏦 Revenue vs Costs", "📉 Collection Performance"])
+
+    with billing_tab1:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Billing and Revenue Trend
+            if 'date_parsed' in fin_service_filtered.columns:
+                billing_trend = fin_service_filtered.groupby('date_parsed').agg({
+                    'sewer_billed': 'sum',
+                    'sewer_revenue': 'sum',
+                    'debt': 'sum'
+                }).reset_index()
+
+                fig_billing = go.Figure()
+                fig_billing.add_trace(go.Scatter(
+                    x=billing_trend['date_parsed'],
+                    y=billing_trend['sewer_billed'],
+                    name='Billed Amount',
+                    mode='lines+markers',
+                    line=dict(color='#3b82f6', width=2)
+                ))
+                fig_billing.add_trace(go.Scatter(
+                    x=billing_trend['date_parsed'],
+                    y=billing_trend['sewer_revenue'],
+                    name='Revenue Collected',
+                    mode='lines+markers',
+                    line=dict(color='#10b981', width=2)
+                ))
+                fig_billing.update_layout(
+                    title='Billing vs Revenue Collection Over Time',
+                    xaxis_title='Date',
+                    yaxis_title='Amount ($)',
+                    hovermode='x unified',
+                    height=400
+                )
+                st.plotly_chart(fig_billing, use_container_width=True)
+
+        with col2:
+            # Debt Accumulation
+            if 'date_parsed' in fin_service_filtered.columns:
+                fig_debt = go.Figure()
+                fig_debt.add_trace(go.Scatter(
+                    x=billing_trend['date_parsed'],
+                    y=billing_trend['debt'],
+                    name='Outstanding Debt',
+                    mode='lines+markers',
+                    fill='tozeroy',
+                    line=dict(color='#ef4444', width=2)
+                ))
+                fig_debt.update_layout(
+                    title='Debt Accumulation Trend',
+                    xaxis_title='Date',
+                    yaxis_title='Debt ($)',
+                    hovermode='x unified',
+                    height=400
+                )
+                st.plotly_chart(fig_debt, use_container_width=True)
+
+    with billing_tab2:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Revenue vs OPEX
+            if 'date_parsed' in fin_service_filtered.columns:
+                revenue_opex = fin_service_filtered.groupby('date_parsed').agg({
+                    'sewer_revenue': 'sum',
+                    'opex': 'sum'
+                }).reset_index()
+
+                fig_rev_opex = go.Figure()
+                fig_rev_opex.add_trace(go.Bar(
+                    x=revenue_opex['date_parsed'],
+                    y=revenue_opex['sewer_revenue'],
+                    name='Revenue',
+                    marker_color='#10b981'
+                ))
+                fig_rev_opex.add_trace(go.Bar(
+                    x=revenue_opex['date_parsed'],
+                    y=revenue_opex['opex'],
+                    name='Operating Expenses',
+                    marker_color='#f59e0b'
+                ))
+                fig_rev_opex.update_layout(
+                    title='Revenue vs Operating Expenses',
+                    xaxis_title='Date',
+                    yaxis_title='Amount ($)',
+                    barmode='group',
+                    height=400
+                )
+                st.plotly_chart(fig_rev_opex, use_container_width=True)
+
+        with col2:
+            # Cost Recovery Ratio
+            avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
+
+            fig_recovery = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=avg_cost_recovery,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': "Cost Recovery Ratio (%)"},
+                delta={'reference': 100},
+                gauge={
+                    'axis': {'range': [None, 150]},
+                    'bar': {'color': "#3b82f6"},
+                    'steps': [
+                        {'range': [0, 70], 'color': "#fee2e2"},
+                        {'range': [70, 100], 'color': "#fed7aa"},
+                        {'range': [100, 150], 'color': "#d1fae5"}
+                    ],
+                    'threshold': {
+                        'line': {'color': "red", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 100
+                    }
+                }
+            ))
+            fig_recovery.update_layout(height=400)
+            st.plotly_chart(fig_recovery, use_container_width=True)
+
+    with billing_tab3:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Collection Rate by City
+            if 'city' in fin_service_filtered.columns:
+                city_collection = fin_service_filtered.groupby('city').agg({
+                    'collection_rate': 'mean',
+                    'sewer_billed': 'sum',
+                    'sewer_revenue': 'sum'
+                }).reset_index().sort_values('collection_rate', ascending=False)
+
+                fig_city_col = px.bar(
+                    city_collection,
+                    x='city',
+                    y='collection_rate',
+                    title='Average Collection Rate by City',
+                    color='collection_rate',
+                    color_continuous_scale='RdYlGn',
+                    labels={'collection_rate': 'Collection Rate (%)'}
+                )
+                fig_city_col.update_layout(height=400)
+                st.plotly_chart(fig_city_col, use_container_width=True)
+
+        with col2:
+            # Monthly Collection Pattern
+            if 'month_name' in fin_service_filtered.columns:
+                month_collection = fin_service_filtered.groupby('month_name')['collection_rate'].mean().reset_index()
+
+                fig_month = px.line(
+                    month_collection,
+                    x='month_name',
+                    y='collection_rate',
+                    title='Collection Rate by Month',
+                    markers=True,
+                    line_shape='spline'
+                )
+                fig_month.update_layout(height=400)
+                st.plotly_chart(fig_month, use_container_width=True)
+
+    # ============================================================================
+    # DEBT ANALYSIS
+    # ============================================================================
+
+    st.markdown("---")
+    st.subheader("🏦 Debt & Arrears Analysis")
+
+    debt_col1, debt_col2, debt_col3 = st.columns(3)
+
+    with debt_col1:
+        avg_debt_per_month = total_debt / len(fin_service_filtered) if len(fin_service_filtered) > 0 else 0
+        st.metric("Avg Monthly Debt", f"${avg_debt_per_month/1e6:.2f}M")
+
+    with debt_col2:
+        debt_to_billed_ratio = (total_debt / total_billed * 100) if total_billed > 0 else 0
+        st.metric("Debt-to-Billed Ratio", f"{debt_to_billed_ratio:.1f}%")
+
+    with debt_col3:
+        if 'date_parsed' in fin_service_filtered.columns and len(fin_service_filtered) > 1:
+            recent_debt_trend = fin_service_filtered.sort_values('date_parsed')['debt'].iloc[-3:].mean()
+            previous_debt_trend = fin_service_filtered.sort_values('date_parsed')['debt'].iloc[-6:-3].mean()
+            debt_change = ((recent_debt_trend - previous_debt_trend) / previous_debt_trend * 100) if previous_debt_trend != 0 else 0
+            st.metric("Debt Trend (Recent)", f"{debt_change:+.1f}%", delta_color="inverse")
+
+    # Debt Analysis Charts
+    debt_chart_col1, debt_chart_col2 = st.columns(2)
+
+    with debt_chart_col1:
+        # Debt Aging Analysis
+        if 'year' in fin_service_filtered.columns:
+            debt_by_year = fin_service_filtered.groupby('year')['debt'].sum().reset_index()
+            fig_debt_year = px.bar(
+                debt_by_year,
+                x='year',
+                y='debt',
+                title='Total Debt by Year',
+                color='debt',
+                color_continuous_scale='Reds'
             )
+            fig_debt_year.update_layout(height=400)
+            st.plotly_chart(fig_debt_year, use_container_width=True)
+
+    with debt_chart_col2:
+        # Top Debtors (by city)
+        if 'city' in fin_service_filtered.columns:
+            city_debt = fin_service_filtered.groupby('city')['debt'].sum().reset_index().sort_values('debt', ascending=False).head(10)
+            fig_top_debt = px.bar(
+                city_debt,
+                y='city',
+                x='debt',
+                orientation='h',
+                title='Top 10 Cities by Outstanding Debt',
+                color='debt',
+                color_continuous_scale='Reds'
+            )
+            fig_top_debt.update_layout(height=400)
+            st.plotly_chart(fig_top_debt, use_container_width=True)
+
+    # ============================================================================
+    # FINANCIAL HEALTH ANALYSIS
+    # ============================================================================
+
+    st.markdown("---")
+    st.subheader("📊 Financial Health Indicators")
+
+    health_tab1, health_tab2, health_tab3 = st.tabs(["💰 Budget Analysis", "⚡ Efficiency Metrics", "👥 Staffing Costs"])
+
+    with health_tab1:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Budget Allocation Breakdown
+            if len(national_filtered) > 0:
+                latest_year = national_filtered['date_YY'].max()
+                latest_budget = national_filtered[national_filtered['date_YY'] == latest_year]
+
+                budget_breakdown = pd.DataFrame({
+                    'Category': ['Sanitation', 'Water', 'Staff', 'Training'],
+                    'Amount': [
+                        latest_budget['san_allocation'].sum(),
+                        latest_budget['wat_allocation'].sum(),
+                        latest_budget['staff_cost'].sum(),
+                        latest_budget['staff_training_budget'].sum()
+                    ]
+                })
+
+                fig_budget = px.pie(
+                    budget_breakdown,
+                    values='Amount',
+                    names='Category',
+                    title=f'Budget Allocation Breakdown ({latest_year})',
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                fig_budget.update_layout(height=400)
+                st.plotly_chart(fig_budget, use_container_width=True)
+
+        with col2:
+            # Budget Trend Over Years
+            if len(national_filtered) > 1:
+                budget_trend = national_filtered.groupby('date_YY').agg({
+                    'budget_allocated': 'sum',
+                    'san_allocation': 'sum',
+                    'wat_allocation': 'sum'
+                }).reset_index()
+
+                fig_budget_trend = go.Figure()
+                fig_budget_trend.add_trace(go.Scatter(
+                    x=budget_trend['date_YY'],
+                    y=budget_trend['budget_allocated'],
+                    name='Total Budget',
+                    mode='lines+markers',
+                    line=dict(width=3)
+                ))
+                fig_budget_trend.add_trace(go.Scatter(
+                    x=budget_trend['date_YY'],
+                    y=budget_trend['san_allocation'],
+                    name='Sanitation',
+                    mode='lines+markers'
+                ))
+                fig_budget_trend.add_trace(go.Scatter(
+                    x=budget_trend['date_YY'],
+                    y=budget_trend['wat_allocation'],
+                    name='Water',
+                    mode='lines+markers'
+                ))
+                fig_budget_trend.update_layout(
+                    title='Budget Allocation Trends',
+                    xaxis_title='Year',
+                    yaxis_title='Amount ($)',
+                    height=400
+                )
+                st.plotly_chart(fig_budget_trend, use_container_width=True)
+
+    with health_tab2:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Revenue per Staff
+            if 'revenue_per_staff' in fin_service_filtered.columns:
+                avg_rev_per_staff = fin_service_filtered['revenue_per_staff'].mean()
+
+                fig_rev_staff = go.Figure(go.Indicator(
+                    mode="number+delta",
+                    value=avg_rev_per_staff,
+                    title={'text': "Avg Revenue per Staff ($)"},
+                    number={'prefix': "$", 'valueformat': ",.0f"},
+                    delta={'reference': avg_rev_per_staff * 0.9, 'relative': True}
+                ))
+                fig_rev_staff.update_layout(height=300)
+                st.plotly_chart(fig_rev_staff, use_container_width=True)
+
+                # Revenue per staff trend
+                if 'date_parsed' in fin_service_filtered.columns:
+                    rev_staff_trend = fin_service_filtered.groupby('date_parsed')['revenue_per_staff'].mean().reset_index()
+                    fig_rev_staff_trend = px.line(
+                        rev_staff_trend,
+                        x='date_parsed',
+                        y='revenue_per_staff',
+                        title='Revenue per Staff Trend',
+                        markers=True
+                    )
+                    st.plotly_chart(fig_rev_staff_trend, use_container_width=True)
+
+        with col2:
+            # Complaint Resolution Efficiency
+            avg_resolution = fin_service_filtered['complaint_resolution_rate'].mean()
+
+            fig_complaint = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=avg_resolution,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': "Complaint Resolution Rate (%)"},
+                gauge={
+                    'axis': {'range': [None, 100]},
+                    'bar': {'color': "#10b981"},
+                    'steps': [
+                        {'range': [0, 60], 'color': "#fee2e2"},
+                        {'range': [60, 80], 'color': "#fed7aa"},
+                        {'range': [80, 100], 'color': "#d1fae5"}
+                    ]
+                }
+            ))
+            fig_complaint.update_layout(height=300)
+            st.plotly_chart(fig_complaint, use_container_width=True)
+
+            # Complaint statistics
+            total_complaints = fin_service_filtered['complaints'].sum()
+            total_resolved = fin_service_filtered['resolved'].sum()
+            unresolved = total_complaints - total_resolved
+
+            st.metric("Total Complaints", f"{total_complaints:,.0f}")
+            st.metric("Resolved", f"{total_resolved:,.0f}")
+            st.metric("Unresolved", f"{unresolved:,.0f}", delta_color="inverse")
+
+    with health_tab3:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # Staff Composition
+            total_san_staff = fin_service_filtered['san_staff'].sum()
+            total_wat_staff = fin_service_filtered['w_staff'].sum()
+
+            staff_comp = pd.DataFrame({
+                'Department': ['Sanitation', 'Water'],
+                'Staff Count': [total_san_staff, total_wat_staff]
+            })
+
+            fig_staff = px.pie(
+                staff_comp,
+                values='Staff Count',
+                names='Department',
+                title='Staff Distribution',
+                color_discrete_sequence=['#3b82f6', '#10b981']
+            )
+            st.plotly_chart(fig_staff, use_container_width=True)
+
+        with col2:
+            # Staff Cost Analysis
+            if len(national_filtered) > 0:
+                staff_cost_trend = national_filtered.groupby('date_YY').agg({
+                    'staff_cost': 'sum',
+                    'trained_staff': 'sum',
+                    'staff_training_budget': 'sum'
+                }).reset_index()
+
+                fig_staff_cost = go.Figure()
+                fig_staff_cost.add_trace(go.Bar(
+                    x=staff_cost_trend['date_YY'],
+                    y=staff_cost_trend['staff_cost'],
+                    name='Staff Cost',
+                    marker_color='#3b82f6'
+                ))
+                fig_staff_cost.add_trace(go.Bar(
+                    x=staff_cost_trend['date_YY'],
+                    y=staff_cost_trend['staff_training_budget'],
+                    name='Training Budget',
+                    marker_color='#10b981'
+                ))
+                fig_staff_cost.update_layout(
+                    title='Staff Cost & Training Budget Trend',
+                    xaxis_title='Year',
+                    yaxis_title='Amount ($)',
+                    barmode='stack',
+                    height=400
+                )
+                st.plotly_chart(fig_staff_cost, use_container_width=True)
+
+    # ============================================================================
+    # DATA TABLE & EXPORT
+    # ============================================================================
+
+    st.markdown("---")
+    st.subheader("📋 Detailed Data View & Export")
+
+    export_tab1, export_tab2 = st.tabs(["📊 Financial Service Data", "🏛️ National Budget Data"])
+
+    with export_tab1:
+        st.markdown(f"**{len(fin_service_filtered)} records displayed**")
+
+        # Display options
+        show_all_cols = st.checkbox("Show all columns", value=False, key="show_all_fin")
+
+        if show_all_cols:
+            display_df = fin_service_filtered
+        else:
+            key_columns = ['country', 'city', 'date_MMYY', 'sewer_billed', 'sewer_revenue', 
+                          'debt', 'collection_rate', 'opex', 'cost_recovery_ratio', 
+                          'complaints', 'resolved', 'complaint_resolution_rate']
+            display_df = fin_service_filtered[[col for col in key_columns if col in fin_service_filtered.columns]]
+
+        st.dataframe(display_df, use_container_width=True, height=400)
+
+        # Export options
+        export_col1, export_col2, export_col3 = st.columns(3)
+
+        with export_col1:
+            csv = fin_service_filtered.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv,
+                file_name=f"financial_service_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+
+        with export_col2:
+            # Excel export
+            buffer = io.BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                fin_service_filtered.to_excel(writer, sheet_name='Financial Service', index=False)
+            buffer.seek(0)
+
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer,
+                file_name=f"financial_service_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        with export_col3:
+            # JSON export
+            json_str = fin_service_filtered.to_json(orient='records', indent=2)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str,
+                file_name=f"financial_service_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+
+    with export_tab2:
+        st.markdown(f"**{len(national_filtered)} records displayed**")
+
+        # Display options
+        show_all_cols_nat = st.checkbox("Show all columns", value=False, key="show_all_nat")
+
+        if show_all_cols_nat:
+            display_df_nat = national_filtered
+        else:
+            key_columns_nat = ['country', 'city', 'date_YY', 'budget_allocated', 
+                              'san_allocation', 'wat_allocation', 'staff_cost', 
+                              'trained_staff', 'asset_health']
+            display_df_nat = national_filtered[[col for col in key_columns_nat if col in national_filtered.columns]]
+
+        st.dataframe(display_df_nat, use_container_width=True, height=400)
+
+        # Export options
+        export_col1, export_col2, export_col3 = st.columns(3)
+
+        with export_col1:
+            csv_nat = national_filtered.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_nat,
+                file_name=f"national_budget_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+
+        with export_col2:
+            # Excel export
+            buffer_nat = io.BytesIO()
+            with pd.ExcelWriter(buffer_nat, engine='openpyxl') as writer:
+                national_filtered.to_excel(writer, sheet_name='National Budget', index=False)
+            buffer_nat.seek(0)
+
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer_nat,
+                file_name=f"national_budget_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+
+        with export_col3:
+            # JSON export
+            json_str_nat = national_filtered.to_json(orient='records', indent=2)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str_nat,
+                file_name=f"national_budget_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+
+    # ============================================================================
+    # SUMMARY INSIGHTS
+    # ============================================================================
+
+    st.markdown("---")
+    st.subheader("💡 Key Insights & Recommendations")
+
+    # Generate automated insights
+    insights = []
+
+    # Collection rate insight
+    if avg_collection_rate < 70:
+        insights.append(("🔴 Critical", f"Collection rate is low at {avg_collection_rate:.1f}%. Consider implementing stricter collection policies and incentive programs."))
+    elif avg_collection_rate < 85:
+        insights.append(("🟡 Warning", f"Collection rate at {avg_collection_rate:.1f}% needs improvement. Review billing processes and customer engagement strategies."))
     else:
-        st.info("No customer data available.")
+        insights.append(("🟢 Good", f"Collection rate is healthy at {avg_collection_rate:.1f}%. Maintain current practices."))
+
+    # Debt insight
+    if debt_to_billed_ratio > 20:
+        insights.append(("🔴 Critical", f"Debt-to-billed ratio is {debt_to_billed_ratio:.1f}%, indicating significant arrears. Implement aggressive debt recovery measures."))
+    elif debt_to_billed_ratio > 10:
+        insights.append(("🟡 Warning", f"Debt-to-billed ratio at {debt_to_billed_ratio:.1f}% requires attention. Consider debt restructuring options."))
+
+    # Cost recovery insight
+    avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
+    if avg_cost_recovery < 80:
+        insights.append(("🔴 Critical", f"Cost recovery ratio is only {avg_cost_recovery:.1f}%. Revenue doesn't cover operational costs. Review tariff structure."))
+    elif avg_cost_recovery < 100:
+        insights.append(("🟡 Warning", f"Cost recovery ratio at {avg_cost_recovery:.1f}% needs improvement to achieve financial sustainability."))
+    else:
+        insights.append(("🟢 Good", f"Cost recovery ratio is {avg_cost_recovery:.1f}%, indicating financial sustainability."))
+
+    # Display insights
+    for status, insight in insights:
+        if "Critical" in status:
+            st.error(f"{status}: {insight}")
+        elif "Warning" in status:
+            st.warning(f"{status}: {insight}")
+        else:
+            st.success(f"{status}: {insight}")
+
+    # Footer
+    st.markdown("---")
+    st.caption(f"Dashboard generated on {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
