@@ -1,12 +1,60 @@
+import io
+import json
+from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from utils import prepare_access_data, prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country
 
+# Required columns for schema validation
+WATER_ACCESS_REQUIRED_COLS = ['country', 'zone', 'year', 'popn_total']
+SEWER_ACCESS_REQUIRED_COLS = ['country', 'zone', 'year', 'popn_total']
+
+# Tab organization and chart mapping
+TAB_STRUCTURE = {
+    "Coverage Overview": {
+        "icon": "📊",
+        "description": "Water and sewer coverage metrics, service scorecards",
+        "charts": ["scorecards", "ladder_analysis"]
+    },
+    "Growth Metrics": {
+        "icon": "📈",
+        "description": "Coverage trends, growth rates, expansion analysis",
+        "charts": ["growth_trends", "coverage_sparklines"]
+    },
+    "Infrastructure Status": {
+        "icon": "🏗️",
+        "description": "Infrastructure assets, metering status, facilities",
+        "charts": ["infrastructure_metrics", "asset_distribution"]
+    },
+    "Equity & Demographics": {
+        "icon": "⚖️",
+        "description": "Population served, access disparities, equity analysis",
+        "charts": ["equity_check", "population_demographics"]
+    },
+    "Access Transitions": {
+        "icon": "📊",
+        "description": "Population movement analysis, service transitions",
+        "charts": ["transition_report"]
+    }
+}
+
+
+def validate_upload_schema(df: pd.DataFrame, required_cols: list, file_type: str) -> tuple:
+    """Validate that uploaded data has required columns.
+    
+    Returns:
+        tuple: (is_valid, missing_columns, warning_message)
+    """
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        return False, missing, f"❌ {file_type} is missing required columns: {', '.join(missing)}"
+    return True, [], None
+
 def load_financial_data():
     """Load financial services data for the access dashboard."""
-    fin_path = DATA_DIR / "financial_services.csv"
+    fin_path = DATA_DIR / "all_fin_service.csv"
     df_fin = pd.DataFrame()
     
     if fin_path.exists():
@@ -52,15 +100,276 @@ def create_sparkline(data, color='#3b82f6'):
     )
     return fig
 
+
+def format_quarterly_label(date):
+    """Convert date to quarterly format (e.g., '2020/Q1')."""
+    quarter = (date.month - 1) // 3 + 1
+    return f"{date.year}/Q{quarter}"
+
+
+def apply_view_type_filter(df, view_type, date_col='date', year_col='year', month_col='month'):
+    """Apply view_type filtering consistently across all charts.
+    
+    Args:
+        df: DataFrame to filter
+        view_type: 'Annual' or 'Quarterly'
+        date_col: Column name for dates (if exists)
+        year_col: Column name for years
+        month_col: Column name for months (if exists)
+    
+    Returns:
+        Filtered DataFrame and aggregation parameters
+    """
+    if view_type == "Annual":
+        return df, {'freq': 'Y', 'agg_method': 'yearly'}
+    else:  # Quarterly
+        return df, {'freq': 'Q', 'agg_method': 'quarterly'}
+
+
+def get_active_tab():
+    """Get or initialize active tab in session state."""
+    if "active_access_tab" not in st.session_state:
+        st.session_state["active_access_tab"] = list(TAB_STRUCTURE.keys())[0]
+    return st.session_state["active_access_tab"]
+
+
+def set_active_tab(tab_name):
+    """Set active tab in session state."""
+    st.session_state["active_access_tab"] = tab_name
+
+
+def render_tab_selector(selected_tab: str) -> str:
+    """Render horizontal tab selector and return selected tab name."""
+    tabs_list = list(TAB_STRUCTURE.keys())
+    
+    st.markdown("---")
+    st.markdown("<h3 style='margin-top: 0; margin-bottom: 16px;'>Dashboard Sections</h3>", unsafe_allow_html=True)
+    
+    # Create horizontal tabs using columns
+    cols = st.columns(len(tabs_list))
+    
+    for idx, (col, tab_name) in enumerate(zip(cols, tabs_list)):
+        tab_info = TAB_STRUCTURE[tab_name]
+        is_active = tab_name == selected_tab
+        
+        with col:
+            # Style based on active state
+            bg_color = "#e0e7ff" if is_active else "#f3f4f6"
+            border_style = "3px solid #4f46e5" if is_active else "1px solid #d1d5db"
+            text_color = "#4f46e5" if is_active else "#6b7280"
+            font_weight = "700" if is_active else "600"
+            
+            if st.button(
+                f"{tab_info['icon']} {tab_name}",
+                key=f"tab_{tab_name}",
+                use_container_width=True,
+                help=tab_info['description']
+            ):
+                set_active_tab(tab_name)
+                st.rerun()
+            
+            # Apply styling with markdown
+            if is_active:
+                st.markdown(
+                    f"""<div style='background: {bg_color}; border: {border_style}; 
+                    border-radius: 6px; padding: 8px; text-align: center; 
+                    color: {text_color}; font-weight: {font_weight}; 
+                    font-size: 13px; margin-top: -42px;'>
+                    {tab_info['icon']} {tab_name}
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+    
+    return selected_tab
+
+
+def render_coverage_overview_tab(df_water, df_sewer, df_service, df_fin, selected_country, selected_zone, selected_year, view_type):
+    """Render Coverage Overview tab with scorecards and ladder analysis."""
+    st.markdown("### 📊 Coverage Overview")
+    st.markdown("Water and sewer coverage metrics, service scorecards, and access quality analysis.")
+    
+    # Key Performance Scorecards
+    st.markdown("<div class='section-header'>📊 Key Performance Scorecards</div>", unsafe_allow_html=True)
+    
+    # ... [Rest of scorecards and ladder analysis code from original]
+    # This will be populated from the existing code
+
+
+def render_growth_metrics_tab(df_water, df_service, selected_country, selected_zone, view_type):
+    """Render Growth Metrics tab with coverage trends and growth analysis."""
+    st.markdown("### 📈 Growth Metrics")
+    st.markdown("Coverage trends, growth rates, and expansion analysis.")
+    
+    # ... [Growth trends and sparklines code]
+
+
+def render_infrastructure_tab(df_service, df_fin, selected_country, selected_zone, selected_year, view_type):
+    """Render Infrastructure Status tab."""
+    st.markdown("### 🏗️ Infrastructure Status")
+    st.markdown("Infrastructure assets, metering status, and facility distribution.")
+    
+    # ... [Infrastructure metrics code]
+
+
+def render_equity_demographics_tab(df_water, df_sewer, df_service, selected_country, selected_zone, selected_year, view_type):
+    """Render Equity & Demographics tab."""
+    st.markdown("### ⚖️ Equity & Demographics")
+    st.markdown("Population served, access disparities, and equity analysis.")
+    
+    # ... [Equity check and population demographics code]
+
+
+def render_transitions_tab(df_water, df_sewer, df_service, selected_country, selected_zone, selected_year, view_type):
+    """Render Access Transitions tab."""
+    st.markdown("### 📊 Access Transitions")
+    st.markdown("Population movement analysis and service transitions.")
+    
+    # ... [Transition report code]
+
 def scene_access():
     """
     Access & Coverage scene - Redesigned based on User Journey.
     Data access is restricted based on user permissions.
     """
-    # Load data (already filtered by user access in prepare_* functions)
-    access_data = prepare_access_data()
-    df_water = access_data["water_full"]
-    df_sewer = access_data["sewer_full"]
+    
+    # ============================================================================
+    # HEADER WITH DATA FRESHNESS
+    # ============================================================================
+    
+    header_col1, header_col2 = st.columns([3, 1])
+    with header_col1:
+        st.markdown("## 🗺️ Access & Coverage")
+    with header_col2:
+        st.markdown(
+            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
+            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
+    
+    # ============================================================================
+    # DATA INITIALIZATION (Before UI elements)
+    # ============================================================================
+    
+    # Initialize session state for data BEFORE expander to ensure data is available
+    if 'access_water_data' not in st.session_state:
+        st.session_state.access_water_data = None
+    if 'access_sewer_data' not in st.session_state:
+        st.session_state.access_sewer_data = None
+    if 'access_default_data_loaded' not in st.session_state:
+        st.session_state.access_default_data_loaded = False
+
+    # AUTO-LOAD DEFAULT DATA ON FIRST PAGE LOAD (silently, outside expander)
+    if not st.session_state.access_default_data_loaded:
+        try:
+            st.session_state.access_water_data = pd.read_csv(DATA_DIR / 'w_access.csv')
+            st.session_state.access_sewer_data = pd.read_csv(DATA_DIR / 's_access.csv')
+            st.session_state.access_default_data_loaded = True
+        except Exception as e:
+            st.session_state.access_default_data_loaded = True  # Prevent repeated attempts
+    
+    # ============================================================================
+    # DATA IMPORT SECTION (Collapsed by default)
+    # ============================================================================
+    
+    with st.expander("📁 Data Import", expanded=False):
+        st.markdown("""
+        <style>
+            .upload-section {
+                background: #f9fafb;
+                border: 2px dashed #d1d5db;
+                border-radius: 8px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Show current data status
+        if st.session_state.access_water_data is not None and st.session_state.access_sewer_data is not None:
+            st.success(f"✅ Access data loaded: Water ({len(st.session_state.access_water_data)} records), Sewer ({len(st.session_state.access_sewer_data)} records)")
+        else:
+            st.warning("⚠️ No access data loaded")
+
+        # Tab for different import methods
+        import_tab1, import_tab2 = st.tabs(["📤 Upload Custom Files", "📋 Default Data"])
+
+        with import_tab1:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Water Access Data**")
+                water_file = st.file_uploader(
+                    "Upload Water Access CSV",
+                    type=['csv', 'xlsx'],
+                    key="access_water_upload",
+                    help="Required columns: country, zone, year, popn_total, municipal_coverage, safely_managed, etc."
+                )
+
+                if water_file:
+                    try:
+                        if water_file.name.endswith('.csv'):
+                            uploaded_water = pd.read_csv(water_file)
+                        else:
+                            uploaded_water = pd.read_excel(water_file)
+                        
+                        # Schema validation
+                        is_valid, missing, warning = validate_upload_schema(uploaded_water, WATER_ACCESS_REQUIRED_COLS, "Water Access Data")
+                        if not is_valid:
+                            st.warning(warning)
+                        else:
+                            st.session_state.access_water_data = uploaded_water
+                            st.success(f"✓ Loaded {len(st.session_state.access_water_data)} water access records")
+                    except Exception as e:
+                        st.error(f"Error loading water data: {e}")
+            
+            with col2:
+                st.markdown("**Sewer Access Data**")
+                sewer_file = st.file_uploader(
+                    "Upload Sewer Access CSV",
+                    type=['csv', 'xlsx'],
+                    key="access_sewer_upload",
+                    help="Required columns: country, zone, year, popn_total, connections, safely_managed, etc."
+                )
+
+                if sewer_file:
+                    try:
+                        if sewer_file.name.endswith('.csv'):
+                            uploaded_sewer = pd.read_csv(sewer_file)
+                        else:
+                            uploaded_sewer = pd.read_excel(sewer_file)
+                        
+                        # Schema validation
+                        is_valid, missing, warning = validate_upload_schema(uploaded_sewer, SEWER_ACCESS_REQUIRED_COLS, "Sewer Access Data")
+                        if not is_valid:
+                            st.warning(warning)
+                        else:
+                            st.session_state.access_sewer_data = uploaded_sewer
+                            st.success(f"✓ Loaded {len(st.session_state.access_sewer_data)} sewer access records")
+                    except Exception as e:
+                        st.error(f"Error loading sewer data: {e}")
+
+        with import_tab2:
+            st.info("📌 Using default access data from repository")
+            if st.button("🔄 Reload Default Data", key="reload_access_default"):
+                with st.spinner("Reloading default data..."):
+                    try:
+                        st.session_state.access_water_data = pd.read_csv(DATA_DIR / 'w_access.csv')
+                        st.session_state.access_sewer_data = pd.read_csv(DATA_DIR / 's_access.csv')
+                        st.success(f"✓ Reloaded water ({len(st.session_state.access_water_data)}) and sewer ({len(st.session_state.access_sewer_data)}) records")
+                    except Exception as e:
+                        st.error(f"Error loading default data: {e}")
+
+    # Load data (use session state if available, otherwise use default loading)
+    if st.session_state.access_water_data is not None and st.session_state.access_sewer_data is not None:
+        # Use custom data from session state
+        df_water = filter_df_by_user_access(st.session_state.access_water_data.copy(), "country")
+        df_sewer = filter_df_by_user_access(st.session_state.access_sewer_data.copy(), "country")
+    else:
+        # Load data (already filtered by user access in prepare_* functions)
+        access_data = prepare_access_data()
+        df_water = access_data["water_full"]
+        df_sewer = access_data["sewer_full"]
     
     service_data = prepare_service_data()
     df_service = service_data["full_data"]
@@ -117,14 +426,14 @@ def scene_access():
             """, unsafe_allow_html=True)
             selected_country = countries[0]
         else:
-            selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select")
+            selected_country = st.selectbox("Country", countries, index=default_country_idx, key="access_country_select")
             # Validate the selection
             selected_country = validate_selected_country(selected_country)
         
     with filt_c3:
-        # Zone Filter (dependent on country)
+        # Zone Filter (dependent on country) - case-insensitive
         if selected_country != 'All':
-            zones = ['All'] + sorted(df_water[df_water['country'] == selected_country]['zone'].unique().tolist())
+            zones = ['All'] + sorted(df_water[df_water['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
         else:
             zones = ['All'] + sorted(df_water['zone'].unique().tolist())
             
@@ -132,7 +441,7 @@ def scene_access():
         if "selected_zone" in st.session_state and st.session_state.selected_zone in zones:
             default_zone_idx = zones.index(st.session_state.selected_zone)
             
-        selected_zone = st.selectbox("Zone/City", zones, index=default_zone_idx, key="header_zone_select")
+        selected_zone = st.selectbox("Zone/City", zones, index=default_zone_idx, key="access_zone_select")
         
     with filt_c4:
         # Year Filter
@@ -141,7 +450,7 @@ def scene_access():
         if "selected_year" in st.session_state and st.session_state.selected_year in years:
             default_year_idx = years.index(st.session_state.selected_year)
             
-        selected_year = st.selectbox("Year", years, index=default_year_idx, key="header_year_select")
+        selected_year = st.selectbox("Year", years, index=default_year_idx, key="access_year_select")
 
     # Map month name to number (for Service Data)
     selected_month_name = st.session_state.get("selected_month", "All")
@@ -151,24 +460,34 @@ def scene_access():
     }
     selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
 
-    # --- Apply Filters ---
+    # --- Apply Filters (case-insensitive for country/zone) ---
+    # Helper function for safe year filtering
+    def _safe_year_filter(df, year_col, year_value):
+        if year_value is None or df.empty or year_col not in df.columns:
+            return df
+        try:
+            year_int = int(year_value)
+            return df[df[year_col] == year_int]
+        except (ValueError, TypeError):
+            return df[df[year_col] == year_value]
+
     # Water Data
     df_w_filt = df_water.copy()
-    if selected_country != 'All': df_w_filt = df_w_filt[df_w_filt['country'] == selected_country]
-    if selected_zone != 'All': df_w_filt = df_w_filt[df_w_filt['zone'] == selected_zone]
-    if selected_year: df_w_filt = df_w_filt[df_w_filt['year'] == selected_year]
+    if selected_country != 'All': df_w_filt = df_w_filt[df_w_filt['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_w_filt = df_w_filt[df_w_filt['zone'].str.lower() == selected_zone.lower()]
+    if selected_year: df_w_filt = _safe_year_filter(df_w_filt, 'year', selected_year)
 
     # Sewer Data
     df_s_filt = df_sewer.copy()
-    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'] == selected_country]
-    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'] == selected_zone]
-    if selected_year: df_s_filt = df_s_filt[df_s_filt['year'] == selected_year]
+    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'].str.lower() == selected_zone.lower()]
+    if selected_year: df_s_filt = _safe_year_filter(df_s_filt, 'year', selected_year)
 
     # Service Data (Monthly)
     df_svc_filt = df_service.copy()
-    if selected_country != 'All': df_svc_filt = df_svc_filt[df_svc_filt['country'] == selected_country]
-    if selected_zone != 'All': df_svc_filt = df_svc_filt[df_svc_filt['zone'] == selected_zone]
-    if selected_year: df_svc_filt = df_svc_filt[df_svc_filt['year'] == selected_year]
+    if selected_country != 'All': df_svc_filt = df_svc_filt[df_svc_filt['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_svc_filt = df_svc_filt[df_svc_filt['zone'].str.lower() == selected_zone.lower()]
+    if selected_year: df_svc_filt = _safe_year_filter(df_svc_filt, 'year', selected_year)
     if selected_month != 'All': df_svc_filt = df_svc_filt[df_svc_filt['month'] == selected_month]
 
     # Financial Data (for Pro-Poor)
@@ -176,7 +495,7 @@ def scene_access():
     if selected_country != 'All' and 'country' in df_f_filt.columns:
         df_f_filt = df_f_filt[df_f_filt['country'].str.lower() == selected_country.lower()]
     if 'year' in df_f_filt.columns and selected_year:
-        df_f_filt = df_f_filt[df_f_filt['year'] == selected_year]
+        df_f_filt = _safe_year_filter(df_f_filt, 'year', selected_year)
     if selected_month != 'All' and 'month' in df_f_filt.columns:
         df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
 
@@ -259,159 +578,215 @@ def scene_access():
     # --- Step 1: Key Performance Scorecards Row ---
     st.markdown("<div class='section-header'>📊 Key Performance Scorecards</div>", unsafe_allow_html=True)
 
-    # ===== WATER COVERAGE CALCULATIONS =====
-    # Municipal Supply Percentage (Annual data)
-    total_pop_w = df_w_filt['popn_total'].sum()
-    muni_cov_count = df_w_filt['municipal_coverage'].sum()
-    muni_supply_pct = (muni_cov_count / total_pop_w * 100) if total_pop_w > 0 else 0
+    # ===== WATER SUPPLY COVERAGE CALCULATIONS =====
+    # Behavior depends on view_type: "Annual" vs "Quarterly"
     
-    # YoY Growth for Municipal Supply (Always YoY since it's annual data)
-    if selected_year and selected_year > df_water['year'].min():
-        last_year = selected_year - 1
-        df_w_last = df_water.copy()
-        if selected_country != 'All': df_w_last = df_w_last[df_w_last['country'] == selected_country]
-        if selected_zone != 'All': df_w_last = df_w_last[df_w_last['zone'] == selected_zone]
-        df_w_last = df_w_last[df_w_last['year'] == last_year]
+    if view_type == "Quarterly":
+        # QUARTERLY VIEW: Aggregate water data quarterly (if monthly data available, else use annual data)
+        # Water access data is typically annual, but we show the context as quarterly
+        total_pop_w = df_w_filt['popn_total'].sum()
+        muni_cov_count = df_w_filt['municipal_coverage'].sum()
+        muni_supply_pct = (muni_cov_count / total_pop_w * 100) if total_pop_w > 0 else 0
         
-        total_pop_w_last = df_w_last['popn_total'].sum()
-        muni_cov_last = df_w_last['municipal_coverage'].sum()
-        muni_supply_pct_last = (muni_cov_last / total_pop_w_last * 100) if total_pop_w_last > 0 else 0
-        muni_yoy_growth = muni_supply_pct - muni_supply_pct_last
+        # QoQ Growth for Water Supply (comparing same quarter last year)
+        if selected_year and selected_year > df_water['year'].min():
+            last_year = selected_year - 1
+            df_w_last = df_water.copy()
+            if selected_country != 'All': df_w_last = df_w_last[df_w_last['country'].str.lower() == selected_country.lower()]
+            if selected_zone != 'All': df_w_last = df_w_last[df_w_last['zone'].str.lower() == selected_zone.lower()]
+            df_w_last = df_w_last[df_w_last['year'] == last_year]
+            
+            total_pop_w_last = df_w_last['popn_total'].sum()
+            muni_cov_last = df_w_last['municipal_coverage'].sum()
+            muni_supply_pct_last = (muni_cov_last / total_pop_w_last * 100) if total_pop_w_last > 0 else 0
+            muni_yoy_growth = muni_supply_pct - muni_supply_pct_last
+        else:
+            muni_yoy_growth = 0
+        water_comparison_label = "vs same quarter last year"
     else:
-        muni_yoy_growth = 0
+        # ANNUAL VIEW: Use annual aggregation
+        total_pop_w = df_w_filt['popn_total'].sum()
+        muni_cov_count = df_w_filt['municipal_coverage'].sum()
+        muni_supply_pct = (muni_cov_count / total_pop_w * 100) if total_pop_w > 0 else 0
+        
+        # YoY Growth for Water Supply
+        if selected_year and selected_year > df_water['year'].min():
+            last_year = selected_year - 1
+            df_w_last = df_water.copy()
+            if selected_country != 'All': df_w_last = df_w_last[df_w_last['country'].str.lower() == selected_country.lower()]
+            if selected_zone != 'All': df_w_last = df_w_last[df_w_last['zone'].str.lower() == selected_zone.lower()]
+            df_w_last = df_w_last[df_w_last['year'] == last_year]
+            
+            total_pop_w_last = df_w_last['popn_total'].sum()
+            muni_cov_last = df_w_last['municipal_coverage'].sum()
+            muni_supply_pct_last = (muni_cov_last / total_pop_w_last * 100) if total_pop_w_last > 0 else 0
+            muni_yoy_growth = muni_supply_pct - muni_supply_pct_last
+        else:
+            muni_yoy_growth = 0
+        water_comparison_label = "vs last year"
     
     # Water: Households Covered & Population Served (from water access data)
     water_households = df_w_filt['households'].sum() / 1000  # Convert to K
     water_population = total_pop_w / 1000000  # Convert to M
     
-    # ===== SANITATION COVERAGE CALCULATIONS =====
-    # Sewered Connections Percentage (Monthly data from service data)
-    if not df_svc_filt.empty:
-        # Aggregate by zone first, then sum
-        svc_agg = df_svc_filt.groupby('zone').agg({
-            'sewer_connections': 'sum',
-            'households': 'max'  # Take max households per zone as it's relatively stable
-        }).reset_index()
-        total_sewer_conn = svc_agg['sewer_connections'].sum()
-        total_hh_svc = svc_agg['households'].sum()
-        sewer_conn_pct = (total_sewer_conn / total_hh_svc * 100) if total_hh_svc > 0 else 0
-        
-        # Calculate growth (YoY or MoM depending on filter)
-        if selected_month != 'All':
-            # MoM Growth (Month-over-Month)
-            last_month = selected_month - 1 if selected_month > 1 else 12
-            last_month_year = selected_year if selected_month > 1 else (selected_year - 1 if selected_year else None)
+    # ===== SEWER COVERAGE CALCULATIONS =====
+    # Behavior depends on view_type: "Annual" vs "Quarterly"
+    # Quarterly: Shows latest quarter's data only
+    # Annual: Shows full year average
+    
+    if view_type == "Quarterly":
+        # QUARTERLY VIEW: Show latest quarter's sewer data only
+        if not df_svc_filt.empty and 'month' in df_svc_filt.columns:
+            # Add quarter column for aggregation (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
+            df_svc_quarterly = df_service.copy()
+            if selected_country != 'All': df_svc_quarterly = df_svc_quarterly[df_svc_quarterly['country'].str.lower() == selected_country.lower()]
+            if selected_zone != 'All': df_svc_quarterly = df_svc_quarterly[df_svc_quarterly['zone'].str.lower() == selected_zone.lower()]
             
-            df_svc_last = df_service.copy()
-            if selected_country != 'All': df_svc_last = df_svc_last[df_svc_last['country'] == selected_country]
-            if selected_zone != 'All': df_svc_last = df_svc_last[df_svc_last['zone'] == selected_zone]
-            if last_month_year: df_svc_last = df_svc_last[df_svc_last['year'] == last_month_year]
-            df_svc_last = df_svc_last[df_svc_last['month'] == last_month]
+            # Calculate quarter from month: (month-1)//3 + 1 gives Q1=1, Q2=2, Q3=3, Q4=4
+            df_svc_quarterly['quarter'] = ((df_svc_quarterly['month'] - 1) // 3) + 1
             
-            if not df_svc_last.empty:
-                svc_agg_last = df_svc_last.groupby('zone').agg({
-                    'sewer_connections': 'sum',
-                    'households': 'max'
-                }).reset_index()
-                total_sewer_conn_last = svc_agg_last['sewer_connections'].sum()
-                total_hh_svc_last = svc_agg_last['households'].sum()
-                sewer_conn_pct_last = (total_sewer_conn_last / total_hh_svc_last * 100) if total_hh_svc_last > 0 else 0
-                sewer_growth = sewer_conn_pct - sewer_conn_pct_last
-                growth_label = "MoM"
+            # Filter for selected year if applicable
+            if selected_year:
+                df_svc_quarterly = df_svc_quarterly[df_svc_quarterly['year'] == selected_year]
+            
+            if not df_svc_quarterly.empty:
+                # Get the latest quarter's data only
+                latest_quarter = df_svc_quarterly['quarter'].max()
+                df_q_latest = df_svc_quarterly[df_svc_quarterly['quarter'] == latest_quarter]
+                
+                # Calculate quarterly sewer coverage
+                total_sewer_conn = df_q_latest['sewer_connections'].mean()  # Average within quarter
+                total_hh_svc = df_q_latest['households'].max()
+                sewer_conn_pct = (total_sewer_conn / total_hh_svc * 100) if total_hh_svc > 0 else 0
+                
+                # QoQ Growth - compare to same quarter last year
+                if selected_year and selected_year > df_service['year'].min():
+                    last_year = selected_year - 1
+                    df_svc_last_year = df_service.copy()
+                    if selected_country != 'All': df_svc_last_year = df_svc_last_year[df_svc_last_year['country'].str.lower() == selected_country.lower()]
+                    if selected_zone != 'All': df_svc_last_year = df_svc_last_year[df_svc_last_year['zone'].str.lower() == selected_zone.lower()]
+                    df_svc_last_year['quarter'] = ((df_svc_last_year['month'] - 1) // 3) + 1
+                    df_svc_last_year = df_svc_last_year[(df_svc_last_year['year'] == last_year) & (df_svc_last_year['quarter'] == latest_quarter)]
+                    
+                    if not df_svc_last_year.empty:
+                        total_sewer_conn_last = df_svc_last_year['sewer_connections'].mean()
+                        total_hh_svc_last = df_svc_last_year['households'].max()
+                        sewer_conn_pct_last = (total_sewer_conn_last / total_hh_svc_last * 100) if total_hh_svc_last > 0 else 0
+                        sewer_growth = sewer_conn_pct - sewer_conn_pct_last
+                    else:
+                        sewer_growth = 0
+                else:
+                    sewer_growth = 0
+                
+                # Update label to show which quarter
+                sewer_comparison_label = f"Q{latest_quarter} vs Q{latest_quarter} last year"
             else:
+                sewer_conn_pct = 0
                 sewer_growth = 0
-                growth_label = "MoM"
+                sewer_comparison_label = "vs same quarter last year"
         else:
-            # YoY Growth (when 'All' months selected)
+            sewer_conn_pct = 0
+            sewer_growth = 0
+            sewer_comparison_label = "vs same quarter last year"
+    else:
+        # ANNUAL VIEW: Show full year average
+        if not df_svc_filt.empty:
+            # Use df_svc_filt which is already filtered by year
+            total_sewer_conn = df_svc_filt['sewer_connections'].mean()  # Average across all months in year
+            total_hh_svc = df_svc_filt['households'].max()
+            sewer_conn_pct = (total_sewer_conn / total_hh_svc * 100) if total_hh_svc > 0 else 0
+            
+            # YoY Growth - compare to last year's average
             if selected_year and selected_year > df_service['year'].min():
                 last_year = selected_year - 1
-                df_svc_last = df_service.copy()
-                if selected_country != 'All': df_svc_last = df_svc_last[df_svc_last['country'] == selected_country]
-                if selected_zone != 'All': df_svc_last = df_svc_last[df_svc_last['zone'] == selected_zone]
-                df_svc_last = df_svc_last[df_svc_last['year'] == last_year]
+                df_svc_last_year = df_service.copy()
+                if selected_country != 'All': df_svc_last_year = df_svc_last_year[df_svc_last_year['country'].str.lower() == selected_country.lower()]
+                if selected_zone != 'All': df_svc_last_year = df_svc_last_year[df_svc_last_year['zone'].str.lower() == selected_zone.lower()]
+                df_svc_last_year = df_svc_last_year[df_svc_last_year['year'] == last_year]
                 
-                if not df_svc_last.empty:
-                    svc_agg_last = df_svc_last.groupby('zone').agg({
-                        'sewer_connections': 'sum',
-                        'households': 'max'
-                    }).reset_index()
-                    total_sewer_conn_last = svc_agg_last['sewer_connections'].sum()
-                    total_hh_svc_last = svc_agg_last['households'].sum()
+                if not df_svc_last_year.empty:
+                    total_sewer_conn_last = df_svc_last_year['sewer_connections'].mean()
+                    total_hh_svc_last = df_svc_last_year['households'].max()
                     sewer_conn_pct_last = (total_sewer_conn_last / total_hh_svc_last * 100) if total_hh_svc_last > 0 else 0
                     sewer_growth = sewer_conn_pct - sewer_conn_pct_last
                 else:
                     sewer_growth = 0
             else:
                 sewer_growth = 0
-            growth_label = "YoY"
-        
-        # Sanitation: Households Connected & Population Served
-        # Use households from service data and estimate population
-        san_households = total_sewer_conn / 1000  # Households connected in K
-        # Estimate population served (assume average household size ~5)
-        san_population = (total_sewer_conn * 5) / 1000000  # Population in M
-    else:
-        sewer_conn_pct = 0
-        sewer_growth = 0
-        growth_label = "YoY"
-        san_households = 0
-        san_population = 0
+        else:
+            sewer_conn_pct = 0
+            sewer_growth = 0
+        sewer_comparison_label = "vs last year"
 
-    # --- Additional Calculations for Scorecards ---
+    # --- Sparkline Data Calculations ---
+    # Behavior depends on view_type: "Annual" vs "Quarterly"
     
-    # Sparkline Data (Water Coverage Trend - Annual)
+    # Sparkline Data (Water Coverage Trend)
     df_w_trend = df_water.copy()
-    if selected_country != 'All': df_w_trend = df_w_trend[df_w_trend['country'] == selected_country]
-    if selected_zone != 'All': df_w_trend = df_w_trend[df_w_trend['zone'] == selected_zone]
+    if selected_country != 'All': df_w_trend = df_w_trend[df_w_trend['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_w_trend = df_w_trend[df_w_trend['zone'].str.lower() == selected_zone.lower()]
     
+    # Aggregate by year for water coverage trend (water data is annual)
     w_trend_agg = df_w_trend.groupby('year').agg({'municipal_coverage': 'sum', 'popn_total': 'sum'}).reset_index().sort_values('year')
     w_trend_agg['pct'] = (w_trend_agg['municipal_coverage'] / w_trend_agg['popn_total'] * 100).fillna(0)
     water_spark_data = w_trend_agg['pct'].tolist()
 
-    # Sparkline Data (Sanitation Coverage Trend - Monthly last 12 months)
+    # Sparkline Data (Sewer Coverage Trend)
     df_s_trend = df_service.copy()
-    if selected_country != 'All': df_s_trend = df_s_trend[df_s_trend['country'] == selected_country]
-    if selected_zone != 'All': df_s_trend = df_s_trend[df_s_trend['zone'] == selected_zone]
+    if selected_country != 'All': df_s_trend = df_s_trend[df_s_trend['country'].str.lower() == selected_country.lower()]
+    if selected_zone != 'All': df_s_trend = df_s_trend[df_s_trend['zone'].str.lower() == selected_zone.lower()]
     
-    # Group by date to get trend
-    s_trend_agg = df_s_trend.groupby('date').agg({'sewer_connections': 'sum', 'households': 'max'}).reset_index().sort_values('date')
-    # Take last 12 points
-    s_trend_agg = s_trend_agg.tail(12)
-    s_trend_agg['pct'] = (s_trend_agg['sewer_connections'] / s_trend_agg['households'].replace(0, 1) * 100).fillna(0)
-    san_spark_data = s_trend_agg['pct'].tolist()
-
-    # 3. Safely Managed Water Access
-    safely_managed_pop = df_w_filt['w_safely_managed'].sum()
-    safely_managed_pct = (safely_managed_pop / total_pop_w * 100) if total_pop_w > 0 else 0
-    
-    # YoY Change for Safely Managed
-    if selected_year and selected_year > df_water['year'].min():
-        last_year = selected_year - 1
-        df_w_last_sm = df_water.copy()
-        if selected_country != 'All': df_w_last_sm = df_w_last_sm[df_w_last_sm['country'] == selected_country]
-        if selected_zone != 'All': df_w_last_sm = df_w_last_sm[df_w_last_sm['zone'] == selected_zone]
-        df_w_last_sm = df_w_last_sm[df_w_last_sm['year'] == last_year]
-        
-        sm_pop_last = df_w_last_sm['w_safely_managed'].sum()
-        total_pop_last = df_w_last_sm['popn_total'].sum()
-        sm_pct_last = (sm_pop_last / total_pop_last * 100) if total_pop_last > 0 else 0
-        sm_yoy_change = safely_managed_pct - sm_pct_last
+    if view_type == "Quarterly":
+        # QUARTERLY VIEW: Aggregate to quarterly for sparkline
+        if not df_s_trend.empty and 'month' in df_s_trend.columns:
+            df_s_trend['quarter'] = ((df_s_trend['month'] - 1) // 3) + 1
+            df_s_trend['year_quarter'] = df_s_trend['year'].astype(str) + '-Q' + df_s_trend['quarter'].astype(str)
+            
+            # Aggregate by year-quarter: average sewer connections, max households
+            s_q_trend = df_s_trend.groupby(['year', 'quarter']).agg({
+                'sewer_connections': 'mean',
+                'households': 'max'
+            }).reset_index()
+            s_q_trend = s_q_trend.sort_values(['year', 'quarter'])
+            
+            # Calculate percentage for each quarter
+            s_q_trend['pct'] = (s_q_trend['sewer_connections'] / s_q_trend['households'].replace(0, 1) * 100).fillna(0)
+            
+            # Take last 8 quarters for sparkline (2 years of quarterly data)
+            s_q_trend = s_q_trend.tail(8)
+            sewer_spark_data = s_q_trend['pct'].tolist()
+        else:
+            sewer_spark_data = []
     else:
-        sm_yoy_change = 0
-        
-    # Sparkline Data (Safely Managed Trend - Annual)
-    # Need to aggregate safely_managed for all years
-    w_trend_agg_sm = df_w_trend.groupby('year').agg({'w_safely_managed': 'sum', 'popn_total': 'sum'}).reset_index().sort_values('year')
-    w_trend_agg_sm['sm_pct'] = (w_trend_agg_sm['w_safely_managed'] / w_trend_agg_sm['popn_total'] * 100).fillna(0)
-    sm_spark_data = w_trend_agg_sm['sm_pct'].tolist()
+        # ANNUAL VIEW: Aggregate to annual for sparkline
+        if not df_s_trend.empty and 'month' in df_s_trend.columns:
+            # Aggregate by year: average sewer connections, max households
+            s_y_trend = df_s_trend.groupby(['year']).agg({
+                'sewer_connections': 'mean',
+                'households': 'max'
+            }).reset_index()
+            s_y_trend = s_y_trend.sort_values('year')
+            
+            # Calculate percentage for each year
+            s_y_trend['pct'] = (s_y_trend['sewer_connections'] / s_y_trend['households'].replace(0, 1) * 100).fillna(0)
+            
+            sewer_spark_data = s_y_trend['pct'].tolist()
+        else:
+            sewer_spark_data = []
 
-    # 4. Service Gap Alert (Unimproved + Surface Water)
-    gap_pop = df_w_filt['w_unimproved'].sum() + df_w_filt['surface_water'].sum()
-    gap_pct = (gap_pop / total_pop_w * 100) if total_pop_w > 0 else 0
+    # ===== DATA GAP PLACEHOLDERS =====
+    # Metered Connections - DATA GAP: No metered connection data available
+    metered_conn_pct = None  # Placeholder - data not available
+    has_metered_data = False  # Flag to indicate data gap
     
-    # Render Cards
+    # Piped Water Supply - DATA GAP: No piped water supply data available  
+    piped_water_pct = None  # Placeholder - data not available
+    has_piped_data = False  # Flag to indicate data gap
+    
+    # Render Scorecard Cards
     kpi_c1, kpi_c2, kpi_c3, kpi_c4 = st.columns(4)
     
+    # === Card 1: Water Supply Coverage ===
     with kpi_c1:
         st.markdown(f"""
         <div class="metric-container">
@@ -426,20 +801,21 @@ def scene_access():
                 <span class="{'delta-up' if muni_yoy_growth >= 0 else 'delta-down'}">
                     {muni_yoy_growth:+.1f}%
                 </span>
-                <span style="color: #6b7280;">vs last year</span>
+                <span style="color: #6b7280;">{water_comparison_label}</span>
             </div>
             <div style="margin-top: 12px;"></div>
         </div>
         """, unsafe_allow_html=True)
         if water_spark_data:
             st.plotly_chart(create_sparkline(water_spark_data, "#3b82f6"), use_container_width=True, config={'displayModeBar': False})
-        
+    
+    # === Card 2: Sewer Coverage ===
     with kpi_c2:
         st.markdown(f"""
         <div class="metric-container">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div>
-                    <div class="metric-label">Sanitation Coverage</div>
+                    <div class="metric-label">Sewer Coverage</div>
                     <div class="metric-value">{sewer_conn_pct:.1f}%</div>
                 </div>
                 <div style="font-size: 24px;">🚽</div>
@@ -448,55 +824,44 @@ def scene_access():
                 <span class="{'delta-up' if sewer_growth >= 0 else 'delta-down'}">
                     {sewer_growth:+.1f}%
                 </span>
-                <span style="color: #6b7280;">vs last period</span>
+                <span style="color: #6b7280;">{sewer_comparison_label}</span>
             </div>
             <div style="margin-top: 12px;"></div>
         </div>
         """, unsafe_allow_html=True)
-        if san_spark_data:
-            st.plotly_chart(create_sparkline(san_spark_data, "#8b5cf6"), use_container_width=True, config={'displayModeBar': False})
-        
+        if sewer_spark_data:
+            st.plotly_chart(create_sparkline(sewer_spark_data, "#8b5cf6"), use_container_width=True, config={'displayModeBar': False})
+    
+    # === Card 3: % Metered Connections (DATA GAP - understated design) ===
     with kpi_c3:
         st.markdown(f"""
-        <div class="metric-container">
+        <div class="metric-container" style="background-color: #f9fafb; border: 1px dashed #d1d5db;">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div>
-                    <div class="metric-label">Safely Managed Water</div>
-                    <div class="metric-value">{safely_managed_pct:.1f}%</div>
+                    <div class="metric-label" style="color: #9ca3af;">% Metered Connections</div>
+                    <div class="metric-value" style="color: #9ca3af;">--</div>
                 </div>
-                <div style="font-size: 24px;">🛡️</div>
+                <div style="font-size: 24px; opacity: 0.4;">📊</div>
             </div>
-            <div class="metric-delta">
-                <span class="{'delta-up' if sm_yoy_change >= 0 else 'delta-down'}">
-                    {sm_yoy_change:+.1f}%
-                </span>
-                <span style="color: #6b7280;">vs last year</span>
+            <div style="margin-top: 8px; padding: 6px 8px; background-color: #fef3c7; border-radius: 4px; border-left: 3px solid #f59e0b;">
+                <span style="font-size: 11px; color: #92400e;">Metered connection data required</span>
             </div>
-            <div style="margin-top: 12px;"></div>
         </div>
         """, unsafe_allow_html=True)
-        if sm_spark_data:
-            st.plotly_chart(create_sparkline(sm_spark_data, "#10b981"), use_container_width=True, config={'displayModeBar': False})
-        
+    
+    # === Card 4: Piped Water Supply (DATA GAP - understated design) ===
     with kpi_c4:
         st.markdown(f"""
-        <div class="metric-container" style="border-left: 4px solid #ef4444;">
+        <div class="metric-container" style="background-color: #f9fafb; border: 1px dashed #d1d5db;">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div>
-                    <div class="metric-label">Service Gap Alert</div>
-                    <div class="metric-value" style="color: #ef4444;">{gap_pct:.1f}%</div>
+                    <div class="metric-label" style="color: #9ca3af;">Piped Water Supply</div>
+                    <div class="metric-value" style="color: #9ca3af;">--</div>
                 </div>
-                <div style="font-size: 24px;">⚠️</div>
+                <div style="font-size: 24px; opacity: 0.4;">🔧</div>
             </div>
-            <div class="metric-delta">
-                <span style="color: #ef4444; font-weight: 600;">{gap_pop/1000:.1f}K</span>
-                <span style="color: #6b7280;">people affected</span>
-            </div>
-            <div style="margin-top: 12px; font-size: 10px; color: #6b7280; display: flex; align-items: center; gap: 4px;">
-                <div style="flex-grow: 1; height: 2px; background: #e5e7eb; position: relative;">
-                    <div style="position: absolute; right: 0; top: -3px; width: 2px; height: 8px; background: #10b981;"></div>
-                </div>
-                <span>SDG Goal: 0%</span>
+            <div style="margin-top: 8px; padding: 6px 8px; background-color: #fef3c7; border-radius: 4px; border-left: 3px solid #f59e0b;">
+                <span style="font-size: 11px; color: #92400e;">Piped water supply data required</span>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -548,16 +913,16 @@ def scene_access():
     # Get available years for filtering
     available_years = sorted(df_water['year'].unique())
     
-    # Filter data - use selected_year from global filter
+    # Filter data - use selected_year from global filter (case-insensitive)
     df_w_ladder = df_water.copy()
     df_s_ladder = df_sewer.copy()
     
     if selected_country != 'All': 
-        df_w_ladder = df_w_ladder[df_w_ladder['country'] == selected_country]
-        df_s_ladder = df_s_ladder[df_s_ladder['country'] == selected_country]
+        df_w_ladder = df_w_ladder[df_w_ladder['country'].str.lower() == selected_country.lower()]
+        df_s_ladder = df_s_ladder[df_s_ladder['country'].str.lower() == selected_country.lower()]
     if selected_zone != 'All': 
-        df_w_ladder = df_w_ladder[df_w_ladder['zone'] == selected_zone]
-        df_s_ladder = df_s_ladder[df_s_ladder['zone'] == selected_zone]
+        df_w_ladder = df_w_ladder[df_w_ladder['zone'].str.lower() == selected_zone.lower()]
+        df_s_ladder = df_s_ladder[df_s_ladder['zone'].str.lower() == selected_zone.lower()]
     
     # For bar chart, use selected year; for trend, use all years
     if chart_type == "Stacked Bar Chart":
@@ -599,11 +964,11 @@ def scene_access():
         df_s_trend = df_sewer.copy()
         
         if selected_country != 'All':
-            df_w_trend = df_w_trend[df_w_trend['country'] == selected_country]
-            df_s_trend = df_s_trend[df_s_trend['country'] == selected_country]
+            df_w_trend = df_w_trend[df_w_trend['country'].str.lower() == selected_country.lower()]
+            df_s_trend = df_s_trend[df_s_trend['country'].str.lower() == selected_country.lower()]
         if selected_zone != 'All':
-            df_w_trend = df_w_trend[df_w_trend['zone'] == selected_zone]
-            df_s_trend = df_s_trend[df_s_trend['zone'] == selected_zone]
+            df_w_trend = df_w_trend[df_w_trend['zone'].str.lower() == selected_zone.lower()]
+            df_s_trend = df_s_trend[df_s_trend['zone'].str.lower() == selected_zone.lower()]
         
         # Water Trend Lines
         if show_water:
@@ -879,10 +1244,10 @@ def scene_access():
     # --- Step 3: Coverage Growth Trends ---
     st.markdown("<div class='section-header'>📈 Coverage Growth Trends</div>", unsafe_allow_html=True)
     
-    # Chart Controls
+    # Chart Controls - Removed "Combined View" option
     trend_metric = st.radio(
         "Select Metric:", 
-        ["Coverage (%)", "Growth Rate (%)", "Combined View"], 
+        ["Coverage (%)", "Growth Rate (%)"], 
         horizontal=True,
         key="trend_metric_selector",
         label_visibility="collapsed"
@@ -891,156 +1256,152 @@ def scene_access():
     cg_col1, cg_col2 = st.columns([3, 1])
     
     with cg_col1:
-        # Prepare Water Data (Annual -> Quarterly Interpolation)
-        df_w_growth = df_water.copy()
-        if selected_country != 'All': df_w_growth = df_w_growth[df_w_growth['country'] == selected_country]
-        if selected_zone != 'All': df_w_growth = df_w_growth[df_w_growth['zone'] == selected_zone]
-        
-        w_annual = df_w_growth.groupby('year').agg({'municipal_coverage': 'sum', 'popn_total': 'sum'}).reset_index()
-        # Assume annual data is end of year
-        w_annual['date'] = pd.to_datetime(w_annual['year'].astype(str) + '-12-31')
-        w_annual = w_annual.set_index('date').sort_index()
-        
-        # Prepare Sewer Data (Monthly -> Quarterly)
-        df_s_growth = df_service.copy()
-        if selected_country != 'All': df_s_growth = df_s_growth[df_s_growth['country'] == selected_country]
-        if selected_zone != 'All': df_s_growth = df_s_growth[df_s_growth['zone'] == selected_zone]
-        
-        # Group by date first (sum across zones if multiple)
-        s_monthly = df_s_growth.groupby('date').agg({'sewer_connections': 'sum', 'households': 'sum'}).reset_index()
-        s_monthly = s_monthly.set_index('date').sort_index()
-        
-        if not w_annual.empty and not s_monthly.empty:
-            # Create common quarterly index
-            start_date = min(w_annual.index.min(), s_monthly.index.min())
-            end_date = max(w_annual.index.max(), s_monthly.index.max())
-            dates = pd.date_range(start=start_date, end=end_date, freq='Q')
+        with st.spinner("📊 Loading growth trends data..."):
+            # Prepare Water Data (Annual -> Quarterly Interpolation)
+            df_w_growth = df_water.copy()
+            if selected_country != 'All': df_w_growth = df_w_growth[df_w_growth['country'].str.lower() == selected_country.lower()]
+            if selected_zone != 'All': df_w_growth = df_w_growth[df_w_growth['zone'].str.lower() == selected_zone.lower()]
             
-            # Reindex and Interpolate Water
-            # Reindex to include annual dates + quarterly dates
-            w_combined_idx = w_annual.index.union(dates).sort_values()
-            w_interp = w_annual.reindex(w_combined_idx)
-            w_interp['municipal_coverage'] = w_interp['municipal_coverage'].interpolate(method='time')
-            w_interp['popn_total'] = w_interp['popn_total'].interpolate(method='time')
-            # Filter to just quarterly dates
-            w_q = w_interp.reindex(dates)
-            w_q['coverage_pct'] = (w_q['municipal_coverage'] / w_q['popn_total'] * 100).fillna(0)
-            w_q['growth_rate'] = w_q['coverage_pct'].pct_change() * 100
+            w_annual = df_w_growth.groupby('year').agg({'municipal_coverage': 'sum', 'popn_total': 'sum'}).reset_index()
+            # Assume annual data is end of year
+            w_annual['date'] = pd.to_datetime(w_annual['year'].astype(str) + '-12-31')
+            w_annual = w_annual.set_index('date').sort_index()
             
-            # Resample Sewer
-            s_q = s_monthly.resample('Q').agg({'sewer_connections': 'last', 'households': 'last'})
-            s_q['coverage_pct'] = (s_q['sewer_connections'] / s_q['households'] * 100).fillna(0)
-            s_q['growth_rate'] = s_q['coverage_pct'].pct_change() * 100
+            # Prepare Sewer Data (Monthly -> Quarterly)
+            df_s_growth = df_service.copy()
+            if selected_country != 'All': df_s_growth = df_s_growth[df_s_growth['country'].str.lower() == selected_country.lower()]
+            if selected_zone != 'All': df_s_growth = df_s_growth[df_s_growth['zone'].str.lower() == selected_zone.lower()]
             
-            # Plot
-            fig_growth = go.Figure()
+            # Group by date first (sum across zones if multiple)
+            s_monthly = df_s_growth.groupby('date').agg({'sewer_connections': 'sum', 'households': 'sum'}).reset_index()
+            s_monthly = s_monthly.set_index('date').sort_index()
             
-            # Colors (using the new softer palette)
-            color_water = '#2874A6' # Safely Managed Water color
-            color_sewer = '#1E8449' # Safely Managed Sanitation color
-            
-            # Water Coverage
-            if trend_metric in ["Coverage (%)", "Combined View"]:
-                fig_growth.add_trace(go.Scatter(
-                    x=w_q.index, y=w_q['coverage_pct'],
-                    name='Water Coverage',
-                    mode='lines',
-                    line=dict(color=color_water, width=3, shape='spline'),
-                    fill='tozeroy',
-                    fillcolor='rgba(40, 116, 166, 0.1)',
-                    hovertemplate='<b>Water Coverage</b><br>%{y:.1f}%<extra></extra>'
-                ))
-            
-            # Sewer Coverage
-            if trend_metric in ["Coverage (%)", "Combined View"]:
-                fig_growth.add_trace(go.Scatter(
-                    x=s_q.index, y=s_q['coverage_pct'],
-                    name='Sewer Coverage',
-                    mode='lines',
-                    line=dict(color=color_sewer, width=3, shape='spline'),
-                    fill='tozeroy',
-                    fillcolor='rgba(30, 132, 73, 0.1)',
-                    hovertemplate='<b>Sewer Coverage</b><br>%{y:.1f}%<extra></extra>'
-                ))
-            
-            # Water Growth
-            if trend_metric in ["Growth Rate (%)", "Combined View"]:
-                yaxis_ref = 'y2' if trend_metric == "Combined View" else 'y'
-                # Conditional colors: Light red for negative growth
-                w_colors = [color_water if val >= 0 else '#F87171' for val in w_q['growth_rate']]
+            if not w_annual.empty and not s_monthly.empty:
+                # Create common quarterly index
+                start_date = min(w_annual.index.min(), s_monthly.index.min())
+                end_date = max(w_annual.index.max(), s_monthly.index.max())
+                dates = pd.date_range(start=start_date, end=end_date, freq='Q')
                 
-                fig_growth.add_trace(go.Bar(
-                    x=w_q.index, y=w_q['growth_rate'],
-                    name='Water Growth %',
-                    marker_color=w_colors,
-                    yaxis=yaxis_ref,
-                    hovertemplate='<b>Water Growth</b><br>%{y:+.2f}%<extra></extra>'
-                ))
-            
-            # Sewer Growth
-            if trend_metric in ["Growth Rate (%)", "Combined View"]:
-                yaxis_ref = 'y2' if trend_metric == "Combined View" else 'y'
-                # Conditional colors: Light red for negative growth
-                s_colors = [color_sewer if val >= 0 else '#F87171' for val in s_q['growth_rate']]
+                # Reindex and Interpolate Water
+                # Reindex to include annual dates + quarterly dates
+                w_combined_idx = w_annual.index.union(dates).sort_values()
+                w_interp = w_annual.reindex(w_combined_idx)
+                w_interp['municipal_coverage'] = w_interp['municipal_coverage'].interpolate(method='time')
+                w_interp['popn_total'] = w_interp['popn_total'].interpolate(method='time')
+                # Filter to just quarterly dates
+                w_q = w_interp.reindex(dates)
+                w_q['coverage_pct'] = (w_q['municipal_coverage'] / w_q['popn_total'] * 100).fillna(0)
+                w_q['growth_rate'] = w_q['coverage_pct'].pct_change() * 100
+                w_q['quarter_label'] = w_q.index.map(format_quarterly_label)
                 
-                fig_growth.add_trace(go.Bar(
-                    x=s_q.index, y=s_q['growth_rate'],
-                    name='Sewer Growth %',
-                    marker_color=s_colors,
-                    yaxis=yaxis_ref,
-                    hovertemplate='<b>Sewer Growth</b><br>%{y:+.2f}%<extra></extra>'
-                ))
-            
-            # Layout Updates
-            layout_args = dict(
-                title=dict(text=f"Trends: {trend_metric}", font=dict(size=16, color="#111827")),
-                xaxis=dict(title="Time", showgrid=True, gridcolor='rgba(128,128,128,0.1)'),
-                yaxis=dict(
-                    title="Percentage (%)" if trend_metric != "Growth Rate (%)" else "Growth Rate (%)",
-                    showgrid=True,
-                    gridcolor='rgba(128,128,128,0.1)',
-                    zeroline=False
-                ),
-                hovermode='x unified',
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                height=400,
-                margin=dict(l=0, r=0, t=50, b=0),
-                plot_bgcolor='rgba(255,255,255,1)',
-                paper_bgcolor='rgba(255,255,255,1)',
-                barmode='group'
-            )
-
-            if trend_metric == "Combined View":
-                layout_args['yaxis']['title'] = "Coverage (%)"
-                layout_args['yaxis']['range'] = [0, 100]
-                layout_args['yaxis2'] = dict(
-                    title="Growth Rate (%)",
-                    overlaying='y',
-                    side='right',
-                    showgrid=False,
-                    zeroline=False
+                # Resample Sewer
+                s_q = s_monthly.resample('Q').agg({'sewer_connections': 'last', 'households': 'last'})
+                s_q['coverage_pct'] = (s_q['sewer_connections'] / s_q['households'] * 100).fillna(0)
+                s_q['growth_rate'] = s_q['coverage_pct'].pct_change() * 100
+                s_q['quarter_label'] = s_q.index.map(format_quarterly_label)
+                
+                # Plot
+                fig_growth = go.Figure()
+                
+                # Colors
+                color_water = '#2874A6'  # Water color
+                color_sewer = '#1E8449'  # Sanitation color
+                
+                # Water Coverage
+                if trend_metric == "Coverage (%)":
+                    fig_growth.add_trace(go.Scatter(
+                        x=w_q['quarter_label'], y=w_q['coverage_pct'],
+                        name='Water Coverage',
+                        mode='lines+markers',
+                        line=dict(color=color_water, width=3),
+                        marker=dict(size=6),
+                        fill='tozeroy',
+                        fillcolor='rgba(40, 116, 166, 0.1)',
+                        hovertemplate='<b>Water Coverage</b><br>Quarter: %{x}<br>Coverage: %{y:.1f}%<extra></extra>'
+                    ))
+                    
+                    # Sewer Coverage
+                    fig_growth.add_trace(go.Scatter(
+                        x=s_q['quarter_label'], y=s_q['coverage_pct'],
+                        name='Sewer Coverage',
+                        mode='lines+markers',
+                        line=dict(color=color_sewer, width=3),
+                        marker=dict(size=6),
+                        fill='tozeroy',
+                        fillcolor='rgba(30, 132, 73, 0.1)',
+                        hovertemplate='<b>Sewer Coverage</b><br>Quarter: %{x}<br>Coverage: %{y:.1f}%<extra></extra>'
+                    ))
+                
+                # Water Growth Rate
+                if trend_metric == "Growth Rate (%)":
+                    # Conditional colors: green for positive, red for negative
+                    w_colors = [color_water if val >= 0 else '#F87171' for val in w_q['growth_rate']]
+                    
+                    fig_growth.add_trace(go.Bar(
+                        x=w_q['quarter_label'], y=w_q['growth_rate'],
+                        name='Water Growth Rate',
+                        marker_color=w_colors,
+                        hovertemplate='<b>Water Growth Rate</b><br>Quarter: %{x}<br>Growth: %{y:+.2f}%<extra></extra>'
+                    ))
+                    
+                    # Sewer Growth Rate
+                    s_colors = [color_sewer if val >= 0 else '#F87171' for val in s_q['growth_rate']]
+                    
+                    fig_growth.add_trace(go.Bar(
+                        x=s_q['quarter_label'], y=s_q['growth_rate'],
+                        name='Sewer Growth Rate',
+                        marker_color=s_colors,
+                        hovertemplate='<b>Sewer Growth Rate</b><br>Quarter: %{x}<br>Growth: %{y:+.2f}%<extra></extra>'
+                    ))
+                
+                # Layout Updates - Improved for quarterly display
+                layout_args = dict(
+                    title=dict(text=f"Coverage Trends by Quarter: {trend_metric}", font=dict(size=16, color="#111827")),
+                    xaxis=dict(
+                        title="Quarter",
+                        showgrid=True,
+                        gridcolor='rgba(128,128,128,0.1)',
+                        tickangle=-45
+                    ),
+                    yaxis=dict(
+                        title="Percentage (%)" if trend_metric == "Coverage (%)" else "Growth Rate (%)",
+                        showgrid=True,
+                        gridcolor='rgba(128,128,128,0.1)',
+                        zeroline=False
+                    ),
+                    hovermode='x unified',
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=450,
+                    margin=dict(l=0, r=0, t=50, b=80),
+                    plot_bgcolor='rgba(255,255,255,1)',
+                    paper_bgcolor='rgba(255,255,255,1)',
+                    barmode='group'
                 )
-            elif trend_metric == "Coverage (%)":
-                 layout_args['yaxis']['range'] = [0, 100]
-
-            fig_growth.update_layout(**layout_args)
-            
-            st.plotly_chart(fig_growth, use_container_width=True)
-        else:
-            st.info("Insufficient data for growth trends.")
+                
+                if trend_metric == "Coverage (%)":
+                    layout_args['yaxis']['range'] = [0, 100]
+                
+                fig_growth.update_layout(**layout_args)
+                
+                st.plotly_chart(fig_growth, use_container_width=True)
+            else:
+                st.info("📊 Insufficient data for growth trends.")
             
     with cg_col2:
         st.markdown("""
         <div style="background-color: #f9fafb; padding: 16px; border-radius: 8px; height: 100%;">
-            <h4 style="margin-top: 0; color: #111827;">Analysis Notes</h4>
+            <h4 style="margin-top: 0; color: #111827;">📋 Analysis Notes</h4>
             <p style="font-size: 12px; color: #4b5563;">
-                <strong>Water Coverage:</strong> Interpolated from annual data points. Growth rate reflects year-over-year trends smoothed quarterly.
+                <strong>Quarterly Granularity:</strong> Data is aggregated and displayed at quarterly intervals (Q1-Q4 format).
             </p>
             <p style="font-size: 12px; color: #4b5563;">
-                <strong>Sewer Coverage:</strong> Derived from monthly connection data. Growth rate shows quarter-over-quarter expansion.
+                <strong>Water Coverage:</strong> Interpolated from annual data points using time-based methods.
             </p>
             <p style="font-size: 12px; color: #4b5563;">
-                <strong>Growth Rate:</strong> Calculated as percentage change in coverage relative to the previous quarter.
+                <strong>Sewer Coverage:</strong> Derived from monthly data aggregated to quarterly periods.
+            </p>
+            <p style="font-size: 12px; color: #4b5563;">
+                <strong>Growth Rate:</strong> Shows quarter-over-quarter percentage change in coverage.
             </p>
         </div>
         """, unsafe_allow_html=True)
@@ -1052,33 +1413,67 @@ def scene_access():
     
     with inf_c1:
         st.markdown("**Metering Status**")
-        # Simulated Data for Metering
-        meter_fig = go.Figure(data=[go.Pie(
-            labels=['Metered', 'Non-metered'], 
-            values=[65, 35], 
-            hole=.6,
-            marker_colors=['#3B82F6', '#9CA3AF'],
-            textinfo='none'
-        )])
-        meter_fig.update_layout(
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-            margin=dict(l=20, r=20, t=0, b=20),
-            height=200,
-            annotations=[dict(
-                text="⚠️ No data available<br>for metered connections",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=10, color="#854d0e"),
-                bgcolor="#fef9c3",
-                bordercolor="#facc15",
-                borderwidth=1,
-                borderpad=4
-            )]
-        )
-        meter_fig.update_traces(opacity=0.3, hoverinfo='skip')
-        st.plotly_chart(meter_fig, use_container_width=True)
-        # st.warning("⚠️ No data available for metered connections")
+        # Use real metering data from service data
+        if not df_svc_filt.empty and 'metered' in df_svc_filt.columns and 'total_consumption' in df_svc_filt.columns:
+            # Calculate metered vs non-metered consumption
+            total_metered = df_svc_filt['metered'].sum()
+            total_consumption = df_svc_filt['total_consumption'].sum()
+            
+            if total_consumption > 0:
+                metered_pct = (total_metered / total_consumption) * 100
+                non_metered_pct = 100 - metered_pct
+                
+                meter_fig = go.Figure(data=[go.Pie(
+                    labels=['Metered', 'Non-metered'], 
+                    values=[metered_pct, non_metered_pct], 
+                    hole=.6,
+                    marker_colors=['#3B82F6', '#9CA3AF'],
+                    textinfo='percent',
+                    textposition='outside'
+                )])
+                meter_fig.update_layout(
+                    showlegend=True,
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                    margin=dict(l=20, r=20, t=0, b=40),
+                    height=200,
+                    annotations=[dict(
+                        text=f"{metered_pct:.1f}%<br>Metered",
+                        x=0.5, y=0.5,
+                        showarrow=False,
+                        font=dict(size=12, color="#1f2937")
+                    )]
+                )
+                st.plotly_chart(meter_fig, use_container_width=True)
+            else:
+                # Fallback if no consumption data
+                st.info("No consumption data available for metering analysis")
+        else:
+            # No metering data - show placeholder
+            meter_fig = go.Figure(data=[go.Pie(
+                labels=['Metered', 'Non-metered'], 
+                values=[65, 35], 
+                hole=.6,
+                marker_colors=['#3B82F6', '#9CA3AF'],
+                textinfo='none'
+            )])
+            meter_fig.update_layout(
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                margin=dict(l=20, r=20, t=0, b=20),
+                height=200,
+                annotations=[dict(
+                    text="⚠️ No data available<br>for metered connections",
+                    x=0.5, y=0.5,
+                    showarrow=False,
+                    font=dict(size=10, color="#854d0e"),
+                    bgcolor="#fef9c3",
+                    bordercolor="#facc15",
+                    borderwidth=1,
+                    borderpad=4
+                )]
+            )
+            meter_fig.update_traces(opacity=0.3, hoverinfo='skip')
+            st.plotly_chart(meter_fig, use_container_width=True)
 
     with inf_c2:
         st.markdown("**Public Sanitation**")
@@ -1201,17 +1596,26 @@ def scene_access():
             
             zone_cov['Coverage %'] = (zone_cov['municipal_coverage'] / zone_cov['popn_total'] * 100).fillna(0)
             
+            # Calculate appropriate x-axis range (add 10% padding)
+            max_coverage = zone_cov['Coverage %'].max()
+            x_max = max(max_coverage * 1.1, 10)  # At least 10%, with 10% padding
+            
             fig_zone = px.bar(zone_cov.sort_values('Coverage %'), x='Coverage %', y='zone', orientation='h',
                               color='Coverage %', color_continuous_scale=[[0, '#fed7aa'], [0.5, '#fb923c'], [1, '#3b82f6']],
                               labels={'zone': 'Zone', 'Coverage %': 'Coverage (%)'})
-            fig_zone.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), xaxis_title="Municipal Coverage (%)")
+            fig_zone.update_layout(
+                height=350, 
+                margin=dict(l=0, r=0, t=0, b=0), 
+                xaxis_title="Municipal Coverage (%)",
+                xaxis=dict(range=[0, x_max])  # Dynamic x-axis range
+            )
             st.plotly_chart(fig_zone, use_container_width=True)
             
         else:
             # Show line chart for specific zone over time (2020-2024)
             st.markdown(f"**Municipal Coverage Trend - {selected_zone}**")
             
-            zone_trend = df_water[df_water['zone'] == selected_zone].groupby('year').agg({
+            zone_trend = df_water[df_water['zone'].str.lower() == selected_zone.lower()].groupby('year').agg({
                 'municipal_coverage': 'sum',
                 'popn_total': 'sum'
             }).reset_index()
@@ -1447,17 +1851,17 @@ def scene_access():
         df_s_start = df_sewer.copy()
         df_s_end = df_sewer.copy()
         
-        # Apply country and zone filters
+        # Apply country and zone filters (case-insensitive)
         if selected_country != 'All':
-            df_w_start = df_w_start[df_w_start['country'] == selected_country]
-            df_w_end = df_w_end[df_w_end['country'] == selected_country]
-            df_s_start = df_s_start[df_s_start['country'] == selected_country]
-            df_s_end = df_s_end[df_s_end['country'] == selected_country]
+            df_w_start = df_w_start[df_w_start['country'].str.lower() == selected_country.lower()]
+            df_w_end = df_w_end[df_w_end['country'].str.lower() == selected_country.lower()]
+            df_s_start = df_s_start[df_s_start['country'].str.lower() == selected_country.lower()]
+            df_s_end = df_s_end[df_s_end['country'].str.lower() == selected_country.lower()]
         if selected_zone != 'All':
-            df_w_start = df_w_start[df_w_start['zone'] == selected_zone]
-            df_w_end = df_w_end[df_w_end['zone'] == selected_zone]
-            df_s_start = df_s_start[df_s_start['zone'] == selected_zone]
-            df_s_end = df_s_end[df_s_end['zone'] == selected_zone]
+            df_w_start = df_w_start[df_w_start['zone'].str.lower() == selected_zone.lower()]
+            df_w_end = df_w_end[df_w_end['zone'].str.lower() == selected_zone.lower()]
+            df_s_start = df_s_start[df_s_start['zone'].str.lower() == selected_zone.lower()]
+            df_s_end = df_s_end[df_s_end['zone'].str.lower() == selected_zone.lower()]
         
         # Filter by year
         df_w_start = df_w_start[df_w_start['year'] == start_year]
@@ -1515,6 +1919,270 @@ def scene_access():
                     st.markdown(f"**{label}** ({start_pct:.1f}% → {end_pct:.1f}%): {change_text}")
     else:
         st.info("Need at least 2 years of data for population flow analysis")
+
+    # ============================================================================
+    # DATA EXPORT SECTION
+    # ============================================================================
+    
+    st.markdown("---")
+    st.markdown("<div class='section-header'>📦 Data Export</div>", unsafe_allow_html=True)
+    
+    export_tab1, export_tab2, export_tab3 = st.tabs(["💧 Water Access Data", "🚽 Sewer Access Data", "📈 Calculated Metrics"])
+    
+    # TAB 1: WATER ACCESS DATA EXPORT
+    with export_tab1:
+        st.markdown("**Export filtered water access data**")
+        
+        # Display options
+        show_all_cols_w = st.checkbox("Show all columns", value=False, key="show_all_water")
+        
+        if show_all_cols_w:
+            display_df_w = df_w_filt
+        else:
+            key_columns_w = ['country', 'zone', 'year', 'popn_total', 'municipal_coverage', 'safely_managed', 
+                            'basic', 'limited', 'unimproved', 'surface_water']
+            display_df_w = df_w_filt[[col for col in key_columns_w if col in df_w_filt.columns]]
+        
+        st.dataframe(display_df_w, use_container_width=True, height=400)
+        
+        # Export options
+        export_col1, export_col2, export_col3 = st.columns(3)
+        
+        with export_col1:
+            csv_data_w = df_w_filt.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_data_w,
+                file_name=f"water_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_water_csv"
+            )
+        
+        with export_col2:
+            buffer_w = io.BytesIO()
+            with pd.ExcelWriter(buffer_w, engine='openpyxl') as writer:
+                df_w_filt.to_excel(writer, sheet_name='Water Access Data', index=False)
+            buffer_w.seek(0)
+            
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer_w,
+                file_name=f"water_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_water_excel"
+            )
+        
+        with export_col3:
+            json_str_w = df_w_filt.to_json(orient='records', indent=2, default_handler=str)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str_w,
+                file_name=f"water_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_water_json"
+            )
+    
+    # TAB 2: SEWER ACCESS DATA EXPORT
+    with export_tab2:
+        st.markdown("**Export filtered sewer access data**")
+        
+        # Display options
+        show_all_cols_s = st.checkbox("Show all columns", value=False, key="show_all_sewer")
+        
+        if show_all_cols_s:
+            display_df_s = df_s_filt
+        else:
+            key_columns_s = ['country', 'zone', 'year', 'popn_total', 'connections', 'safely_managed', 
+                            'basic', 'limited', 'unimproved', 'open_defecation']
+            display_df_s = df_s_filt[[col for col in key_columns_s if col in df_s_filt.columns]]
+        
+        st.dataframe(display_df_s, use_container_width=True, height=400)
+        
+        # Export options
+        export_col1_s, export_col2_s, export_col3_s = st.columns(3)
+        
+        with export_col1_s:
+            csv_data_s = df_s_filt.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download as CSV",
+                data=csv_data_s,
+                file_name=f"sewer_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_sewer_csv"
+            )
+        
+        with export_col2_s:
+            buffer_s = io.BytesIO()
+            with pd.ExcelWriter(buffer_s, engine='openpyxl') as writer:
+                df_s_filt.to_excel(writer, sheet_name='Sewer Access Data', index=False)
+            buffer_s.seek(0)
+            
+            st.download_button(
+                label="📥 Download as Excel",
+                data=buffer_s,
+                file_name=f"sewer_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_sewer_excel"
+            )
+        
+        with export_col3_s:
+            json_str_s = df_s_filt.to_json(orient='records', indent=2, default_handler=str)
+            st.download_button(
+                label="📥 Download as JSON",
+                data=json_str_s,
+                file_name=f"sewer_access_data_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_sewer_json"
+            )
+    
+    # TAB 3: CALCULATED METRICS EXPORT
+    with export_tab3:
+        st.markdown("**All calculated access metrics in one file**")
+        st.info("📌 This file contains all derived metrics calculated from the raw data for easy analysis and reporting.")
+        
+        # Zone-Level Water Metrics
+        water_zone_metrics = pd.DataFrame()
+        if 'zone' in df_w_filt.columns and not df_w_filt.empty:
+            water_zone_agg = df_w_filt.groupby('zone').agg({
+                'popn_total': 'sum',
+                'municipal_coverage': 'sum'
+            }).reset_index()
+            
+            # Add safely_managed if exists
+            if 'safely_managed' in df_w_filt.columns:
+                water_zone_agg['safely_managed'] = df_w_filt.groupby('zone')['safely_managed'].sum().values
+            
+            water_zone_agg['coverage_rate'] = (water_zone_agg['municipal_coverage'] / water_zone_agg['popn_total'] * 100).fillna(0)
+            water_zone_agg['metric_type'] = 'Water Zone Summary'
+            water_zone_metrics = water_zone_agg
+        
+        # Zone-Level Sewer Metrics
+        sewer_zone_metrics = pd.DataFrame()
+        if 'zone' in df_s_filt.columns and not df_s_filt.empty:
+            sewer_zone_agg = df_s_filt.groupby('zone').agg({
+                'popn_total': 'sum'
+            }).reset_index()
+            
+            # Add connections if exists
+            if 'connections' in df_s_filt.columns:
+                sewer_zone_agg['connections'] = df_s_filt.groupby('zone')['connections'].sum().values
+                sewer_zone_agg['coverage_rate'] = (sewer_zone_agg['connections'] / sewer_zone_agg['popn_total'] * 100).fillna(0)
+            
+            if 'safely_managed' in df_s_filt.columns:
+                sewer_zone_agg['safely_managed'] = df_s_filt.groupby('zone')['safely_managed'].sum().values
+            
+            sewer_zone_agg['metric_type'] = 'Sewer Zone Summary'
+            sewer_zone_metrics = sewer_zone_agg
+        
+        # Overall Summary Metrics
+        # Water metrics
+        total_pop_water = df_w_filt['popn_total'].sum() if not df_w_filt.empty else 0
+        muni_coverage_count = df_w_filt['municipal_coverage'].sum() if not df_w_filt.empty and 'municipal_coverage' in df_w_filt.columns else 0
+        water_coverage_rate = (muni_coverage_count / total_pop_water * 100) if total_pop_water > 0 else 0
+        
+        # Sewer metrics
+        total_pop_sewer = df_s_filt['popn_total'].sum() if not df_s_filt.empty else 0
+        sewer_conn_count = df_s_filt['connections'].sum() if not df_s_filt.empty and 'connections' in df_s_filt.columns else 0
+        sewer_coverage_rate = (sewer_conn_count / total_pop_sewer * 100) if total_pop_sewer > 0 else 0
+        
+        summary_metrics = pd.DataFrame({
+            'Metric': [
+                'Total Population (Water Data)',
+                'Municipal Water Coverage (count)',
+                'Water Coverage Rate (%)',
+                'Total Population (Sewer Data)',
+                'Sewer Connections (count)',
+                'Sewer Coverage Rate (%)',
+                'Number of Zones (Water)',
+                'Number of Zones (Sewer)',
+                'Report Generated',
+                'Selected Year'
+            ],
+            'Value': [
+                f"{total_pop_water:,.0f}",
+                f"{muni_coverage_count:,.0f}",
+                f"{water_coverage_rate:.2f}",
+                f"{total_pop_sewer:,.0f}",
+                f"{sewer_conn_count:,.0f}",
+                f"{sewer_coverage_rate:.2f}",
+                f"{df_w_filt['zone'].nunique() if 'zone' in df_w_filt.columns else 0}",
+                f"{df_s_filt['zone'].nunique() if 'zone' in df_s_filt.columns else 0}",
+                pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
+                f"{selected_year}" if selected_year else "All Years"
+            ]
+        })
+        
+        # Display water zone metrics if available
+        if not water_zone_metrics.empty:
+            st.subheader("Water Access - Zone-Level Metrics")
+            st.dataframe(water_zone_metrics, use_container_width=True, height=200)
+        
+        # Display sewer zone metrics if available
+        if not sewer_zone_metrics.empty:
+            st.subheader("Sewer Access - Zone-Level Metrics")
+            st.dataframe(sewer_zone_metrics, use_container_width=True, height=200)
+        
+        # Display summary metrics
+        st.subheader("Overall Summary Metrics")
+        st.dataframe(summary_metrics, use_container_width=True, height=250)
+        
+        # Export calculated metrics
+        export_metric_col1, export_metric_col2, export_metric_col3 = st.columns(3)
+        
+        with export_metric_col1:
+            # Combined metrics CSV
+            combined_metrics_list = [summary_metrics.assign(metric_category='Overall_Summary')]
+            if not water_zone_metrics.empty:
+                combined_metrics_list.insert(0, water_zone_metrics.assign(metric_category='Water_Zone_Level'))
+            if not sewer_zone_metrics.empty:
+                combined_metrics_list.insert(0, sewer_zone_metrics.assign(metric_category='Sewer_Zone_Level'))
+            
+            combined_metrics = pd.concat(combined_metrics_list, ignore_index=True, sort=False)
+            
+            csv_metrics = combined_metrics.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Metrics as CSV",
+                data=csv_metrics,
+                file_name=f"access_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                key="download_access_metrics_csv"
+            )
+        
+        with export_metric_col2:
+            # Excel with multiple sheets
+            buffer_metrics = io.BytesIO()
+            with pd.ExcelWriter(buffer_metrics, engine='openpyxl') as writer:
+                if not water_zone_metrics.empty:
+                    water_zone_metrics.to_excel(writer, sheet_name='Water_Zone_Metrics', index=False)
+                if not sewer_zone_metrics.empty:
+                    sewer_zone_metrics.to_excel(writer, sheet_name='Sewer_Zone_Metrics', index=False)
+                summary_metrics.to_excel(writer, sheet_name='Summary_Metrics', index=False)
+            buffer_metrics.seek(0)
+            
+            st.download_button(
+                label="📥 Download Metrics as Excel",
+                data=buffer_metrics,
+                file_name=f"access_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_access_metrics_excel"
+            )
+        
+        with export_metric_col3:
+            # JSON export for metrics
+            metrics_json = {
+                'water_zone_metrics': water_zone_metrics.to_dict(orient='records') if not water_zone_metrics.empty else [],
+                'sewer_zone_metrics': sewer_zone_metrics.to_dict(orient='records') if not sewer_zone_metrics.empty else [],
+                'summary_metrics': summary_metrics.to_dict(orient='records'),
+                'generated_at': pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+            json_str_metrics = json.dumps(metrics_json, indent=2, default=str)
+            st.download_button(
+                label="📥 Download Metrics as JSON",
+                data=json_str_metrics,
+                file_name=f"access_metrics_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                key="download_access_metrics_json"
+            )
 
     # --- Step 8: Data Quality & Alerts Section (Footer) ---
     st.markdown("---")

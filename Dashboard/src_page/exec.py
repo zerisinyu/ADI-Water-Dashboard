@@ -16,6 +16,34 @@ from utils import (
 )
 from ai_insights import InsightsEngine, generate_board_brief_text
 
+# ============================================================================
+# CONSTANTS & UTILITIES
+# ============================================================================
+
+# JMP Color Coding Standards (Joint Monitoring Programme)
+# Colors aligned with Access & Coverage page for consistency
+JMP_COLORS = {
+    "safely_managed": "#088BCE",      # Blue (Water) / Green (Sanitation)
+    "basic": "#48BFE7",               # Light Blue (Water) / Light Green (Sanitation)
+    "limited": "#FDEE79",             # Yellow
+    "unimproved": "#FFD94F",          # Orange
+    "surface_water": "#FFB02B"        # Dark Orange
+}
+
+def format_year_month(year: int, month: int = None) -> str:
+    """Format year and month to readable format (e.g., 2020/6 or 2020)"""
+    if month and isinstance(month, (int, float)):
+        return f"{int(year)}/{int(month)}"
+    return str(int(year))
+
+def format_date_label(date_obj) -> str:
+    """Format datetime object to readable label"""
+    if pd.isna(date_obj):
+        return "Unknown"
+    if isinstance(date_obj, pd.Timestamp):
+        return date_obj.strftime("%Y/%m")
+    return str(date_obj)
+
 @st.cache_data
 def _load_raw_dashboard_data():
     """
@@ -23,7 +51,7 @@ def _load_raw_dashboard_data():
     This loads all data without access filtering.
     """
     # 1. Load Billing Data (for Collection Efficiency & NRW consumption)
-    billing_path = DATA_DIR / "all_data - billing.csv"
+    billing_path = DATA_DIR / "billing.csv"
     if billing_path.exists():
         billing_cols = ["date", "consumption_m3", "billed", "paid", "country", "zone", "source"]
         billing_df = pd.read_csv(billing_path, usecols=billing_cols, low_memory=False)
@@ -35,7 +63,7 @@ def _load_raw_dashboard_data():
         billing_df = pd.DataFrame(columns=["date", "consumption_m3", "billed", "paid", "country", "zone", "source"])
 
     # 2. Load Financial Services Data
-    fin_path = DATA_DIR / "financial_services.csv"
+    fin_path = DATA_DIR / "all_fin_service.csv"
     if fin_path.exists():
         fin_df = pd.read_csv(fin_path)
         fin_df["date"] = pd.to_datetime(fin_df["date_MMYY"], format="%b/%y")
@@ -55,7 +83,7 @@ def _load_raw_dashboard_data():
         prod_df = pd.DataFrame(columns=["date", "production_m3", "service_hours", "country", "zone"])
 
     # 4. Load National Data
-    nat_path = DATA_DIR / "all_national.csv"
+    nat_path = DATA_DIR / "all_nationalacc.csv"
     if nat_path.exists():
         nat_df = pd.read_csv(nat_path)
     else:
@@ -85,6 +113,7 @@ def load_dashboard_data():
 def filter_dataframe(df, country, zone, year, month):
     """
     Filter dataframe based on selected criteria.
+    Uses case-insensitive comparison for country and zone.
     """
     if df.empty:
         return df
@@ -93,11 +122,13 @@ def filter_dataframe(df, country, zone, year, month):
     
     if country and country != "All":
         if "country" in filtered.columns:
-            filtered = filtered[filtered["country"] == country]
+            # Case-insensitive comparison for country
+            filtered = filtered[filtered["country"].str.lower() == country.lower()]
     
     if zone and zone != "All":
         if "zone" in filtered.columns:
-            filtered = filtered[filtered["zone"] == zone]
+            # Case-insensitive comparison for zone
+            filtered = filtered[filtered["zone"].str.lower() == zone.lower()]
             
     if year and year != "All":
         if "date" in filtered.columns:
@@ -192,15 +223,15 @@ def scene_executive():
     f_prod = filter_dataframe(prod_df, selected_country, selected_zone, selected_year, selected_month)
     f_nat = filter_dataframe(nat_df, selected_country, "All", selected_year, "All") # National data usually country level
 
-    # Access Data Filtering
+    # Access Data Filtering (case-insensitive)
     w_latest = access_data["water_latest"]
     s_latest = access_data["sewer_latest"]
     if selected_country and selected_country != "All":
-        w_latest = w_latest[w_latest["country"] == selected_country]
-        s_latest = s_latest[s_latest["country"] == selected_country]
+        w_latest = w_latest[w_latest["country"].str.lower() == selected_country.lower()]
+        s_latest = s_latest[s_latest["country"].str.lower() == selected_country.lower()]
     if selected_zone and selected_zone != "All":
-        w_latest = w_latest[w_latest["zone"] == selected_zone]
-        s_latest = s_latest[s_latest["zone"] == selected_zone]
+        w_latest = w_latest[w_latest["zone"].str.lower() == selected_zone.lower()]
+        s_latest = s_latest[s_latest["zone"].str.lower() == selected_zone.lower()]
 
     # Service Data Filtering
     svc_df = service_data_dict["full_data"]
@@ -453,17 +484,19 @@ def scene_executive():
     trend_water_acc = access_data["water_full"].copy()
 
     if selected_country and selected_country != "All":
-        trend_billing = trend_billing[trend_billing["country"] == selected_country]
-        trend_fin = trend_fin[trend_fin["country"] == selected_country]
-        trend_prod = trend_prod[trend_prod["country"] == selected_country]
-        trend_svc = trend_svc[trend_svc["country"] == selected_country]
-        trend_water_acc = trend_water_acc[trend_water_acc["country"] == selected_country]
+        # Case-insensitive country filtering
+        trend_billing = trend_billing[trend_billing["country"].str.lower() == selected_country.lower()]
+        trend_fin = trend_fin[trend_fin["country"].str.lower() == selected_country.lower()]
+        trend_prod = trend_prod[trend_prod["country"].str.lower() == selected_country.lower()]
+        trend_svc = trend_svc[trend_svc["country"].str.lower() == selected_country.lower()]
+        trend_water_acc = trend_water_acc[trend_water_acc["country"].str.lower() == selected_country.lower()]
         
     if selected_zone and selected_zone != "All":
-        if "zone" in trend_billing.columns: trend_billing = trend_billing[trend_billing["zone"] == selected_zone]
-        if "zone" in trend_prod.columns: trend_prod = trend_prod[trend_prod["zone"] == selected_zone]
-        if "zone" in trend_svc.columns: trend_svc = trend_svc[trend_svc["zone"] == selected_zone]
-        if "zone" in trend_water_acc.columns: trend_water_acc = trend_water_acc[trend_water_acc["zone"] == selected_zone]
+        # Case-insensitive zone filtering
+        if "zone" in trend_billing.columns: trend_billing = trend_billing[trend_billing["zone"].str.lower() == selected_zone.lower()]
+        if "zone" in trend_prod.columns: trend_prod = trend_prod[trend_prod["zone"].str.lower() == selected_zone.lower()]
+        if "zone" in trend_svc.columns: trend_svc = trend_svc[trend_svc["zone"].str.lower() == selected_zone.lower()]
+        if "zone" in trend_water_acc.columns: trend_water_acc = trend_water_acc[trend_water_acc["zone"].str.lower() == selected_zone.lower()]
 
     tab_fin, tab_ops, tab_cov, tab_qual = st.tabs(["Financial", "Operational", "Coverage", "Quality"])
 
@@ -475,31 +508,44 @@ def scene_executive():
         
         merged_fin = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
         merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
-        merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"] * 100).fillna(0)
-        merged_fin["op_margin"] = ((merged_fin["total_revenue"] - merged_fin["opex"]) / merged_fin["total_revenue"] * 100).fillna(0)
+        
+        # Ensure safe division for collection efficiency
+        merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).fillna(0)
+        
+        # Calculate op_margin safely (Revenue - Opex) / Revenue * 100
+        # Ensure we don't divide by zero
+        merged_fin["op_margin"] = ((merged_fin["total_revenue"] - merged_fin["opex"]) / merged_fin["total_revenue"].replace(0, 1) * 100).fillna(0)
+        
+        # Clamp values to realistic ranges
+        merged_fin["coll_eff"] = merged_fin["coll_eff"].clip(0, 150)  # Allow slight over-collection
+        merged_fin["op_margin"] = merged_fin["op_margin"].clip(-100, 100)  # Range: -100% to 100%
         
         # Sort and take last 12 months for "rolling view"
         merged_fin = merged_fin.sort_values("date").tail(12)
         
-        # Dual Axis Chart
-        fig_fin = go.Figure()
-        # Bars: Revenue & Costs
-        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue", marker_color="#10b981", opacity=0.7))
-        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex", marker_color="#ef4444", opacity=0.7))
-        
-        # Lines: Collection Eff & Op Margin
-        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection Eff %", yaxis="y2", line=dict(color="#3b82f6", width=3)))
-        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["op_margin"], name="Op Margin %", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
-        
-        fig_fin.update_layout(
-            title="Financial Performance (Last 12 Months)",
-            yaxis=dict(title="Amount ($)"),
-            yaxis2=dict(title="Percentage (%)", overlaying="y", side="right", range=[0, 120]),
-            barmode='group',
-            legend=dict(orientation="h", y=1.1),
-            height=400
-        )
-        st.plotly_chart(fig_fin, use_container_width=True)
+        if len(merged_fin) > 0:
+            # Dual Axis Chart
+            fig_fin = go.Figure()
+            # Bars: Revenue & Costs
+            fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue", marker_color="#10b981", opacity=0.7))
+            fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex", marker_color="#ef4444", opacity=0.7))
+            
+            # Lines: Collection Eff & Op Margin (both metrics on right y-axis as percentages)
+            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection Eff %", yaxis="y2", line=dict(color="#3b82f6", width=3, dash="solid")))
+            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["op_margin"], name="Op Margin %", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
+            
+            fig_fin.update_layout(
+                title="Financial Performance (Last 12 Months)",
+                yaxis=dict(title="Amount ($)", showgrid=True),
+                yaxis2=dict(title="Percentage (%)", overlaying="y", side="right", range=[-50, 150], showgrid=False),
+                barmode='group',
+                legend=dict(orientation="h", y=1.1, x=0),
+                height=400,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_fin, use_container_width=True)
+        else:
+            st.info("No financial data available for selected period")
 
     # --- Operational Tab ---
     with tab_ops:
@@ -554,31 +600,41 @@ def scene_executive():
             level_cols = [c.replace("_pct", "") for c in cols if c in trend_water_acc.columns]
             w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
             
-            fig_cov = go.Figure()
-            stack_group = 'one'
-            order = ["surface_water", "w_unimproved", "w_limited", "w_basic", "w_safely_managed"]
-            colors = ["#ef4444", "#f97316", "#f59e0b", "#3b82f6", "#10b981"]
-            labels = ["Surface Water", "Unimproved", "Limited", "Basic", "Safely Managed"]
-            
-            for i, level in enumerate(order):
-                if level in w_trend.columns:
-                    fig_cov.add_trace(go.Scatter(
-                        x=w_trend["year"], y=w_trend[level], 
-                        name=labels[i], 
-                        stackgroup=stack_group,
-                        mode='lines',
-                        line=dict(width=0.5, color=colors[i]),
-                        fillcolor=colors[i]
-                    ))
-            
-            fig_cov.update_layout(
-                title="Population Served by Service Level (Growth Trajectory)",
-                yaxis=dict(title="Population"),
-                xaxis=dict(title="Year"),
-                height=400,
-                legend=dict(orientation="h", y=-0.2)
-            )
-            st.plotly_chart(fig_cov, use_container_width=True)
+            if len(w_trend) > 0:
+                fig_cov = go.Figure()
+                stack_group = 'one'
+                # Order matches JMP hierarchy: Safe -> Basic -> Limited -> Unimproved -> Surface
+                order = ["w_safely_managed", "w_basic", "w_limited", "w_unimproved", "surface_water"]
+                # JMP color mapping
+                colors = [JMP_COLORS["safely_managed"], JMP_COLORS["basic"], JMP_COLORS["limited"], 
+                         JMP_COLORS["unimproved"], JMP_COLORS["surface_water"]]
+                labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Surface Water"]
+                
+                for i, level in enumerate(order):
+                    if level in w_trend.columns:
+                        fig_cov.add_trace(go.Scatter(
+                            x=w_trend["year"].apply(lambda y: format_year_month(int(y))), 
+                            y=w_trend[level], 
+                            name=labels[i], 
+                            stackgroup=stack_group,
+                            mode='lines',
+                            line=dict(width=0.5, color=colors[i]),
+                            fillcolor=colors[i],
+                            hovertemplate='%{customdata}<br>Population: %{y:,.0f}<extra></extra>',
+                            customdata=[labels[i]] * len(w_trend)
+                        ))
+                
+                fig_cov.update_layout(
+                    title="Population Served by Service Level - JMP Standards (Growth Trajectory)",
+                    yaxis=dict(title="Population", showgrid=True),
+                    xaxis=dict(title="Year"),
+                    height=400,
+                    legend=dict(orientation="h", y=-0.2, x=0),
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_cov, use_container_width=True)
+            else:
+                st.warning("No coverage data available for selected period")
         else:
             st.warning("Population data not available for coverage trends.")
 
@@ -593,19 +649,31 @@ def scene_executive():
         
         merged_qual = pd.merge(svc_qual, prod_svc, on="date", how="outer").sort_values("date").tail(12)
         
-        fig_qual = go.Figure()
-        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["water_quality_rate"], name="Water Quality %", line=dict(color="#10b981", width=3)))
-        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["complaint_resolution_rate"], name="Resolution Rate %", line=dict(color="#3b82f6", width=3)))
-        fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["service_hours"], name="Service Hours", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
-        
-        fig_qual.update_layout(
-            title="Service Quality Trends",
-            yaxis=dict(title="Percentage (%)", range=[0, 100]),
-            yaxis2=dict(title="Hours/Day", overlaying="y", side="right", range=[0, 24]),
-            legend=dict(orientation="h", y=1.1),
-            height=400
-        )
-        st.plotly_chart(fig_qual, use_container_width=True)
+        if len(merged_qual) > 0:
+            # Calculate dynamic y-axis range for percentage metrics
+            qual_data = merged_qual[["water_quality_rate", "complaint_resolution_rate"]].dropna()
+            if not qual_data.empty:
+                min_qual = max(0, qual_data.min().min() - 5)  # 5% padding
+                max_qual = min(100, qual_data.max().max() + 5)  # 5% padding
+            else:
+                min_qual, max_qual = 0, 100
+            
+            fig_qual = go.Figure()
+            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["water_quality_rate"], name="Water Quality %", line=dict(color="#10b981", width=3), mode='lines+markers'))
+            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["complaint_resolution_rate"], name="Resolution Rate %", line=dict(color="#3b82f6", width=3), mode='lines+markers'))
+            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["service_hours"], name="Service Hours", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot"), mode='lines+markers'))
+            
+            fig_qual.update_layout(
+                title="Service Quality Trends",
+                yaxis=dict(title="Percentage (%)", range=[min_qual, max_qual], showgrid=True, gridwidth=1, gridcolor='#e2e8f0'),
+                yaxis2=dict(title="Hours/Day", overlaying="y", side="right", range=[0, 24], showgrid=False),
+                legend=dict(orientation="h", y=1.1, x=0),
+                height=400,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig_qual, use_container_width=True)
+        else:
+            st.info("No service quality data available for selected period")
 
     # --- Board Brief Generation ---
     st.markdown("---")

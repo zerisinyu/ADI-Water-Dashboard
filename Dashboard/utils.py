@@ -103,8 +103,8 @@ def load_json(name: str) -> Optional[Dict[str, Any]]:
 def load_csv_data() -> Dict[str, pd.DataFrame]:
     """Read sewer and water access CSV datasets from disk and cache the resulting DataFrames."""
     csv_map = {
-        "sewer": "Sewer Access Data.csv",
-        "water": "Water Access Data.csv",
+        "sewer": "s_access.csv",
+        "water": "w_access.csv",
     }
     frames: Dict[str, pd.DataFrame] = {}
     for key, filename in csv_map.items():
@@ -276,7 +276,7 @@ def _load_raw_service_data() -> pd.DataFrame:
     Load and process raw service data (internal, cached).
     This loads all data without access filtering.
     """
-    service_path = DATA_DIR / "Service_data.csv"
+    service_path = DATA_DIR / "sw_service.csv"
     if not service_path.exists():
         raise FileNotFoundError(f"Service data file not found: {service_path}")
 

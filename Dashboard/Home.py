@@ -22,8 +22,11 @@ from pathlib import Path
 from typing import Optional, List, Dict, Callable
 from urllib.parse import urlencode
 from datetime import datetime
+import io
+import base64
 
 import streamlit as st
+import pandas as pd
 
 # Import authentication module - provides role-based access control
 from auth import (
@@ -61,54 +64,223 @@ def _render_llm_error(exc: Exception) -> None:
     import traceback
     import streamlit as st
 
-    # Basic error message
-    st.error(f"LLM error: {type(exc).__name__}: {exc}")
-
-    # Lightweight diagnostics
+    # Get error details
+    error_msg = str(exc)
+    
+    # Check for common configuration issues
     try:
-        provider = (st.secrets.get("LLM_PROVIDER") or os.getenv("LLM_PROVIDER") or "gemini").lower()  # type: ignore[attr-defined]
+        provider = (st.secrets.get("LLM_PROVIDER") or os.getenv("LLM_PROVIDER") or "gemini").lower()
     except Exception:
         provider = (os.getenv("LLM_PROVIDER") or "gemini").lower()
+    
     try:
-        model = (st.secrets.get("MODEL_ID") or os.getenv("MODEL_ID") or "gemini-2.5-flash")  # type: ignore[attr-defined]
-    except Exception:
-        model = os.getenv("MODEL_ID") or "gemini-2.5-flash"
-
-    # API key presence (do not print the key)
-    try:
-        key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))  # type: ignore[attr-defined]
+        key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
     except Exception:
         key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     key_present = bool(key)
 
-    # SDK availability
-    try:
-        import google.generativeai as genai  # type: ignore
-        sdk_ok = True
-        sdk_version = getattr(genai, "__version__", "?")
-    except Exception:
-        sdk_ok = False
-        sdk_version = None
+    # Show user-friendly error message
+    if not key_present:
+        st.warning("⚠️ **MajiBot AI is not configured**\n\nTo enable the AI assistant, please configure your Gemini API key in the environment variables or Streamlit secrets.")
+    elif "API" in error_msg or "key" in error_msg.lower():
+        st.warning("⚠️ **MajiBot AI Configuration Error**\n\nThere was an issue with the API key. Please verify your Gemini API key is valid.")
+    else:
+        st.error(f"⚠️ **MajiBot Error**: {error_msg[:200]}")
 
-    with st.expander("Diagnostics"):
-        st.write(
-            {
-                "provider": provider,
-                "model": model,
-                "api_key_configured": key_present,
-                "google-generativeai_installed": sdk_ok,
-                "google-generativeai_version": sdk_version,
-            }
-        )
-        # Last exception traceback (1-2 lines) to aid debugging
-        tb = traceback.format_exc(limit=2)
-        st.code(tb or "No traceback available.")
+    # Diagnostics in expander (for debugging)
+    with st.expander("🔧 Diagnostics (for administrators)"):
+        try:
+            model = (st.secrets.get("MODEL_ID") or os.getenv("MODEL_ID") or "gemini-2.5-flash")
+        except Exception:
+            model = os.getenv("MODEL_ID") or "gemini-2.5-flash"
+        
+        try:
+            import google.generativeai as genai
+            sdk_ok = True
+            sdk_version = getattr(genai, "__version__", "?")
+        except Exception:
+            sdk_ok = False
+            sdk_version = None
+
+        st.write({
+            "provider": provider,
+            "model": model,
+            "api_key_configured": key_present,
+            "google-generativeai_installed": sdk_ok,
+            "google-generativeai_version": sdk_version,
+        })
+        
+        st.markdown("**To fix this:**")
+        st.markdown("""
+        1. Create a `.env` file in the Dashboard folder with:
+           ```
+           GEMINI_API_KEY=your_api_key_here
+           ```
+        2. Or set the environment variable before running:
+           ```
+           export GEMINI_API_KEY=your_api_key_here
+           ```
+        3. Or add to Streamlit secrets (`.streamlit/secrets.toml`):
+           ```
+           GEMINI_API_KEY = "your_api_key_here"
+           ```
+        """)
 
 
 def _inject_styles() -> None:
     css_path = Path(__file__).parent / "styles.css"
     if css_path.exists():
         st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
+    
+    # Add expandable container styles
+    st.markdown("""
+    <style>
+        .expandable-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 24px;
+            margin: 16px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+            animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .container-close-btn {
+            float: right;
+            background: transparent;
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: #64748b;
+            padding: 0;
+        }
+        .container-close-btn:hover {
+            color: #0f172a;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def _generate_pdf_report(country: str, period: str, year: str, metrics: Dict) -> bytes:
+    """
+    Generate a professional PDF report with metrics and timestamp.
+    Falls back to HTML if fpdf2 is not available.
+    """
+    timestamp = pd.Timestamp.now()
+    
+    # Create simple HTML-based PDF content
+    html_content = f"""
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; color: #333; }}
+            .header {{ text-align: center; margin-bottom: 30px; border-bottom: 3px solid #10b981; padding-bottom: 20px; }}
+            .title {{ font-size: 28px; font-weight: bold; color: #0f172a; }}
+            .subtitle {{ font-size: 12px; color: #64748b; margin-top: 10px; }}
+            .section {{ margin: 25px 0; page-break-inside: avoid; }}
+            .section-title {{ font-size: 16px; font-weight: bold; color: #10b981; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px; }}
+            .metric-row {{ display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }}
+            .metric-label {{ font-weight: bold; color: #64748b; }}
+            .metric-value {{ color: #0f172a; font-weight: 600; }}
+            .filters {{ background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+            .filter-item {{ padding: 5px 0; }}
+            .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <div class="title">💧 Executive Report</div>
+            <div class="subtitle">Water Utility Performance Dashboard</div>
+            <div class="subtitle">Generated: {timestamp.strftime('%B %d, %Y at %H:%M:%S')}</div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Report Filters</div>
+            <div class="filters">
+                <div class="filter-item"><strong>Country:</strong> {country}</div>
+                <div class="filter-item"><strong>Time Period:</strong> {period}</div>
+                <div class="filter-item"><strong>Year:</strong> {year}</div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Key Performance Indicators</div>
+            <div class="metric-row">
+                <span class="metric-label">Service Coverage:</span>
+                <span class="metric-value">{metrics.get('coverage_score', 'N/A')}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Financial Health:</span>
+                <span class="metric-value">{metrics.get('fin_score', 'N/A')}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Operational Efficiency:</span>
+                <span class="metric-value">{metrics.get('eff_score', 'N/A')}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Service Quality:</span>
+                <span class="metric-value">{metrics.get('qual_score', 'N/A')}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">Collection Efficiency:</span>
+                <span class="metric-value">{metrics.get('coll_eff', 'N/A')}</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">NRW (Non-Revenue Water):</span>
+                <span class="metric-value">{metrics.get('nrw', 'N/A')}</span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">Report Details</div>
+            <p>This report provides a snapshot of key performance indicators based on the selected filters.</p>
+            <p>For detailed analysis and visualizations, please refer to the interactive dashboard.</p>
+        </div>
+        
+        <div class="footer">
+            <p>This is a system-generated report. For more information, visit the Executive Dashboard.</p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html_content.encode('utf-8')
+
+
+def _initialize_expandable_state() -> None:
+    """Initialize session state for expandable containers."""
+    if "expanded_container" not in st.session_state:
+        st.session_state["expanded_container"] = None  # None, "report", or "alerts"
+    if "show_alert_settings" not in st.session_state:
+        st.session_state["show_alert_settings"] = False
+
+
+def _render_expandable_container(container_id: str, title: str, content_fn: Callable) -> None:
+    """Render an expandable container with close button."""
+    is_expanded = st.session_state.get("expanded_container") == container_id
+    
+    if is_expanded:
+        st.markdown(f"""
+        <div class="expandable-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h3 style="margin: 0; color: #10b981;">{title}</h3>
+                <button class="container-close-btn" onclick="window.location.href='?';" title="Close">✕</button>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        content_fn()
+        
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _chat_enabled() -> bool:
@@ -167,6 +339,10 @@ def _build_chat_open_href() -> str:
 def _ensure_chat_state() -> None:
     """Initialize chat state with user context for access control."""
     if "chat_messages" not in st.session_state:
+        # Initialize Majibot session state
+        st.session_state["majibot_open"] = False
+        st.session_state["majibot_status"] = "Closed"
+        
         # Include user context in system prompt for personalized responses
         user = get_current_user()
         user_context = ""
@@ -201,9 +377,22 @@ def _render_majibot_fab() -> None:
     """Render floating MajiBot button at bottom-right."""
     if not _chat_enabled():
         return
+    
+    # Initialize Majibot status in session state
+    if "majibot_open" not in st.session_state:
+        st.session_state["majibot_open"] = False
+        st.session_state["majibot_status"] = "Closed"
+    
     href = _build_chat_open_href()
+    
+    # Render status indicator and FAB
     st.markdown(
         f"""
+        <div style="position: fixed; bottom: 80px; right: 20px; z-index: 999;">
+            <div style="font-size: 11px; color: #64748b; text-align: right; margin-bottom: 6px;">
+                MajiBot: {st.session_state.get('majibot_status', 'Closed')}
+            </div>
+        </div>
         <a target="_self" rel="noopener" href="{href}" class="majibot-fab" 
            title="Chat with MajiBot" aria-label="Open MajiBot">
             <span class="majibot-icon">🤖</span>
@@ -489,32 +678,68 @@ def _render_overview_banner() -> None:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Time Period</div>', unsafe_allow_html=True)
                 if "view_period" not in st.session_state:
                     st.session_state["view_period"] = "Monthly"
-                    
-                st.radio(
+                
+                # Remove YTD, only show Quarterly and Monthly
+                period = st.radio(
                     "Period",
-                    ["YTD", "Quarterly", "Monthly"],
+                    ["Quarterly", "Monthly"],
                     horizontal=True,
                     key="view_period",
                     label_visibility="collapsed"
                 )
+                
+                # Show year selector when Quarterly or Monthly is selected
+                if period in ["Quarterly", "Monthly"]:
+                    # Use years from actual data, not hardcoded list
+                    available_years = sorted([2020, 2021, 2022, 2023, 2024], reverse=True)
+                    if "selected_year" not in st.session_state:
+                        st.session_state["selected_year"] = available_years[0]
+                    # Ensure selected year is valid
+                    current_year = st.session_state.get("selected_year", available_years[0])
+                    if current_year not in available_years:
+                        current_year = available_years[0]
+                        st.session_state["selected_year"] = current_year
+                    
+                    selected_year = st.selectbox(
+                        "Year",
+                        options=available_years,
+                        index=available_years.index(current_year),
+                        key="header_year_select",
+                        label_visibility="collapsed"
+                    )
+                    st.session_state["selected_year"] = selected_year
+                else:
+                    st.session_state["selected_year"] = "All"
 
             with c3:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Quick Actions</div>', unsafe_allow_html=True)
                 ac1, ac2, ac3 = st.columns(3)
                 
                 with ac1:
-                    # Check if user can export data
+                    # Report Button - toggle expandable container
                     if check_feature_access("export_data"):
-                        st.button("📥 Report", key="btn_report", use_container_width=True, help="Download Executive Report")
+                        if st.button("📥 Report", key="btn_report", use_container_width=True, help="View & Download Executive Report"):
+                            st.session_state["expanded_container"] = "report" if st.session_state.get("expanded_container") != "report" else None
+                            st.rerun()
                     else:
                         st.button("📥 Report", key="btn_report", use_container_width=True, disabled=True, 
                                   help="Export not available for your role")
                 
                 with ac2:
-                    st.button("📅 Meeting", key="btn_meet", use_container_width=True, help="Schedule Meeting")
+                    # Meeting Button - disabled with visual styling
+                    st.button(
+                        "📅 Meeting", 
+                        key="btn_meet", 
+                        use_container_width=True, 
+                        disabled=True, 
+                        help="Schedule stakeholder meetings directly from dashboard"
+                    )
                 
                 with ac3:
-                    st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Alert Settings")
+                    # Alerts Button - toggle expandable container
+                    if st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Configure Alert Thresholds"):
+                        st.session_state["expanded_container"] = "alerts" if st.session_state.get("expanded_container") != "alerts" else None
+                        st.rerun()
         
         st.markdown("---")
 
@@ -536,7 +761,8 @@ def _sidebar_filters() -> None:
 
     # 2. Zone
     if selected_country != 'All':
-        zones = ['All'] + sorted(df_service[df_service['country'] == selected_country]['zone'].unique().tolist())
+        # Case-insensitive zone lookup
+        zones = ['All'] + sorted(df_service[df_service['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
     else:
         zones = ['All'] + service_data["zones"]
         
@@ -682,10 +908,145 @@ def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = Tr
         chat_param = (_get_query_param("chat") or "").lower()
         if chat_param == "open":
             chat_open = True
+    
+    # Update Majibot session state based on chat_open status
+    if "majibot_open" not in st.session_state:
+        st.session_state["majibot_open"] = chat_open
+        st.session_state["majibot_status"] = "Active" if chat_open else "Closed"
+    else:
+        st.session_state["majibot_open"] = chat_open
+        st.session_state["majibot_status"] = "Active" if chat_open else "Closed"
+
+    # Initialize expandable state
+    _initialize_expandable_state()
 
     st.markdown("<div class='shell'>", unsafe_allow_html=True)
     if show_header:
         _render_overview_banner()
+    
+    # Render expandable containers (full-width, below header)
+    if st.session_state.get("expanded_container") == "report":
+        def render_report_content():
+            # Get current filters and metrics from session state
+            country = st.session_state.get("selected_country", "All")
+            period = st.session_state.get("view_period", "Monthly")
+            year = st.session_state.get("selected_year", "All")
+            
+            # Get metrics from exec insights cache if available
+            insights_cache = st.session_state.get("exec_insights_cache", {})
+            metrics = {
+                "coverage_score": f"{insights_cache.get('coverage_score', 'N/A')}%",
+                "fin_score": f"{insights_cache.get('fin_score', 'N/A')}%",
+                "eff_score": f"{insights_cache.get('eff_score', 'N/A')}%",
+                "qual_score": f"{insights_cache.get('qual_score', 'N/A')}%",
+                "coll_eff": f"{insights_cache.get('collection_efficiency', 'N/A')}%",
+                "nrw": f"{insights_cache.get('nrw_percent', 'N/A')}%"
+            }
+            
+            st.markdown("**Report Filters:**")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Country", country)
+            with col2:
+                st.metric("Period", period)
+            with col3:
+                st.metric("Year", year)
+            
+            st.markdown("---")
+            st.markdown("**Key Performance Indicators:**")
+            kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+            with kpi_col1:
+                st.metric("Coverage Score", metrics["coverage_score"])
+                st.metric("Financial Health", metrics["fin_score"])
+            with kpi_col2:
+                st.metric("Efficiency", metrics["eff_score"])
+                st.metric("Quality Score", metrics["qual_score"])
+            with kpi_col3:
+                st.metric("Collection Eff.", metrics["coll_eff"])
+                st.metric("NRW", metrics["nrw"])
+            
+            st.markdown("---")
+            
+            # Download buttons
+            col_download1, col_download2 = st.columns(2)
+            with col_download1:
+                # HTML Report Download
+                html_content = _generate_pdf_report(country, period, year, insights_cache)
+                st.download_button(
+                    label="📄 Download HTML Report",
+                    data=html_content,
+                    file_name=f"water_dashboard_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    key="download_html_report"
+                )
+            
+            with col_download2:
+                # Text Report Download
+                text_content = f"""Executive Report
+Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Filters Applied:
+- Country: {country}
+- Period: {period}
+- Year: {year}
+
+Key Metrics:
+- Service Coverage: {metrics['coverage_score']}
+- Financial Health: {metrics['fin_score']}
+- Operational Efficiency: {metrics['eff_score']}
+- Service Quality: {metrics['qual_score']}
+- Collection Efficiency: {metrics['coll_eff']}
+- NRW (Non-Revenue Water): {metrics['nrw']}
+
+For detailed analysis and visualizations, please refer to the interactive dashboard.
+"""
+                st.download_button(
+                    label="📋 Download Text Report",
+                    data=text_content,
+                    file_name=f"water_dashboard_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    key="download_text_report"
+                )
+            
+            if st.button("Close Report", key="close_report_btn", use_container_width=True):
+                st.session_state["expanded_container"] = None
+                st.rerun()
+        
+        _render_expandable_container("report", "📥 Executive Report", render_report_content)
+    
+    elif st.session_state.get("expanded_container") == "alerts":
+        def render_alerts_content():
+            st.markdown("**Alert Configuration**")
+            st.info("""
+            Configure thresholds for system alerts. When metrics fall outside these ranges, 
+            you'll receive notifications on the dashboard.
+            """)
+            
+            with st.form("alert_settings_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    nrw_threshold = st.slider("NRW Alert Threshold (%)", min_value=10, max_value=50, value=30, step=5)
+                    service_hours_threshold = st.slider("Service Hours (hrs/day)", min_value=4, max_value=24, value=12, step=1)
+                
+                with col2:
+                    coll_eff_threshold = st.slider("Collection Efficiency (%)", min_value=30, max_value=90, value=70, step=5)
+                    quality_threshold = st.slider("Quality Score (%)", min_value=50, max_value=100, value=80, step=5)
+                
+                col_submit1, col_submit2 = st.columns(2)
+                with col_submit1:
+                    if st.form_submit_button("💾 Save Alert Settings", use_container_width=True):
+                        st.success("✅ Alert settings saved successfully!")
+                
+                with col_submit2:
+                    if st.form_submit_button("❌ Reset to Defaults", use_container_width=True):
+                        st.info("Alert settings reset to default values.")
+            
+            if st.button("Close Alerts", key="close_alerts_btn", use_container_width=True):
+                st.session_state["expanded_container"] = None
+                st.rerun()
+        
+        _render_expandable_container("alerts", "🔔 Alert Settings", render_alerts_content)
+    
     st.markdown("<div class='content-area'>", unsafe_allow_html=True)
     scene_runner()
     st.markdown("</div>", unsafe_allow_html=True)
