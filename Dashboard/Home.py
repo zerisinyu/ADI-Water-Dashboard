@@ -27,6 +27,7 @@ import base64
 
 import streamlit as st
 import pandas as pd
+from streamlit_extras.stylable_container import stylable_container
 
 # Import authentication module - provides role-based access control
 from auth import (
@@ -372,34 +373,63 @@ def _ensure_chat_state() -> None:
             }
         ]
 
+        if 'chat_open' not in st.session_state:
+            st.session_state['chat_open'] = False
+
+def _set_chat_open_state(open_state: bool) -> None:
+    """Toggle chat open state without forcing a page reload."""
+    st.session_state["chat_open"] = open_state
+    _set_query_param("chat", "open" if open_state else None)
 
 def _render_majibot_fab() -> None:
     """Render floating MajiBot button at bottom-right."""
     if not _chat_enabled():
         return
     
-    # Initialize Majibot status in session state
-    if "majibot_open" not in st.session_state:
-        st.session_state["majibot_open"] = False
-        st.session_state["majibot_status"] = "Closed"
+    icon = "🤖"
+    with stylable_container("majibot-fab", css_styles = """
+            {
+                position: fixed;
+                right: 32px;
+                bottom: 32px;
+                width: 64px;
+                height: 64px;
+                border-radius: 50%;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                text-decoration: none;
+                box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+                transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+                z-index: 1000;
+                cursor: pointer;
+                border: none;
+            }
+            .fab-emoji {
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -10%);
+                font-size: 64px;
+                line-height: 1;
+                user-select: none; /* User can't highlight the emoji */
+                pointer-events: none; /* Clicks pass THROUGH the emoji to the button */
+            }
+            button {
+                background: transparent !important;
+                border: none !important;
+                color: black !important;
+                box-shadow: none !important;
+            }                     
+        """):
+        st.markdown(f'<div class="fab-emoji">{icon}</div>', unsafe_allow_html=True)
+        open_clicked = st.button("", key="majibot-fab-btn", help="Chat with Majibot", use_container_width=True)
     
-    href = _build_chat_open_href()
-    
-    # Render status indicator and FAB
-    st.markdown(
-        f"""
-        <div style="position: fixed; bottom: 80px; right: 20px; z-index: 999;">
-            <div style="font-size: 11px; color: #64748b; text-align: right; margin-bottom: 6px;">
-                MajiBot: {st.session_state.get('majibot_status', 'Closed')}
-            </div>
-        </div>
-        <a target="_self" rel="noopener" href="{href}" class="majibot-fab" 
-           title="Chat with MajiBot" aria-label="Open MajiBot">
-            <span class="majibot-icon">🤖</span>
-        </a>
-        """,
-        unsafe_allow_html=True,
-    )
+    if open_clicked:
+        _set_chat_open_state(True)
+        st.rerun()
 
 
 def _render_chat_panel_sidebar() -> None:
