@@ -306,7 +306,7 @@ def _render_majibot_fab() -> None:
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -10%);
-                font-size: 40px;
+                font-size: 64px;
                 line-height: 1;
                 user-select: none; /* User can't highlight the emoji */
                 pointer-events: none; /* Clicks pass THROUGH the emoji to the button */
