@@ -1,7 +1,11 @@
-streamlit
-plotly
-folium>=0.15
-streamlit-folium>=0.20
-google-generativeai>=0.7
-python-dotenv>=1.0
+streamlit==1.50.0
+pandas==2.2.3
+numpy==1.26.4
+plotly==6.3.1
+google-generativeai==0.8.5
+python-dotenv==1.0.1
 streamlit-extras==0.7.8
+toml==0.10.2
+tomli
+tomlkit==0.13.3
+openpyxl==3.0.10
