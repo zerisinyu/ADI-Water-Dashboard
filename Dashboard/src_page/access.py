@@ -137,7 +137,7 @@ def apply_view_type_filter(df, view_type, date_col='date', year_col='year', mont
     if view_type == "Annual":
         return df, {'freq': 'Y', 'agg_method': 'yearly'}
     else:  # Quarterly
-        return df, {'freq': 'Q', 'agg_method': 'quarterly'}
+        return df, {'freq': 'QE', 'agg_method': 'quarterly'}
 
 
 def get_active_tab():
@@ -1200,7 +1200,7 @@ def scene_access():
                 # Create common quarterly index
                 start_date = min(w_annual.index.min(), s_monthly.index.min())
                 end_date = max(w_annual.index.max(), s_monthly.index.max())
-                dates = pd.date_range(start=start_date, end=end_date, freq='Q')
+                dates = pd.date_range(start=start_date, end=end_date, freq='QE')
                 
                 # Reindex and Interpolate Water
                 # Reindex to include annual dates + quarterly dates
@@ -1215,7 +1215,7 @@ def scene_access():
                 w_q['quarter_label'] = w_q.index.map(format_quarterly_label)
                 
                 # Resample Sewer
-                s_q = s_monthly.resample('Q').agg({'sewer_connections': 'last', 'households': 'last'})
+                s_q = s_monthly.resample('QE').agg({'sewer_connections': 'last', 'households': 'last'})
                 s_q['coverage_pct'] = (s_q['sewer_connections'] / s_q['households'] * 100).fillna(0)
                 s_q['growth_rate'] = s_q['coverage_pct'].pct_change() * 100
                 s_q['quarter_label'] = s_q.index.map(format_quarterly_label)

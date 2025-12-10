@@ -286,8 +286,8 @@ def _render_majibot_fab() -> None:
                 position: fixed;
                 right: 32px;
                 bottom: 32px;
-                width: 64px;
-                height: 64px;
+                width: 70px;
+                height: 70px;
                 border-radius: 50%;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 color: white;
@@ -306,7 +306,7 @@ def _render_majibot_fab() -> None:
                 top: 50%;
                 left: 50%;
                 transform: translate(-50%, -10%);
-                font-size: 64px;
+                font-size: 40px;
                 line-height: 1;
                 user-select: none; /* User can't highlight the emoji */
                 pointer-events: none; /* Clicks pass THROUGH the emoji to the button */
@@ -319,7 +319,7 @@ def _render_majibot_fab() -> None:
             }                     
         """):
         st.markdown(f'<div class="fab-emoji">{icon}</div>', unsafe_allow_html=True)
-        open_clicked = st.button("", key="majibot-fab-btn", help="Chat with Majibot", use_container_width=True)
+        open_clicked = st.button("", key="majibot-fab-btn", help="Chat with Majibot", width="stretch")
     
     if open_clicked:
         _set_chat_open_state(True)
@@ -385,9 +385,9 @@ def _render_chat_panel_sidebar() -> None:
                 height=90,
                 placeholder="Ask about metrics, filters, or data…",
             )
-            send_clicked = st.form_submit_button("Send", use_container_width=True)
+            send_clicked = st.form_submit_button("Send", width="stretch")
 
-        if st.button("Close", key="sidebar_close_btn", use_container_width=True):
+        if st.button("Close", key="sidebar_close_btn", width="stretch"):
             _set_query_param("chat", None)
             st.rerun()
 
@@ -885,7 +885,7 @@ def _render_majibot_popup() -> None:
         for i, question in enumerate(suggested[:3]):
             # Truncate long questions for button display
             display_q = question[:50] + "..." if len(question) > 50 else question
-            if st.button(f"💬 {display_q}", key=f"suggest_popup_{i}", use_container_width=True):
+            if st.button(f"💬 {display_q}", key=f"suggest_popup_{i}", width="stretch"):
                 max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
                 user_turns = sum(1 for m in messages if m.get("role") == "user")
                 if user_turns < max_turns:

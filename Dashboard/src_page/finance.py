@@ -1003,7 +1003,7 @@ def scene_finance():
                           'complaints', 'resolved', 'complaint_resolution_rate']
             display_df = fin_service_filtered[[col for col in key_columns if col in fin_service_filtered.columns]]
 
-        st.dataframe(display_df, use_container_width=True, height=400)
+        st.dataframe(display_df, width="stretch", height=400)
 
         # Export options
         export_col1, export_col2, export_col3 = st.columns(3)
@@ -1055,7 +1055,7 @@ def scene_finance():
                               'trained_staff', 'asset_health']
             display_df_nat = national_filtered[[col for col in key_columns_nat if col in national_filtered.columns]]
 
-        st.dataframe(display_df_nat, use_container_width=True, height=400)
+        st.dataframe(display_df_nat, width="stretch", height=400)
 
         # Export options
         export_col1, export_col2, export_col3 = st.columns(3)
@@ -1158,11 +1158,11 @@ def scene_finance():
 
         # Display city metrics table
         st.subheader("City-Level Metrics")
-        st.dataframe(city_metrics, use_container_width=True, height=300)
+        st.dataframe(city_metrics, width="stretch", height=300)
 
         # Display summary metrics
         st.subheader("Overall Summary Metrics")
-        st.dataframe(summary_metrics, use_container_width=True, height=300)
+        st.dataframe(summary_metrics, width="stretch", height=300)
 
         # Export calculated metrics
         export_metric_col1, export_metric_col2, export_metric_col3 = st.columns(3)

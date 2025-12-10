@@ -694,7 +694,7 @@ def render_login_page() -> bool:
             # Remember me checkbox (simplified - removed forgot password link)
             remember = st.checkbox("Remember me", value=True)
             
-            submitted = st.form_submit_button("Sign In", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("Sign In", width="stretch", type="primary")
             
             if submitted:
                 if not username or not password:
@@ -785,7 +785,7 @@ def render_user_info_sidebar() -> None:
             st.caption(f"Session: {mins} min{'s' if mins != 1 else ''}")
         
         # Logout button
-        if st.button("🚪 Sign Out", use_container_width=True, key="logout_btn"):
+        if st.button("🚪 Sign Out", width="stretch", key="logout_btn"):
             logout()
             st.rerun()
 

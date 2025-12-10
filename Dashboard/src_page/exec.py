@@ -206,7 +206,7 @@ def _render_gauge_card(title, value, sub_metrics, color_class, link_target, link
     </div>
 </div>""", unsafe_allow_html=True)
     if link_target:
-        st.page_link(link_target, label=link_text, icon="👉", use_container_width=True)
+        st.page_link(link_target, label=link_text, icon="👉", width="stretch")
 
 def _render_trend_card(title, score, status, sub_metrics, link_target, link_text):
     color = "#10b981" if status == "Healthy" else "#f59e0b" if status == "At Risk" else "#ef4444"
@@ -227,7 +227,7 @@ def _render_trend_card(title, score, status, sub_metrics, link_target, link_text
     </div>
 </div>""", unsafe_allow_html=True)
     if link_target:
-        st.page_link(link_target, label=link_text, icon="👉", use_container_width=True)
+        st.page_link(link_target, label=link_text, icon="👉", width="stretch")
 
 def scene_executive():
     # --- 1. Load Data (automatically filtered by user access) ---
@@ -486,7 +486,7 @@ def scene_executive():
         <div style="display:flex; justify-content:space-between; font-size:12px;"><span style="color:#64748b;">Continuity</span><span style="font-weight:600;">{service_hours:.1f}h</span></div>
     </div>
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/5_Production.py", label="Production", icon="👉", use_container_width=True)
+        st.page_link("pages/5_Production.py", label="Production", icon="👉", width="stretch")
 
     with c4:
         # Service Quality Index
@@ -510,7 +510,7 @@ def scene_executive():
             </div>
     </div>
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/3_Service_Quality.py", label="Service & Quality", icon="👉", use_container_width=True)
+        st.page_link("pages/3_Service_Quality.py", label="Service & Quality", icon="👉", width="stretch")
 
     # --- Performance Trends Dashboard ---
     st.markdown("### Performance Trends Dashboard")
@@ -818,7 +818,7 @@ def scene_executive():
         }
         </style>
         """, unsafe_allow_html=True)
-        generate_clicked = st.button("🚀 Generate Report", type="primary", use_container_width=True)
+        generate_clicked = st.button("🚀 Generate Report", type="primary", width="stretch")
     
     # Generate and display report
     if generate_clicked:
@@ -849,7 +849,7 @@ def scene_executive():
                 data=brief_text,
                 file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.md",
                 mime="text/markdown",
-                use_container_width=True
+                width="stretch"
             )
         
         with dl_col2:
@@ -860,10 +860,10 @@ def scene_executive():
                 data=plain_text,
                 file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
                 mime="text/plain",
-                use_container_width=True
+                width="stretch"
             )
         
         with dl_col3:
-            if st.button("🔄 Regenerate", use_container_width=True):
+            if st.button("🔄 Regenerate", width="stretch"):
                 st.session_state["brief_generated"] = False
                 st.rerun()
