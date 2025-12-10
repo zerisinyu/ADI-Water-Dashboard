@@ -158,7 +158,35 @@ def _render_gauge_card(title, value, sub_metrics, color_class, link_target, link
     }
     gauge_color = colors.get(color_class, "#3b82f6")
     
+    # Add domain indicators for Service Coverage card
+    domain_indicators = ""
+    if "Water" in sub_metrics or "Sanitation" in sub_metrics:
+        domain_indicators = '<div style="display:flex; gap:6px; margin-bottom:10px;"><span style="background:#e0f2fe; color:#0284c7; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">💧 Water</span><span style="background:#ccfbf1; color:#0d9488; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:600;">🚿 Sanitation</span></div>'
+    
+    # Build sub-metrics HTML with domain-specific colors
+    def get_metric_bg(key):
+        if key == "Water":
+            return "#e0f2fe"
+        elif key == "Sanitation":
+            return "#ccfbf1"
+        return "#f8fafc"
+    
+    def get_metric_color(key):
+        if key == "Water":
+            return "#0284c7"
+        elif key == "Sanitation":
+            return "#0d9488"
+        return "#64748b"
+    
+    sub_metrics_html = ''.join([
+        f'<div style="background:{get_metric_bg(k)}; padding:6px; border-radius:6px; text-align:center;">'
+        f'<div style="font-size:11px; color:{get_metric_color(k)};">{k}</div>'
+        f'<div style="font-size:13px; font-weight:600; color:#334155;">{v}</div></div>'
+        for k, v in sub_metrics.items()
+    ])
+    
     st.markdown(f"""<div class="metric-card">
+    {domain_indicators}
     <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:10px;">
         <div style="font-size:14px; font-weight:600; color:#64748b;">{title}</div>
         <div style="background:{gauge_color}20; color:{gauge_color}; padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;">{value}%</div>
@@ -174,7 +202,7 @@ def _render_gauge_card(title, value, sub_metrics, color_class, link_target, link
         </div>
     </div>
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;">
-        {''.join([f'<div style="background:#f8fafc; padding:6px; border-radius:6px; text-align:center;"><div style="font-size:11px; color:#64748b;">{k}</div><div style="font-size:13px; font-weight:600; color:#334155;">{v}</div></div>' for k,v in sub_metrics.items()])}
+        {sub_metrics_html}
     </div>
 </div>""", unsafe_allow_html=True)
     if link_target:
@@ -391,13 +419,24 @@ def scene_executive():
 </style>
 """, unsafe_allow_html=True)
 
-    # Alert Banner - Status check only
-    if nrw > 40:
-        st.markdown(f"<div class='panel bad'>⚠️ Critical Alert: NRW is high ({nrw:.1f}%) in selected region. Immediate action required.</div>", unsafe_allow_html=True)
-    elif service_hours < 12:
-        st.markdown(f"<div class='panel warn'>⚠️ Warning: Service hours dropped to {service_hours:.1f} hrs/day.</div>", unsafe_allow_html=True)
-    else:
-        st.markdown("<div class='panel ok'>✅ Systems Operational. All key metrics within acceptable range.</div>", unsafe_allow_html=True)
+    # AI Quick Insight Panel
+    try:
+        from ai_insights import generate_quick_insight
+        quick_insight = generate_quick_insight(f_billing, f_prod, f_fin, selected_country)
+        if quick_insight:
+            st.markdown(f"""
+            <div style='background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%); 
+                        border: 1px solid #bae6fd; border-radius: 12px; padding: 16px; 
+                        margin: 12px 0; display: flex; align-items: flex-start; gap: 12px;'>
+                <span style='font-size: 24px;'>🤖</span>
+                <div>
+                    <div style='font-weight: 600; color: #0369a1; font-size: 13px; margin-bottom: 4px;'>AI Quick Insight</div>
+                    <div style='color: #0c4a6e; font-size: 14px;'>{quick_insight}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    except Exception:
+        pass  # Silently skip if AI insights not available
 
     # Scorecards Row
     st.markdown("### Key Performance Indicators")
@@ -410,7 +449,7 @@ def scene_executive():
             int(coverage_score), 
             {"Water": f"{w_cov:.0f}%", "Sanitation": f"{s_cov:.0f}%", "Pop Served": f"{pop_served:.1f}M"},
             cov_status,
-            "pages/2_🗺️_Access_&_Coverage.py",
+            "pages/2_Access_&_Coverage.py",
             "Access & Coverage"
         )
         
@@ -419,8 +458,8 @@ def scene_executive():
             "Financial Health",
             int(fin_score),
             fin_status,
-            {"Revenue": f"${total_revenue/1e6:.1f}M", "Op Margin": f"{opex_cov:.0f}%"},
-            "pages/4_💹_Financial_Health.py",
+            {"Revenue": f"${total_revenue/1e6:.1f}M", "Cost Recovery": f"{opex_cov:.0f}%"},
+            "pages/4_Financial_Health.py",
             "Financial Health"
         )
         
@@ -447,7 +486,7 @@ def scene_executive():
         <div style="display:flex; justify-content:space-between; font-size:12px;"><span style="color:#64748b;">Continuity</span><span style="font-weight:600;">{service_hours:.1f}h</span></div>
     </div>
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/5_♻️_Production.py", label="Production", icon="👉", use_container_width=True)
+        st.page_link("pages/5_Production.py", label="Production", icon="👉", use_container_width=True)
 
     with c4:
         # Service Quality Index
@@ -471,7 +510,7 @@ def scene_executive():
             </div>
     </div>
 </div>""", unsafe_allow_html=True)
-        st.page_link("pages/3_🛠️_Service_Quality_&_Reliability.py", label="Service & Quality", icon="👉", use_container_width=True)
+        st.page_link("pages/3_Service_Quality.py", label="Service & Quality", icon="👉", use_container_width=True)
 
     # --- Performance Trends Dashboard ---
     st.markdown("### Performance Trends Dashboard")
@@ -512,13 +551,13 @@ def scene_executive():
         # Ensure safe division for collection efficiency
         merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).fillna(0)
         
-        # Calculate op_margin safely (Revenue - Opex) / Revenue * 100
-        # Ensure we don't divide by zero
-        merged_fin["op_margin"] = ((merged_fin["total_revenue"] - merged_fin["opex"]) / merged_fin["total_revenue"].replace(0, 1) * 100).fillna(0)
+        # Calculate Cost Recovery Ratio (Revenue / Opex * 100) - more meaningful for utilities
+        # Shows what % of operating costs are covered by revenue
+        merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).fillna(0)
         
         # Clamp values to realistic ranges
         merged_fin["coll_eff"] = merged_fin["coll_eff"].clip(0, 150)  # Allow slight over-collection
-        merged_fin["op_margin"] = merged_fin["op_margin"].clip(-100, 100)  # Range: -100% to 100%
+        merged_fin["cost_recovery"] = merged_fin["cost_recovery"].clip(0, 200)  # Cap at 200% cost recovery
         
         # Sort and take last 12 months for "rolling view"
         merged_fin = merged_fin.sort_values("date").tail(12)
@@ -530,14 +569,14 @@ def scene_executive():
             fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue", marker_color="#10b981", opacity=0.7))
             fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex", marker_color="#ef4444", opacity=0.7))
             
-            # Lines: Collection Eff & Op Margin (both metrics on right y-axis as percentages)
+            # Lines: Collection Eff & Cost Recovery (both metrics on right y-axis as percentages)
             fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection Eff %", yaxis="y2", line=dict(color="#3b82f6", width=3, dash="solid")))
-            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["op_margin"], name="Op Margin %", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
+            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["cost_recovery"], name="Cost Recovery %", yaxis="y2", line=dict(color="#f59e0b", width=3, dash="dot")))
             
             fig_fin.update_layout(
                 title="Financial Performance (Last 12 Months)",
                 yaxis=dict(title="Amount ($)", showgrid=True),
-                yaxis2=dict(title="Percentage (%)", overlaying="y", side="right", range=[-50, 150], showgrid=False),
+                yaxis2=dict(title="Percentage (%)", overlaying="y", side="right", range=[0, 150], showgrid=False),
                 barmode='group',
                 legend=dict(orientation="h", y=1.1, x=0),
                 height=400,
@@ -585,19 +624,20 @@ def scene_executive():
 
     # --- Coverage Tab ---
     with tab_cov:
-        cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
-        for c in cols:
+        # --- Water Access Chart ---
+        w_cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
+        for c in w_cols:
             if c in trend_water_acc.columns:
                 trend_water_acc[c] = pd.to_numeric(trend_water_acc[c], errors="coerce").fillna(0)
         
         if "popn_total" in trend_water_acc.columns:
             # Calculate absolute pops per row
-            for c in cols:
+            for c in w_cols:
                 if c in trend_water_acc.columns:
                     level_name = c.replace("_pct", "")
                     trend_water_acc[level_name] = trend_water_acc["popn_total"] * (trend_water_acc[c] / 100)
             
-            level_cols = [c.replace("_pct", "") for c in cols if c in trend_water_acc.columns]
+            level_cols = [c.replace("_pct", "") for c in w_cols if c in trend_water_acc.columns]
             w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
             
             if len(w_trend) > 0:
@@ -625,18 +665,76 @@ def scene_executive():
                         ))
                 
                 fig_cov.update_layout(
-                    title="Population Served by Service Level - JMP Standards (Growth Trajectory)",
+                    title="💧 Water Access Ladder - Population by Service Level",
                     yaxis=dict(title="Population", showgrid=True),
                     xaxis=dict(title="Year"),
-                    height=400,
+                    height=350,
                     legend=dict(orientation="h", y=-0.2, x=0),
                     hovermode='x unified'
                 )
                 st.plotly_chart(fig_cov, use_container_width=True)
             else:
-                st.warning("No coverage data available for selected period")
+                st.warning("No water coverage data available for selected period")
         else:
-            st.warning("Population data not available for coverage trends.")
+            st.warning("Population data not available for water coverage trends.")
+        
+        # --- Sanitation Access Chart ---
+        trend_san_acc = access_data["sewer_full"].copy()
+        if selected_country and selected_country != "All":
+            trend_san_acc = trend_san_acc[trend_san_acc["country"].str.lower() == selected_country.lower()]
+        if selected_zone and selected_zone != "All" and "zone" in trend_san_acc.columns:
+            trend_san_acc = trend_san_acc[trend_san_acc["zone"].str.lower() == selected_zone.lower()]
+        
+        s_cols = ["s_safely_managed_pct", "s_basic_pct", "s_limited_pct", "s_unimproved_pct", "open_def_pct"]
+        for c in s_cols:
+            if c in trend_san_acc.columns:
+                trend_san_acc[c] = pd.to_numeric(trend_san_acc[c], errors="coerce").fillna(0)
+        
+        if "popn_total" in trend_san_acc.columns:
+            # Calculate absolute pops per row for sanitation
+            for c in s_cols:
+                if c in trend_san_acc.columns:
+                    level_name = c.replace("_pct", "")
+                    trend_san_acc[level_name] = trend_san_acc["popn_total"] * (trend_san_acc[c] / 100)
+            
+            s_level_cols = [c.replace("_pct", "") for c in s_cols if c in trend_san_acc.columns]
+            s_trend = trend_san_acc.groupby("year")[s_level_cols].sum().reset_index()
+            
+            if len(s_trend) > 0:
+                fig_san = go.Figure()
+                # Order matches JMP hierarchy: Safely Managed -> Basic -> Limited -> Unimproved -> Open Defecation
+                s_order = ["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def"]
+                # Sanitation color scheme (matching access page)
+                san_colors = ['#349438', '#49B754', '#FDEE79', '#FFD94F', '#FFB02B']
+                s_labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Open Defecation"]
+                
+                for i, level in enumerate(s_order):
+                    if level in s_trend.columns:
+                        fig_san.add_trace(go.Scatter(
+                            x=s_trend["year"].apply(lambda y: format_year_month(int(y))), 
+                            y=s_trend[level], 
+                            name=s_labels[i], 
+                            stackgroup='san',
+                            mode='lines',
+                            line=dict(width=0.5, color=san_colors[i]),
+                            fillcolor=san_colors[i],
+                            hovertemplate='%{customdata}<br>Population: %{y:,.0f}<extra></extra>',
+                            customdata=[s_labels[i]] * len(s_trend)
+                        ))
+                
+                fig_san.update_layout(
+                    title="🚽 Sanitation Access Ladder - Population by Service Level",
+                    yaxis=dict(title="Population", showgrid=True),
+                    xaxis=dict(title="Year"),
+                    height=350,
+                    legend=dict(orientation="h", y=-0.2, x=0),
+                    hovermode='x unified'
+                )
+                st.plotly_chart(fig_san, use_container_width=True)
+            else:
+                st.warning("No sanitation coverage data available for selected period")
+        else:
+            st.warning("Population data not available for sanitation coverage trends.")
 
     # --- Quality Tab ---
     with tab_qual:
@@ -679,32 +777,93 @@ def scene_executive():
     st.markdown("---")
     st.markdown("### 📋 Executive Reporting")
     
-    col_brief_1, col_brief_2 = st.columns([2, 1])
+    # Full-width report generation section
+    st.markdown("""
+    <div style="background: linear-gradient(135deg, rgba(79,70,229,0.05), rgba(16,185,129,0.05)); 
+                border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+            <span style="font-size: 24px;">📊</span>
+            <div>
+                <h4 style="margin: 0; font-size: 18px; font-weight: 600; color: #0f172a;">Board Brief Generator</h4>
+                <p style="margin: 4px 0 0; font-size: 14px; color: #64748b;">Generate a comprehensive executive summary with AI-powered insights</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    with col_brief_1:
-        st.markdown("Generate a comprehensive board brief with AI-powered narrative and insights.")
+    # Determine period label
+    if selected_month and selected_month != "All":
+        period = f"{selected_month} {selected_year}"
+    elif selected_year and selected_year != "All":
+        period = f"Year {selected_year}"
+    else:
+        period = "Current Period"
     
-    with col_brief_2:
-        if st.button("📄 Generate Board Brief", type="primary", use_container_width=True):
-            with st.spinner("Generating board brief..."):
-                # Determine period label
-                if selected_month and selected_month != "All":
-                    period = f"{selected_month} {selected_year}"
-                elif selected_year and selected_year != "All":
-                    period = f"Year {selected_year}"
-                else:
-                    period = "Current Period"
-                
-                brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, period)
-                
-                # Display in expander
-                with st.expander("📊 Board Brief", expanded=True):
-                    st.markdown(brief_text)
-                    
-                    # Download button
-                    st.download_button(
-                        label="Download as Text",
-                        data=brief_text,
-                        file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
-                        mime="text/plain"
-                    )
+    # Report options
+    col_opts1, col_opts2, col_opts3 = st.columns([2, 2, 1])
+    
+    with col_opts1:
+        report_period = st.text_input("Report Period", value=period, key="report_period_input")
+    
+    with col_opts2:
+        report_format = st.selectbox("Format", ["Markdown", "Plain Text"], key="report_format")
+    
+    with col_opts3:
+        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)  # Spacer for alignment
+        # Custom styled button with white text
+        st.markdown("""
+        <style>
+        div[data-testid="stButton"] button[kind="primary"] {
+            color: white !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        generate_clicked = st.button("🚀 Generate Report", type="primary", use_container_width=True)
+    
+    # Generate and display report
+    if generate_clicked:
+        with st.spinner("✨ Generating executive brief..."):
+            try:
+                brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, report_period)
+                st.session_state["generated_brief"] = brief_text
+                st.session_state["brief_generated"] = True
+            except Exception as e:
+                st.error(f"Error generating report: {str(e)}")
+                st.session_state["brief_generated"] = False
+    
+    # Display generated report if available
+    if st.session_state.get("brief_generated", False) and st.session_state.get("generated_brief"):
+        brief_text = st.session_state["generated_brief"]
+        
+        # Display the report in an expander
+        with st.expander("📄 Generated Board Brief", expanded=True):
+            st.markdown(brief_text)
+        
+        # Download buttons row
+        st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+        dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
+        
+        with dl_col1:
+            st.download_button(
+                label="📥 Download as Markdown",
+                data=brief_text,
+                file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        
+        with dl_col2:
+            # Convert to plain text by removing markdown formatting
+            plain_text = brief_text.replace("**", "").replace("# ", "").replace("## ", "").replace("### ", "")
+            st.download_button(
+                label="📄 Download as Text",
+                data=plain_text,
+                file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+        
+        with dl_col3:
+            if st.button("🔄 Regenerate", use_container_width=True):
+                st.session_state["brief_generated"] = False
+                st.rerun()

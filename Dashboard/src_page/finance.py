@@ -4,7 +4,18 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 from datetime import datetime
-from utils import prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
+from utils import (
+    prepare_service_data, 
+    DATA_DIR, 
+    filter_df_by_user_access, 
+    validate_selected_country, 
+    get_user_country_filter,
+    render_section_header,
+    render_empty_state,
+    render_standardized_filters,
+    apply_standard_filters,
+    get_month_number
+)
 
 
 # Schema validation for uploaded files
@@ -146,6 +157,48 @@ def scene_finance():
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             margin-bottom: 20px;
         }
+        .metric-container {
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 16px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .metric-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #111827;
+            line-height: 1.2;
+        }
+        .metric-sub {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+        .metric-delta {
+            font-size: 12px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 8px;
+        }
+        .delta-up { color: #059669; }
+        .delta-down { color: #dc2626; }
+        .delta-neutral { color: #6b7280; }
+        .delta-warn { color: #d97706; }
         .metric-card {
             background: white;
             border-radius: 8px;
@@ -190,20 +243,28 @@ def scene_finance():
             margin-bottom: 20px;
             border-radius: 4px;
         }
+        .section-header {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin: 24px 0 16px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-    # Header with data freshness indicator (consistent with other pages)
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col1:
-        st.markdown("## 💰 Financial Health")
-    with header_col2:
-        st.markdown(
-            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
-            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    # Page Title with granularity indicator
+    st.markdown("## 💰 Financial Health")
+    st.markdown(
+        f"<div style='color: #6b7280; font-size: 0.85rem; margin-bottom: 16px;'>"
+        f"<span class='granularity-badge granularity-monthly'>Monthly</span> "
+        f"<span class='granularity-badge granularity-annual' style='margin-left: 4px;'>Annual</span> "
+        f"<span style='margin-left: 8px;'>Revenue, billing, and budget performance at city level</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
@@ -346,51 +407,36 @@ def scene_finance():
     fin_service_df['revenue_per_staff'] = fin_service_df['sewer_revenue'] / fin_service_df['total_staff']
 
     # ============================================================================
-    # FILTER SECTION (Consistent with other pages)
+    # FILTER SECTION (Standardized - AUDC Dictionary Compliant)
     # ============================================================================
 
-    # Filters Row (4-column layout matching Access, Quality, Production pages)
-    filter_col1, filter_col2, filter_col3, filter_col4 = st.columns([2, 2, 2, 2])
-
-    with filter_col1:
-        # Get user's country restriction (None means master user with full access)
-        user_country = get_user_country_filter()
-        available_countries = sorted(national_df['country'].unique().tolist())
-        
-        # Only show countries user has access to
-        if user_country is None:
-            # Master user - show all available with "All" option
-            countries = ['All'] + available_countries
-        else:
-            # Non-master user - show only their assigned country
-            countries = [c for c in available_countries if c.lower() == user_country.lower()]
-            if not countries:
-                countries = [user_country]  # Fallback to assigned country
-        
-        selected_country = st.selectbox("Country", countries, key="finance_country_select")
-        
-        # Validate selection for non-master users
-        if user_country is not None:
-            selected_country = validate_selected_country(selected_country)
-
-    with filter_col2:
-        if selected_country != 'All':
-            # Case-insensitive city lookup
-            cities = ['All'] + sorted(national_df[national_df['country'].str.lower() == selected_country.lower()]['city'].unique().tolist())
-        else:
-            cities = ['All'] + sorted(national_df['city'].unique().tolist())
-        selected_city = st.selectbox("City/Zone", cities, key="finance_city_select")
-
-    with filter_col3:
-        years = sorted(national_df['date_YY'].unique().tolist())
-        year_range = st.select_slider("Year Range", options=years, value=(min(years), max(years)), key="finance_year_range")
-
-    with filter_col4:
-        if 'month' in fin_service_df.columns:
-            months = ['All'] + list(range(1, 13))
-            selected_month = st.selectbox("Month", months, format_func=lambda x: 'All' if x == 'All' else pd.to_datetime(f'2020-{x}-01').strftime('%B'), key="finance_month_select")
-        else:
-            selected_month = 'All'
+    # Add year column to national_df if not present
+    if 'year' not in national_df.columns and 'date_YY' in national_df.columns:
+        national_df['year'] = national_df['date_YY']
+    
+    # Standardized Filters
+    filters = render_standardized_filters(
+        df=national_df,
+        page="finance",
+        key_prefix="finance",
+        country_col="country",
+        zone_col="city",  # Finance uses city instead of zone
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=True  # Finance data is Monthly
+    )
+    
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_city = filters['zone']  # Mapped from zone to city
+    selected_year = filters['year']
+    selected_month_name = filters.get('month', 'All')
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
 
     # Apply filters (case-insensitive for country/city)
     national_filtered = national_df.copy()
@@ -404,17 +450,13 @@ def scene_finance():
         national_filtered = national_filtered[national_filtered['city'].str.lower() == selected_city.lower()]
         fin_service_filtered = fin_service_filtered[fin_service_filtered['city'].str.lower() == selected_city.lower()]
 
-    national_filtered = national_filtered[
-        (national_filtered['date_YY'] >= year_range[0]) & 
-        (national_filtered['date_YY'] <= year_range[1])
-    ]
+    # Year filter
+    if selected_year:
+        national_filtered = national_filtered[national_filtered['date_YY'] == selected_year]
+        if 'year' in fin_service_filtered.columns:
+            fin_service_filtered = fin_service_filtered[fin_service_filtered['year'] == selected_year]
 
-    if 'year' in fin_service_filtered.columns:
-        fin_service_filtered = fin_service_filtered[
-            (fin_service_filtered['year'] >= year_range[0]) & 
-            (fin_service_filtered['year'] <= year_range[1])
-        ]
-
+    # Month filter
     if selected_month != 'All' and 'month' in fin_service_filtered.columns:
         fin_service_filtered = fin_service_filtered[fin_service_filtered['month'] == selected_month]
 
@@ -426,7 +468,7 @@ def scene_finance():
     # ============================================================================
 
     st.markdown("---")
-    st.subheader("📈 Key Financial Metrics")
+    st.markdown("<div class='section-header'>☕ Daily Briefing <span style='font-size:14px;color:#6b7280;font-weight:400'>| Financial Overview</span></div>", unsafe_allow_html=True)
 
     # Calculate aggregate metrics
     total_budget = national_filtered['budget_allocated'].sum()
@@ -435,24 +477,94 @@ def scene_finance():
     total_debt = fin_service_filtered['debt'].sum()
     avg_collection_rate = fin_service_filtered['collection_rate'].mean()
     total_opex = fin_service_filtered['opex'].sum()
+    
+    # Calculate profit margin
+    profit_margin = ((total_revenue - total_opex) / total_revenue * 100) if total_revenue > 0 else 0
 
     metric_col1, metric_col2, metric_col3, metric_col4, metric_col5 = st.columns(5)
 
+    # Card 1: Total Budget
     with metric_col1:
-        st.metric("Total Budget", f"${total_budget/1e9:.2f}B", help="Total allocated budget")
+        budget_display = f"${total_budget/1e9:.2f}B" if total_budget >= 1e9 else f"${total_budget/1e6:.1f}M"
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div>
+                <div class='metric-label'>Total Budget 💰</div>
+                <div class='metric-value'>{budget_display}</div>
+                <div class='metric-sub'>Allocated funding</div>
+            </div>
+            <div class='metric-delta delta-neutral'>
+                Year {selected_year}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Card 2: Total Billed
     with metric_col2:
-        st.metric("Total Billed", f"${total_billed/1e9:.2f}B", help="Total amount billed to customers")
+        billed_display = f"${total_billed/1e9:.2f}B" if total_billed >= 1e9 else f"${total_billed/1e6:.1f}M"
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div>
+                <div class='metric-label'>Total Billed 📄</div>
+                <div class='metric-value'>{billed_display}</div>
+                <div class='metric-sub'>Customer invoices</div>
+            </div>
+            <div class='metric-delta delta-neutral'>
+                Sewer services
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Card 3: Revenue Collected
     with metric_col3:
-        st.metric("Revenue Collected", f"${total_revenue/1e9:.2f}B", help="Total revenue collected")
+        revenue_display = f"${total_revenue/1e9:.2f}B" if total_revenue >= 1e9 else f"${total_revenue/1e6:.1f}M"
+        revenue_color = "#16A34A" if avg_collection_rate >= 80 else ("#EAB308" if avg_collection_rate >= 60 else "#DC2626")
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div>
+                <div class='metric-label'>Revenue Collected 💵</div>
+                <div class='metric-value' style='color: {revenue_color}'>{revenue_display}</div>
+                <div class='metric-sub'>Payments received</div>
+            </div>
+            <div class='metric-delta delta-neutral'>
+                OPEX: ${total_opex/1e6:.1f}M
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Card 4: Collection Rate
     with metric_col4:
-        collection_status = "🟢" if avg_collection_rate >= 80 else "🟡" if avg_collection_rate >= 60 else "🔴"
-        st.metric("Collection Rate", f"{avg_collection_rate:.1f}%", delta=f"{collection_status}")
+        collection_color = "#16A34A" if avg_collection_rate >= 80 else ("#EAB308" if avg_collection_rate >= 60 else "#DC2626")
+        collection_status = "✅" if avg_collection_rate >= 80 else ("⚠️" if avg_collection_rate >= 60 else "🔴")
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div>
+                <div class='metric-label'>Collection Rate {collection_status}</div>
+                <div class='metric-value' style='color: {collection_color}'>{avg_collection_rate:.1f}%</div>
+                <div class='metric-sub'>Revenue / Billed</div>
+            </div>
+            <div class='metric-delta {"delta-up" if avg_collection_rate >= 80 else "delta-warn" if avg_collection_rate >= 60 else "delta-down"}'>
+                Target: 85%+
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Card 5: Outstanding Debt
     with metric_col5:
-        st.metric("Outstanding Debt", f"${total_debt/1e9:.2f}B", delta="Monitor", delta_color="inverse")
+        debt_display = f"${total_debt/1e9:.2f}B" if abs(total_debt) >= 1e9 else f"${total_debt/1e6:.1f}M"
+        debt_color = "#DC2626" if total_debt > 0 else "#16A34A"
+        st.markdown(f"""
+        <div class='metric-container'>
+            <div>
+                <div class='metric-label'>Outstanding Debt ⚠️</div>
+                <div class='metric-value' style='color: {debt_color}'>{debt_display}</div>
+                <div class='metric-sub'>Unpaid invoices</div>
+            </div>
+            <div class='metric-delta delta-warn'>
+                Requires attention
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ============================================================================
     # BILLING ANALYSIS
@@ -1040,7 +1152,7 @@ def scene_finance():
                 f"{fin_service_filtered['w_staff'].sum():,.0f}",
                 f"{fin_service_filtered['revenue_per_staff'].mean():,.2f}",
                 pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S'),
-                f"Year {year_range[0]} to {year_range[1]}"
+                f"Year {selected_year}"
             ]
         })
 

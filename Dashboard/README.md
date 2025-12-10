@@ -1,21 +1,64 @@
-# Dashboard
+# Water Utility Performance Dashboard
 
-A multi-page Streamlit dashboard for Water Utility Performance monitoring with role-based access control (RBAC) and data privacy features.
+A multi-page Streamlit dashboard for Water Utility Performance monitoring with role-based access control (RBAC), AI-powered insights, and comprehensive data visualization.
 
-## Quick Start
+## 🚀 Quick Start
 
-Run the dashboard from the repo root:
+### Installation
+
+1. Install dependencies:
 ```bash
-streamlit run Dashboard/Home.py
+pip install -r requirements.txt
 ```
+
+2. Run the dashboard:
+```bash
+cd Dashboard
+streamlit run Home.py
+```
+
+3. Open your browser to `http://localhost:8501`
+
+---
+
+## 📖 How to Use This Dashboard
+
+### Getting Started
+
+1. **Login**: Enter your credentials on the login page. Contact your administrator for access.
+2. **Navigate**: Use the sidebar to switch between different dashboard pages.
+3. **Filter Data**: Use the country, zone, year, and month filters in the sidebar to drill down into specific data.
+4. **Export**: Most pages have export buttons to download data as CSV.
+
+### Dashboard Pages
+
+| Page | What It Shows | Key Features |
+|------|---------------|---------------|
+| **Home (Executive)** | High-level KPIs and performance overview | AI insights, performance trends, board brief generator |
+| **Access & Coverage** | Water and sanitation access ladder | JMP standards visualization, equity analysis |
+| **Service Quality** | Water quality, complaints, service hours | Compliance tracking, trend analysis |
+| **Financial Health** | Revenue, collection efficiency, costs | Cost recovery metrics, zone comparisons |
+| **Production** | Water production, NRW, capacity utilization | Daily/monthly trends, source analysis |
+
+### Using MajiBot (AI Assistant)
+
+Click the 🤖 chat icon in the bottom-right corner to open MajiBot. You can ask questions like:
+
+- **"Top 5 zones with highest NRW"** - Get rankings without needing AI
+- **"Compare all zones"** - See a comparison table
+- **"Show me alerts"** - View current threshold breaches
+- **"What is the status of all zones?"** - Get a summary
+
+### Generating Reports
+
+On the Executive page, scroll to "Executive Reporting" section:
+1. Set the report period
+2. Click "Generate Report"
+3. Download as Markdown or Plain Text
 
 ---
 
 ## 🔐 Authentication System
-
-### Overview
-
-The dashboard implements a comprehensive authentication system with role-based access control to ensure data privacy and security. Users must log in before accessing any dashboard features.
 
 ### User Roles
 
@@ -26,22 +69,10 @@ The dashboard implements a comprehensive authentication system with role-based a
 | **Analyst** | Read-Only | Can view and export data for assigned country only |
 | **Viewer** | Limited | Read-only access to assigned country with limited features |
 
-### Demo Credentials
-
-| Role | Username | Password | Access |
-|------|----------|----------|--------|
-| Master User | `admin` | `admin123` | All countries |
-| Uganda Admin | `uganda_admin` | `uganda123` | Uganda only |
-| Cameroon Admin | `cameroon_admin` | `cameroon123` | Cameroon only |
-| Lesotho Admin | `lesotho_admin` | `lesotho123` | Lesotho only |
-| Malawi Admin | `malawi_admin` | `malawi123` | Malawi only |
-| Analyst | `analyst1` | `analyst123` | Uganda (read-only) |
-| Viewer | `viewer1` | `viewer123` | Uganda (limited) |
-
 ### Login Flow
 
 1. **Navigate to Dashboard**: When accessing any page, unauthenticated users are redirected to the login page
-2. **Enter Credentials**: Input your username and password
+2. **Enter Credentials**: Input your username and password (contact your administrator)
 3. **Access Granted**: Upon successful login, the sidebar navigation appears and you can access dashboard features based on your role
 4. **Session Management**: Sessions timeout after 30 minutes of inactivity
 

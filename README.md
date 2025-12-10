@@ -88,7 +88,7 @@ TBD
 ## Pages → Focus Areas
 Each Streamlit page routes to a `scene_*` handler in `Dashboard/src_page/`. When editing, keep these priorities in mind:
 
-1. 2_🗺️_Access_&_Coverage.py (`scene_access`): integrate the latest water/sewer access CSVs, keep ladders/zone grids aligned with filters, and make sure zone selections flow through every visual and download.
-2. 3_🛠️_Service_Quality_&_Reliability.py (`scene_quality`): spotlight service reliability issues (DWQ, blockages, hours), respect sidebar filters, and pair charts with concise remediation notes.
-3. 4_💹_Financial_Health.py (`scene_finance`): track revenue vs opex, NRW, and collection efficiency, preserve CSV exports, and guard derived metrics against divide-by-zero or type drift.
-4. 5_♻️_Production.py (`scene_production`): monitor sanitation & reuse chain KPIs, highlight treatment or reuse gaps, and ensure efficiency metrics stay actionable.
+1. 2_Access_&_Coverage.py (`scene_access`): integrate the latest water/sewer access CSVs, keep ladders/zone grids aligned with filters, and make sure zone selections flow through every visual and download.
+2. 3_Service_Quality_&_Reliability.py (`scene_quality`): spotlight service reliability issues (DWQ, blockages, hours), respect sidebar filters, and pair charts with concise remediation notes.
+3. 4_Financial_Health.py (`scene_finance`): track revenue vs opex, NRW, and collection efficiency, preserve CSV exports, and guard derived metrics against divide-by-zero or type drift.
+4. 5_Production.py (`scene_production`): monitor sanitation & reuse chain KPIs, highlight treatment or reuse gaps, and ensure efficiency metrics stay actionable.

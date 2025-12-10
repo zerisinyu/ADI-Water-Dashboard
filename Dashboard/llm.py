@@ -93,26 +93,35 @@ def _load_local_secrets() -> Optional[Dict[str, Any]]:
 
 def _get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     """Fetch a secret from st.secrets, dashboard-local secrets, or env vars."""
+    # Try st.secrets first (Streamlit Cloud or local .streamlit/secrets.toml)
     try:
-        val = st.secrets.get(name)  # type: ignore[attr-defined]
-        if val not in (None, ""):
-            return val
-        # Namespaced under [llm] in st.secrets
-        llm_secrets = getattr(st.secrets, "get", lambda *_: None)("llm")  # type: ignore[attr-defined]
-        if isinstance(llm_secrets, dict):
-            val = llm_secrets.get(name)
+        # Check top-level first
+        if hasattr(st.secrets, name):
+            val = getattr(st.secrets, name)
             if val not in (None, ""):
-                return val
+                return str(val)
+        # Check under [llm] section
+        if hasattr(st.secrets, "llm"):
+            llm_secrets = st.secrets["llm"]
+            if hasattr(llm_secrets, name):
+                val = getattr(llm_secrets, name)
+                if val not in (None, ""):
+                    return str(val)
+            elif isinstance(llm_secrets, dict) and name in llm_secrets:
+                val = llm_secrets.get(name)
+                if val not in (None, ""):
+                    return str(val)
     except Exception:
         pass
 
+    # Fallback: Load from local secrets.toml file directly
     local = _load_local_secrets() or {}
     if name in local and local.get(name) not in (None, ""):
-        return local.get(name)  # type: ignore[return-value]
+        return str(local.get(name))
     if "llm" in local and isinstance(local["llm"], dict):
         val = local["llm"].get(name)
         if val not in (None, ""):
-            return val  # type: ignore[return-value]
+            return str(val)
 
     return os.getenv(name, default)
 

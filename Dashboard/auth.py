@@ -408,9 +408,15 @@ def login(user: User) -> None:
     st.session_state["session_start"] = datetime.now()
     st.session_state["last_activity"] = datetime.now()
     
-    # Set the selected country to user's assigned country for non-master users
-    if user.role != UserRole.MASTER_USER and user.assigned_country:
+    # Set the selected country based on user role
+    if user.role == UserRole.MASTER_USER:
+        # Master users default to "All" - allow full access
+        st.session_state["selected_country"] = "All"
+    elif user.assigned_country:
+        # Non-master users are locked to their assigned country
         st.session_state["selected_country"] = user.assigned_country
+    else:
+        st.session_state["selected_country"] = "All"
 
 
 def logout() -> None:
@@ -419,6 +425,9 @@ def logout() -> None:
     st.session_state["current_user"] = None
     st.session_state["session_start"] = None
     st.session_state["last_activity"] = None
+    # Clear selected country to prevent persistence issues
+    st.session_state["selected_country"] = "All"
+    st.session_state["selected_zone"] = "All"
     # Clear any cached data
     if "exec_insights_cache" in st.session_state:
         del st.session_state["exec_insights_cache"]
@@ -731,8 +740,6 @@ def render_user_info_sidebar() -> None:
         return
     
     with st.sidebar:
-        st.markdown("---")
-        
         # User info card
         role_colors = {
             UserRole.MASTER_USER: "#8b5cf6",  # Purple

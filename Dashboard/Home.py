@@ -68,21 +68,31 @@ def _render_llm_error(exc: Exception) -> None:
     # Get error details
     error_msg = str(exc)
     
-    # Check for common configuration issues
-    try:
-        provider = (st.secrets.get("LLM_PROVIDER") or os.getenv("LLM_PROVIDER") or "gemini").lower()
-    except Exception:
-        provider = (os.getenv("LLM_PROVIDER") or "gemini").lower()
+    # Helper to get secret from top-level or [llm] section
+    def _get_secret_value(name: str) -> str | None:
+        try:
+            # Check top-level
+            if hasattr(st.secrets, name):
+                return getattr(st.secrets, name)
+            # Check under [llm] section
+            if hasattr(st.secrets, "llm"):
+                llm_sec = st.secrets["llm"]
+                if hasattr(llm_sec, name):
+                    return getattr(llm_sec, name)
+        except Exception:
+            pass
+        return os.getenv(name)
     
-    try:
-        key = (st.secrets.get("GEMINI_API_KEY") or st.secrets.get("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    except Exception:
-        key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    # Check for common configuration issues
+    provider = (_get_secret_value("LLM_PROVIDER") or "gemini").lower()
+    key = _get_secret_value("GEMINI_API_KEY") or _get_secret_value("GOOGLE_API_KEY")
     key_present = bool(key)
 
     # Show user-friendly error message
     if not key_present:
         st.warning("⚠️ **MajiBot AI is not configured**\n\nTo enable the AI assistant, please configure your Gemini API key in the environment variables or Streamlit secrets.")
+    elif "leaked" in error_msg.lower() or "403" in error_msg:
+        st.error("🔐 **API Key Revoked**\n\nYour Gemini API key has been reported as leaked and disabled by Google. Please generate a new API key from [Google AI Studio](https://aistudio.google.com/app/apikey) and update your secrets.toml file.")
     elif "API" in error_msg or "key" in error_msg.lower():
         st.warning("⚠️ **MajiBot AI Configuration Error**\n\nThere was an issue with the API key. Please verify your Gemini API key is valid.")
     else:
@@ -90,10 +100,7 @@ def _render_llm_error(exc: Exception) -> None:
 
     # Diagnostics in expander (for debugging)
     with st.expander("🔧 Diagnostics (for administrators)"):
-        try:
-            model = (st.secrets.get("MODEL_ID") or os.getenv("MODEL_ID") or "gemini-2.5-flash")
-        except Exception:
-            model = os.getenv("MODEL_ID") or "gemini-2.5-flash"
+        model = _get_secret_value("MODEL_ID") or "gemini-2.5-flash"
         
         try:
             import google.generativeai as genai
@@ -169,119 +176,6 @@ def _inject_styles() -> None:
         }
     </style>
     """, unsafe_allow_html=True)
-
-
-def _generate_pdf_report(country: str, period: str, year: str, metrics: Dict) -> bytes:
-    """
-    Generate a professional PDF report with metrics and timestamp.
-    Falls back to HTML if fpdf2 is not available.
-    """
-    timestamp = pd.Timestamp.now()
-    
-    # Create simple HTML-based PDF content
-    html_content = f"""
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; color: #333; }}
-            .header {{ text-align: center; margin-bottom: 30px; border-bottom: 3px solid #10b981; padding-bottom: 20px; }}
-            .title {{ font-size: 28px; font-weight: bold; color: #0f172a; }}
-            .subtitle {{ font-size: 12px; color: #64748b; margin-top: 10px; }}
-            .section {{ margin: 25px 0; page-break-inside: avoid; }}
-            .section-title {{ font-size: 16px; font-weight: bold; color: #10b981; border-bottom: 2px solid #e2e8f0; padding-bottom: 10px; margin-bottom: 15px; }}
-            .metric-row {{ display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }}
-            .metric-label {{ font-weight: bold; color: #64748b; }}
-            .metric-value {{ color: #0f172a; font-weight: 600; }}
-            .filters {{ background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; }}
-            .filter-item {{ padding: 5px 0; }}
-            .footer {{ margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 10px; color: #94a3b8; text-align: center; }}
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <div class="title">💧 Executive Report</div>
-            <div class="subtitle">Water Utility Performance Dashboard</div>
-            <div class="subtitle">Generated: {timestamp.strftime('%B %d, %Y at %H:%M:%S')}</div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Report Filters</div>
-            <div class="filters">
-                <div class="filter-item"><strong>Country:</strong> {country}</div>
-                <div class="filter-item"><strong>Time Period:</strong> {period}</div>
-                <div class="filter-item"><strong>Year:</strong> {year}</div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Key Performance Indicators</div>
-            <div class="metric-row">
-                <span class="metric-label">Service Coverage:</span>
-                <span class="metric-value">{metrics.get('coverage_score', 'N/A')}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Financial Health:</span>
-                <span class="metric-value">{metrics.get('fin_score', 'N/A')}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Operational Efficiency:</span>
-                <span class="metric-value">{metrics.get('eff_score', 'N/A')}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Service Quality:</span>
-                <span class="metric-value">{metrics.get('qual_score', 'N/A')}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">Collection Efficiency:</span>
-                <span class="metric-value">{metrics.get('coll_eff', 'N/A')}</span>
-            </div>
-            <div class="metric-row">
-                <span class="metric-label">NRW (Non-Revenue Water):</span>
-                <span class="metric-value">{metrics.get('nrw', 'N/A')}</span>
-            </div>
-        </div>
-        
-        <div class="section">
-            <div class="section-title">Report Details</div>
-            <p>This report provides a snapshot of key performance indicators based on the selected filters.</p>
-            <p>For detailed analysis and visualizations, please refer to the interactive dashboard.</p>
-        </div>
-        
-        <div class="footer">
-            <p>This is a system-generated report. For more information, visit the Executive Dashboard.</p>
-        </div>
-    </body>
-    </html>
-    """
-    
-    return html_content.encode('utf-8')
-
-
-def _initialize_expandable_state() -> None:
-    """Initialize session state for expandable containers."""
-    if "expanded_container" not in st.session_state:
-        st.session_state["expanded_container"] = None  # None, "report", or "alerts"
-    if "show_alert_settings" not in st.session_state:
-        st.session_state["show_alert_settings"] = False
-
-
-def _render_expandable_container(container_id: str, title: str, content_fn: Callable) -> None:
-    """Render an expandable container with close button."""
-    is_expanded = st.session_state.get("expanded_container") == container_id
-    
-    if is_expanded:
-        st.markdown(f"""
-        <div class="expandable-container">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                <h3 style="margin: 0; color: #10b981;">{title}</h3>
-                <button class="container-close-btn" onclick="window.location.href='?';" title="Close">✕</button>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        content_fn()
-        
-        st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _chat_enabled() -> bool:
@@ -652,7 +546,7 @@ def _render_overview_banner() -> None:
                 </style>
             """, unsafe_allow_html=True)
             
-            c1, c2, c3 = st.columns([1.5, 1.5, 2])
+            c1, c2, c3 = st.columns([1.5, 1.5, 1])
             
             with c1:
                 st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Region Selection</div>', unsafe_allow_html=True)
@@ -717,59 +611,27 @@ def _render_overview_banner() -> None:
                     key="view_period",
                     label_visibility="collapsed"
                 )
-                
-                # Show year selector when Quarterly or Monthly is selected
-                if period in ["Quarterly", "Monthly"]:
-                    # Use years from actual data, not hardcoded list
-                    available_years = sorted([2020, 2021, 2022, 2023, 2024], reverse=True)
-                    if "selected_year" not in st.session_state:
-                        st.session_state["selected_year"] = available_years[0]
-                    # Ensure selected year is valid
-                    current_year = st.session_state.get("selected_year", available_years[0])
-                    if current_year not in available_years:
-                        current_year = available_years[0]
-                        st.session_state["selected_year"] = current_year
-                    
-                    selected_year = st.selectbox(
-                        "Year",
-                        options=available_years,
-                        index=available_years.index(current_year),
-                        key="header_year_select",
-                        label_visibility="collapsed"
-                    )
-                    st.session_state["selected_year"] = selected_year
-                else:
-                    st.session_state["selected_year"] = "All"
 
             with c3:
-                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Quick Actions</div>', unsafe_allow_html=True)
-                ac1, ac2, ac3 = st.columns(3)
+                st.markdown('<div style="font-size: 0.75rem; font-weight: 600; color: #64748b; text-transform: uppercase; margin-bottom: 8px;">Year</div>', unsafe_allow_html=True)
+                # Use years from actual data, not hardcoded list
+                available_years = sorted([2020, 2021, 2022, 2023, 2024], reverse=True)
+                if "selected_year" not in st.session_state:
+                    st.session_state["selected_year"] = available_years[0]
+                # Ensure selected year is valid
+                current_year = st.session_state.get("selected_year", available_years[0])
+                if current_year not in available_years:
+                    current_year = available_years[0]
+                    st.session_state["selected_year"] = current_year
                 
-                with ac1:
-                    # Report Button - toggle expandable container
-                    if check_feature_access("export_data"):
-                        if st.button("📥 Report", key="btn_report", use_container_width=True, help="View & Download Executive Report"):
-                            st.session_state["expanded_container"] = "report" if st.session_state.get("expanded_container") != "report" else None
-                            st.rerun()
-                    else:
-                        st.button("📥 Report", key="btn_report", use_container_width=True, disabled=True, 
-                                  help="Export not available for your role")
-                
-                with ac2:
-                    # Meeting Button - disabled with visual styling
-                    st.button(
-                        "📅 Meeting", 
-                        key="btn_meet", 
-                        use_container_width=True, 
-                        disabled=True, 
-                        help="Schedule stakeholder meetings directly from dashboard"
-                    )
-                
-                with ac3:
-                    # Alerts Button - toggle expandable container
-                    if st.button("🔔 Alerts", key="btn_alert", use_container_width=True, help="Configure Alert Thresholds"):
-                        st.session_state["expanded_container"] = "alerts" if st.session_state.get("expanded_container") != "alerts" else None
-                        st.rerun()
+                selected_year = st.selectbox(
+                    "Year",
+                    options=available_years,
+                    index=available_years.index(current_year),
+                    key="header_year_select",
+                    label_visibility="collapsed"
+                )
+                st.session_state["selected_year"] = selected_year
         
         st.markdown("---")
 
@@ -777,19 +639,47 @@ def _render_overview_banner() -> None:
 def _sidebar_filters() -> None:
     st.sidebar.title("Filters")
     
+    # Get current user for access control
+    from auth import get_current_user, UserRole
+    user = get_current_user()
+    
     # Load data for filters (using service data as it has the most granular time/location info)
     service_data = prepare_service_data()
     df_service = service_data["full_data"]
     
-    # 1. Country
-    countries = ['All'] + service_data["countries"]
+    # 1. Country - Access controlled
+    if user and user.role == UserRole.MASTER_USER:
+        # Master users can select "All" or any specific country
+        countries = ['All'] + service_data["countries"]
+    elif user and user.assigned_country:
+        # Non-master users only see their assigned country
+        countries = [user.assigned_country]
+    else:
+        countries = ['All'] + service_data["countries"]
+    
     # Initialize session state if not present
     if "selected_country" not in st.session_state:
-        st.session_state["selected_country"] = "All"
-        
-    selected_country = st.sidebar.selectbox('Country', countries, key='selected_country')
+        if user and user.role == UserRole.MASTER_USER:
+            st.session_state["selected_country"] = "All"
+        elif user and user.assigned_country:
+            st.session_state["selected_country"] = user.assigned_country
+        else:
+            st.session_state["selected_country"] = "All"
+    
+    # Ensure current selection is valid for this user
+    current_country = st.session_state["selected_country"]
+    if current_country not in countries:
+        current_country = countries[0] if countries else "All"
+        st.session_state["selected_country"] = current_country
+    
+    # For non-master users, show locked indicator instead of dropdown
+    if user and user.role != UserRole.MASTER_USER:
+        st.sidebar.markdown(f"**Country:** 🔒 {user.assigned_country}")
+    else:
+        selected_country = st.sidebar.selectbox('Country', countries, key='selected_country')
 
     # 2. Zone
+    selected_country = st.session_state.get("selected_country", "All")
     if selected_country != 'All':
         # Case-insensitive zone lookup
         zones = ['All'] + sorted(df_service[df_service['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
@@ -815,13 +705,64 @@ def _sidebar_filters() -> None:
         
     selected_month_name = st.sidebar.selectbox('Month', months, key='selected_month')
 
+    # Reset button - respects user access
     if st.sidebar.button("Reset filters"):
-        st.session_state["selected_country"] = "All"
+        if user and user.role == UserRole.MASTER_USER:
+            st.session_state["selected_country"] = "All"
+        elif user and user.assigned_country:
+            st.session_state["selected_country"] = user.assigned_country
+        else:
+            st.session_state["selected_country"] = "All"
         st.session_state["selected_zone"] = "All"
         if available_years:
             st.session_state["selected_year"] = available_years[0]
         st.session_state["selected_month"] = "All"
         st.rerun()
+
+
+def _render_indicator_search() -> Optional[str]:
+    """
+    Render indicator search box and results.
+    Returns selected question if user clicks a search result.
+    """
+    from ai_insights import search_indicators, get_search_suggestions
+    
+    st.markdown("**🔍 Find an Indicator**")
+    
+    # Search input
+    search_query = st.text_input(
+        "Search for a metric or indicator...",
+        placeholder="e.g., NRW, collection efficiency, water quality",
+        key="indicator_search_input",
+        label_visibility="collapsed"
+    )
+    
+    # Show search results
+    if search_query and len(search_query) >= 2:
+        results = search_indicators(search_query, max_results=4)
+        
+        if results:
+            for result in results:
+                domain_icon = "💧" if result["domain"] == "Water Supply" else "🚿" if result["domain"] == "Sanitation" else "💧🚿"
+                freq_badge = f"<span style='background:#e0f2fe;color:#0284c7;padding:2px 6px;border-radius:4px;font-size:10px;'>{result['frequency']}</span>"
+                
+                st.markdown(f"""
+                <div style='background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:6px 0;'>
+                    <div style='font-weight:600;color:#1e293b;font-size:13px;'>{domain_icon} {result['indicator'].title()}</div>
+                    <div style='color:#64748b;font-size:12px;margin-top:4px;'>
+                        📍 {result['guidance']} {freq_badge}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.markdown("<div style='color:#94a3b8;font-size:12px;padding:8px;'>No matching indicators found. Try different keywords.</div>", unsafe_allow_html=True)
+    else:
+        # Show quick suggestions
+        suggestions = get_search_suggestions()[:8]
+        st.markdown(f"<div style='color:#94a3b8;font-size:11px;'>Quick: {', '.join(suggestions)}</div>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    return None
 
 
 def _render_majibot_popup() -> None:
@@ -834,42 +775,16 @@ def _render_majibot_popup() -> None:
     _ensure_chat_state()
     messages: List[Dict[str, str]] = st.session_state["chat_messages"]
     
-    # Daily Insights Section (without performance score)
-    insights_cache = st.session_state.get("exec_insights_cache", {})
+    # Indicator Search Section (No LLM required)
+    _render_indicator_search()
     
-    if insights_cache:
-        anomalies = insights_cache.get("anomalies", [])
-        suggested = insights_cache.get("suggested_questions", [])
-        
-        # Show only anomalies (removed score display)
-        st.markdown("**💡 Key Insights**")
-        if anomalies:
-            for anom in anomalies[:3]:
-                severity_color = "#ef4444" if anom["severity"] == "critical" else "#f59e0b"
-                icon = "🔴" if anom["severity"] == "critical" else "🟡"
-                st.markdown(
-                    f"""<div style='background: {severity_color}15; padding: 10px; border-radius: 8px; 
-                    margin: 8px 0; border-left: 3px solid {severity_color};'>
-                    {icon} <span style='font-size: 13px;'>{anom['message']}</span>
-                    </div>""", 
-                    unsafe_allow_html=True
-                )
-        else:
-            st.success("✅ All metrics stable", icon="✅")
-        
-        st.markdown("---")
-        
-        # Suggested Questions
-        if suggested:
-            st.markdown("**❓ Suggested Questions**")
-            for i, question in enumerate(suggested[:3]):
-                if st.button(question, key=f"suggest_popup_{i}", use_container_width=True):
-                    max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
-                    user_turns = sum(1 for m in messages if m.get("role") == "user")
-                    if user_turns < max_turns:
-                        messages.append({"role": "user", "content": question})
-                        st.rerun()
-            st.markdown("---")
+    # Get suggested questions from insights cache
+    insights_cache = st.session_state.get("exec_insights_cache", {})
+    suggested = insights_cache.get("suggested_questions", [
+        "What is the current NRW rate?",
+        "How is collection efficiency trending?",
+        "Which zones need attention?"
+    ])
     
     # Chat Messages
     display_messages = [m for m in messages if m.get("role") != "system"]
@@ -897,28 +812,57 @@ def _render_majibot_popup() -> None:
     # Handle response generation
     last_msg = messages[-1] if messages else None
     if last_msg and last_msg.get("role") == "user":
+        user_query = last_msg.get("content", "")
+        
         with st.chat_message("assistant", avatar="🤖"):
+            # First, try smart data query (no LLM required)
             try:
-                client = ChatLLM()
-                trimmed = ChatLLM.trim_history(messages, max_messages=16)
-                response_placeholder = st.empty()
-                full_response = ""
-                for chunk in client.stream_chat(trimmed):
-                    full_response += chunk
-                    response_placeholder.markdown(
-                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
+                from ai_insights import parse_data_query, execute_data_query
+                from utils import load_billing_data, load_production_data
+                
+                parsed_query = parse_data_query(user_query)
+                
+                if parsed_query:
+                    # Load data for query execution
+                    billing_df = load_billing_data()
+                    prod_df = load_production_data()
+                    fin_df = pd.DataFrame()  # Simplified for now
+                    
+                    # Execute structured query
+                    response = execute_data_query(parsed_query, billing_df, prod_df, fin_df)
+                    
+                    st.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + response + "</div>",
                         unsafe_allow_html=True,
                     )
-                response_placeholder.markdown(
-                    f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
-                    unsafe_allow_html=True,
-                )
-                if full_response.strip():
-                    messages.append({"role": "assistant", "content": full_response})
+                    messages.append({"role": "assistant", "content": response})
                 else:
-                    _render_llm_error(RuntimeError("No content returned by model"))
-            except Exception as e:
-                _render_llm_error(e)
+                    # Fall back to LLM for complex questions
+                    raise ValueError("Query not matched - fall back to LLM")
+                    
+            except Exception as query_error:
+                # LLM fallback for unstructured queries
+                try:
+                    client = ChatLLM()
+                    trimmed = ChatLLM.trim_history(messages, max_messages=16)
+                    response_placeholder = st.empty()
+                    full_response = ""
+                    for chunk in client.stream_chat(trimmed):
+                        full_response += chunk
+                        response_placeholder.markdown(
+                            f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "▌</div>",
+                            unsafe_allow_html=True,
+                        )
+                    response_placeholder.markdown(
+                        f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
+                        unsafe_allow_html=True,
+                    )
+                    if full_response.strip():
+                        messages.append({"role": "assistant", "content": full_response})
+                    else:
+                        _render_llm_error(RuntimeError("No content returned by model"))
+                except Exception as e:
+                    _render_llm_error(e)
 
     # Chat Input (render at bottom)
     if prompt := st.chat_input("Ask about your data...", key="majibot_popup_input"):
@@ -930,6 +874,19 @@ def _render_majibot_popup() -> None:
             
         messages.append({"role": "user", "content": prompt})
         st.rerun()
+    
+    # Suggested Questions (below chat input) - displayed as vertical rows
+    if suggested:
+        st.markdown("**💡 Quick Questions**", help="Click to ask MajiBot")
+        for i, question in enumerate(suggested[:3]):
+            # Truncate long questions for button display
+            display_q = question[:50] + "..." if len(question) > 50 else question
+            if st.button(f"💬 {display_q}", key=f"suggest_popup_{i}", use_container_width=True):
+                max_turns = int(os.getenv("CHAT_MAX_TURNS", "20"))
+                user_turns = sum(1 for m in messages if m.get("role") == "user")
+                if user_turns < max_turns:
+                    messages.append({"role": "user", "content": question})
+                    st.rerun()
 
 
 def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = True) -> None:
@@ -947,140 +904,12 @@ def _render_main_layout(scene_runner: Callable[[], None], show_header: bool = Tr
         st.session_state["majibot_open"] = chat_open
         st.session_state["majibot_status"] = "Active" if chat_open else "Closed"
 
-    # Initialize expandable state
-    _initialize_expandable_state()
-
     st.markdown("<div class='shell'>", unsafe_allow_html=True)
     if show_header:
         _render_overview_banner()
     
-    # Render expandable containers (full-width, below header)
-    if st.session_state.get("expanded_container") == "report":
-        def render_report_content():
-            # Get current filters and metrics from session state
-            country = st.session_state.get("selected_country", "All")
-            period = st.session_state.get("view_period", "Monthly")
-            year = st.session_state.get("selected_year", "All")
-            
-            # Get metrics from exec insights cache if available
-            insights_cache = st.session_state.get("exec_insights_cache", {})
-            metrics = {
-                "coverage_score": f"{insights_cache.get('coverage_score', 'N/A')}%",
-                "fin_score": f"{insights_cache.get('fin_score', 'N/A')}%",
-                "eff_score": f"{insights_cache.get('eff_score', 'N/A')}%",
-                "qual_score": f"{insights_cache.get('qual_score', 'N/A')}%",
-                "coll_eff": f"{insights_cache.get('collection_efficiency', 'N/A')}%",
-                "nrw": f"{insights_cache.get('nrw_percent', 'N/A')}%"
-            }
-            
-            st.markdown("**Report Filters:**")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Country", country)
-            with col2:
-                st.metric("Period", period)
-            with col3:
-                st.metric("Year", year)
-            
-            st.markdown("---")
-            st.markdown("**Key Performance Indicators:**")
-            kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
-            with kpi_col1:
-                st.metric("Coverage Score", metrics["coverage_score"])
-                st.metric("Financial Health", metrics["fin_score"])
-            with kpi_col2:
-                st.metric("Efficiency", metrics["eff_score"])
-                st.metric("Quality Score", metrics["qual_score"])
-            with kpi_col3:
-                st.metric("Collection Eff.", metrics["coll_eff"])
-                st.metric("NRW", metrics["nrw"])
-            
-            st.markdown("---")
-            
-            # Download buttons
-            col_download1, col_download2 = st.columns(2)
-            with col_download1:
-                # HTML Report Download
-                html_content = _generate_pdf_report(country, period, year, insights_cache)
-                st.download_button(
-                    label="📄 Download HTML Report",
-                    data=html_content,
-                    file_name=f"water_dashboard_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.html",
-                    mime="text/html",
-                    key="download_html_report"
-                )
-            
-            with col_download2:
-                # Text Report Download
-                text_content = f"""Executive Report
-Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-Filters Applied:
-- Country: {country}
-- Period: {period}
-- Year: {year}
-
-Key Metrics:
-- Service Coverage: {metrics['coverage_score']}
-- Financial Health: {metrics['fin_score']}
-- Operational Efficiency: {metrics['eff_score']}
-- Service Quality: {metrics['qual_score']}
-- Collection Efficiency: {metrics['coll_eff']}
-- NRW (Non-Revenue Water): {metrics['nrw']}
-
-For detailed analysis and visualizations, please refer to the interactive dashboard.
-"""
-                st.download_button(
-                    label="📋 Download Text Report",
-                    data=text_content,
-                    file_name=f"water_dashboard_report_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                    mime="text/plain",
-                    key="download_text_report"
-                )
-            
-            if st.button("Close Report", key="close_report_btn", use_container_width=True):
-                st.session_state["expanded_container"] = None
-                st.rerun()
-        
-        _render_expandable_container("report", "📥 Executive Report", render_report_content)
-    
-    elif st.session_state.get("expanded_container") == "alerts":
-        def render_alerts_content():
-            st.markdown("**Alert Configuration**")
-            st.info("""
-            Configure thresholds for system alerts. When metrics fall outside these ranges, 
-            you'll receive notifications on the dashboard.
-            """)
-            
-            with st.form("alert_settings_form"):
-                col1, col2 = st.columns(2)
-                with col1:
-                    nrw_threshold = st.slider("NRW Alert Threshold (%)", min_value=10, max_value=50, value=30, step=5)
-                    service_hours_threshold = st.slider("Service Hours (hrs/day)", min_value=4, max_value=24, value=12, step=1)
-                
-                with col2:
-                    coll_eff_threshold = st.slider("Collection Efficiency (%)", min_value=30, max_value=90, value=70, step=5)
-                    quality_threshold = st.slider("Quality Score (%)", min_value=50, max_value=100, value=80, step=5)
-                
-                col_submit1, col_submit2 = st.columns(2)
-                with col_submit1:
-                    if st.form_submit_button("💾 Save Alert Settings", use_container_width=True):
-                        st.success("✅ Alert settings saved successfully!")
-                
-                with col_submit2:
-                    if st.form_submit_button("❌ Reset to Defaults", use_container_width=True):
-                        st.info("Alert settings reset to default values.")
-            
-            if st.button("Close Alerts", key="close_alerts_btn", use_container_width=True):
-                st.session_state["expanded_container"] = None
-                st.rerun()
-        
-        _render_expandable_container("alerts", "🔔 Alert Settings", render_alerts_content)
-    
-    st.markdown("<div class='content-area'>", unsafe_allow_html=True)
+    # Run the main scene content
     scene_runner()
-    st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
     # Render MajiBot popup in a dialog when open
     if chat_open:
@@ -1099,7 +928,7 @@ For detailed analysis and visualizations, please refer to the interactive dashbo
 
 def render_uhn_dashboard() -> None:
     """Main dashboard entry point with authentication."""
-    st.set_page_config(page_title="Executive Dashboard - Water Utility Performance", page_icon="💧", layout="wide")
+    st.set_page_config(page_title="Executive Dashboard - Water Utility Performance", page_icon="📊", layout="wide")
     _inject_styles()
     
     # Initialize authentication state
@@ -1125,7 +954,7 @@ def render_uhn_dashboard() -> None:
 
 def render_scene_page(scene_key: str) -> None:
     """Render a specific scene page with authentication and access control."""
-    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="💧", layout="wide")
+    st.set_page_config(page_title="Water Utility Performance Dashboard", page_icon="📊", layout="wide")
     _inject_styles()
     
     # Initialize authentication state

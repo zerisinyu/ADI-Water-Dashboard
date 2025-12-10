@@ -4,7 +4,17 @@ import plotly.express as px
 import plotly.graph_objects as go
 import io
 from datetime import datetime
-from utils import DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
+from utils import (
+    DATA_DIR, 
+    filter_df_by_user_access, 
+    validate_selected_country, 
+    get_user_country_filter,
+    render_section_header,
+    render_empty_state,
+    render_standardized_filters,
+    apply_standard_filters,
+    get_month_number
+)
 
 # Required columns for schema validation
 PRODUCTION_REQUIRED_COLS = ['country', 'zone', 'source', 'production_m3']
@@ -75,19 +85,17 @@ def scene_production():
     """
     
     # ============================================================================
-    # HEADER WITH DATA FRESHNESS
+    # PAGE TITLE
     # ============================================================================
     
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col1:
-        st.markdown("## ♻️ Production & Operations")
-    with header_col2:
-        st.markdown(
-            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
-            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    st.markdown("## ♻️ Production & Operations")
+    st.markdown(
+        f"<div style='color: #6b7280; font-size: 0.85rem; margin-bottom: 16px;'>"
+        f"<span class='granularity-badge granularity-daily'>Daily</span> "
+        f"<span style='margin-left: 8px;'>Source-level production, NRW, and operational metrics</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
     
     # --- CSS Styling (Consistent with other pages) ---
     st.markdown("""
@@ -258,86 +266,58 @@ def scene_production():
         st.warning("⚠️ Production data not available.")
         return
 
-    # --- Filters ---
-    with st.container():
-        st.markdown("""
-            <style>
-                div[data-testid="stHorizontalBlock"] {
-                    align-items: center;
-                }
-            </style>
-        """, unsafe_allow_html=True)
+    # --- Standardized Filters (AUDC Dictionary Compliant) ---
+    filters = render_standardized_filters(
+        df=df_prod,
+        page="production",
+        key_prefix="prod",
+        country_col="country",
+        zone_col="zone",
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=True  # Production data is Monthly/Daily
+    )
+    
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    selected_month_name = filters.get('month', 'All')
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
+    
+    # Production-specific: Zone multiselect and Unit toggle
+    f3, f4 = st.columns([2, 1.5])
+    
+    with f3:
+        # Zone/City Filter (multiselect for production)
+        available_zones = []
+        if selected_country != "All":
+            if 'country' in df_prod.columns and 'zone' in df_prod.columns:
+                available_zones = sorted(df_prod[df_prod['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
+        else:
+            if 'zone' in df_prod.columns:
+                available_zones = sorted(df_prod['zone'].unique().tolist())
         
-        f1, f2, f3, f4 = st.columns([1.5, 1.5, 2, 1.5])
+        selected_zones = st.multiselect(
+            "Zone/City (Multi-select)",
+            available_zones,
+            key="prod_zone_multiselect",
+            placeholder="Select Zones"
+        )
         
-        with f1:
-            # Date Range / Aggregation View
-            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>View Period</label>", unsafe_allow_html=True)
-            view_type = st.selectbox(
-                "View",
-                ["Daily", "Monthly", "Quarterly", "Annual"],
-                key="prod_view_type",
-                label_visibility="collapsed"
-            )
-            
-        with f2:
-            # Country Filter - Access controlled
-            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>Country</label>", unsafe_allow_html=True)
-            user_country = get_user_country_filter()
-            # Get available countries from data
-            available_countries = sorted(df_prod['country'].unique().tolist()) if 'country' in df_prod.columns else []
-            
-            # Filter to only accessible countries
-            if user_country is None:
-                # Master user - show all available with "All" option
-                default_countries = available_countries if available_countries else ["Uganda", "Cameroon", "Lesotho", "Malawi"]
-                countries = ["All"] + default_countries
-            else:
-                # Non-master user - show only their assigned country
-                countries = [c for c in available_countries if c.lower() == user_country.lower()] if available_countries else [user_country]
-                if not countries:
-                    countries = [user_country]  # Fallback to assigned country
-            
-            selected_country = st.selectbox(
-                "Country",
-                countries,
-                key="prod_country_select",
-                label_visibility="collapsed"
-            )
-            
-            # Validate selection for non-master users
-            if user_country is not None:
-                selected_country = validate_selected_country(selected_country)
-            
-        with f3:
-            # Zone/City Filter
-            st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374141;'>Zone/City</label>", unsafe_allow_html=True)
-            available_zones = []
-            if selected_country != "All":
-                if 'country' in df_prod.columns and 'zone' in df_prod.columns:
-                    # Case-insensitive zone lookup
-                    available_zones = sorted(df_prod[df_prod['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
-            else:
-                if 'zone' in df_prod.columns:
-                    available_zones = sorted(df_prod['zone'].unique().tolist())
-            
-            selected_zones = st.multiselect(
-                "Zone/City",
-                available_zones,
-                key="prod_zone_select",
-                placeholder="Select Zones",
-                label_visibility="collapsed"
-            )
-            
-        with f4:
-            # Unit Toggle
-            unit_mode = st.radio(
-                "Unit",
-                ["Metric (m³)", "Imperial (gal)", "Percentage"],
-                horizontal=True,
-                key="prod_unit_toggle",
-                label_visibility="collapsed"
-            )
+    with f4:
+        # Unit Toggle
+        unit_mode = st.radio(
+            "Unit",
+            ["Metric (m³)", "Imperial (gal)", "Percentage"],
+            horizontal=True,
+            key="prod_unit_toggle"
+        )
 
     st.markdown("---")
 
@@ -356,13 +336,11 @@ def scene_production():
         st.warning("No valid data after parsing dates.")
         return
     
-    # Apply Country Filter (case-insensitive)
-    if selected_country != 'All' and 'country' in df_p_filt.columns:
-        df_p_filt = df_p_filt[df_p_filt['country'].str.lower() == selected_country.lower()]
+    # Apply standard filters (country, year, month)
+    df_p_filt = apply_standard_filters(df_p_filt, filters, year_col='year', month_col='month')
         
-    # Apply Zone Filter (case-insensitive)
+    # Apply Zone Filter (multiselect - case-insensitive)
     if selected_zones and 'zone' in df_p_filt.columns:
-        # Convert to lowercase for comparison
         selected_zones_lower = [z.lower() for z in selected_zones]
         df_p_filt = df_p_filt[df_p_filt['zone'].str.lower().isin(selected_zones_lower)]
 
@@ -475,10 +453,23 @@ def scene_production():
         </div>
         """, unsafe_allow_html=True)
 
-    # --- Step 1.5: Treatment Infrastructure Performance ---
-    st.markdown("<div class='section-header'>🏭 Treatment Infrastructure Performance <span style='font-size:14px;color:#6b7280;font-weight:400'>| WTP & FSM</span></div>", unsafe_allow_html=True)
+    # ============================================================================
+    # TABBED ANALYSIS SECTIONS
+    # ============================================================================
     
-    infra_c1, infra_c2 = st.columns(2)
+    st.markdown("---")
+    st.subheader("📊 Production Analysis")
+    
+    prod_tab1, prod_tab2, prod_tab3 = st.tabs(["🏭 Infrastructure", "⚖️ Source Analysis", "📈 Trends & Forecasting"])
+    
+    # ============================================================================
+    # TAB 1: Treatment Infrastructure Performance
+    # ============================================================================
+    with prod_tab1:
+        st.markdown("### Treatment Infrastructure Performance")
+        st.markdown("Water Treatment Plants (WTP) and Faecal Sludge Management (FSM) metrics.")
+        
+        infra_c1, infra_c2 = st.columns(2)
     
     # Panel 1: WTP Bubble Matrix
     with infra_c1:
@@ -562,10 +553,14 @@ def scene_production():
         </div>
         """, unsafe_allow_html=True)
 
-    # --- Step 2: The Source Balancing Act (Extraction Analysis) ---
-    st.markdown("<div class='section-header'>⚖️ Source Balancing Act <span style='font-size:14px;color:#6b7280;font-weight:400'>| Extraction Analysis</span></div>", unsafe_allow_html=True)
-    
-    c1, c2 = st.columns(2)
+    # ============================================================================
+    # TAB 2: Source Balancing Act (Extraction Analysis)
+    # ============================================================================
+    with prod_tab2:
+        st.markdown("### Source Balancing Act")
+        st.markdown("Extraction analysis and source performance metrics.")
+        
+        c1, c2 = st.columns(2)
     
     with c1:
         st.markdown(f"**Production Mix ({view_type})**")
@@ -648,11 +643,15 @@ def scene_production():
             fig_perf.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig_perf, use_container_width=True)
 
-    # --- Step 3: Production Trends & Forecasting ---
-    st.markdown("<div class='section-header'>📈 Production Trends & Forecasting <span style='font-size:14px;color:#6b7280;font-weight:400'>| Advanced Analytics</span></div>", unsafe_allow_html=True)
+    # ============================================================================
+    # TAB 3: Production Trends & Forecasting
+    # ============================================================================
+    with prod_tab3:
+        st.markdown("### Production Trends & Forecasting")
+        st.markdown("Advanced analytics with time series visualization and forecasting.")
 
-    # --- Data Preparation for Time Series ---
-    import numpy as np
+        # --- Data Preparation for Time Series ---
+        import numpy as np
     
     # Aggregate to daily total across all selected sources/zones
     ts_df = df_p_filt.groupby('date_dt')['volume_display'].sum().reset_index()
@@ -840,44 +839,68 @@ def scene_production():
     else:
         st.info("No data available for trend analysis.")
 
-    # --- Step 4: Strategic Planning (Resource Availability) ---
-    st.markdown("<div class='section-header'>🔭 Strategic Planning <span style='font-size:14px;color:#6b7280;font-weight:400'>| Resource Sustainability</span></div>", unsafe_allow_html=True)
+    # ============================================================================
+    # STRATEGIC PLANNING SECTION
+    # ============================================================================
     
-    sp1, sp2 = st.columns([1, 2])
+    st.markdown("---")
+    st.subheader("🔭 Strategic Planning")
     
-    with sp1:
-        # Resource Extraction Rate
-        # Simulated Resource Limit (e.g., 1.5x total annual production of the max year)
-        # In reality, this comes from 'water_resources' in national accounts.
-        total_annual_prod = df_p_filt['production_m3'].sum()
+    plan_tab1, plan_tab2 = st.tabs(["📊 Resource Sustainability", "📝 Downtime Logger"])
+    
+    with plan_tab1:
+        sp1, sp2 = st.columns([1, 1])
         
-        # Placeholder for Total Renewable Resources
-        # Assuming a value for demo purposes if not available
-        estimated_resources = total_annual_prod * 1.45 
+        with sp1:
+            # Resource Extraction Rate
+            # Simulated Resource Limit (e.g., 1.5x total annual production of the max year)
+            # In reality, this comes from 'water_resources' in national accounts.
+            total_annual_prod = df_p_filt['production_m3'].sum()
+            
+            # Placeholder for Total Renewable Resources
+            # Assuming a value for demo purposes if not available
+            estimated_resources = total_annual_prod * 1.45 
+            
+            extraction_rate = (total_annual_prod / estimated_resources * 100) if estimated_resources > 0 else 0
+            
+            fig_gauge = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = extraction_rate,
+                title = {'text': "Resource Extraction Rate"},
+                gauge = {
+                    'axis': {'range': [None, 100]},
+                    'bar': {'color': "#3b82f6"},
+                    'steps': [
+                        {'range': [0, 70], 'color': "#d1fae5"},
+                        {'range': [70, 90], 'color': "#fed7aa"},
+                        {'range': [90, 100], 'color': "#fee2e2"}],
+                    'threshold': {
+                        'line': {'color': "red", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 90}}))
+            
+            fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=30, b=20))
+            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.caption("*Note: Resource limit estimated for demonstration.*")
         
-        extraction_rate = (total_annual_prod / estimated_resources * 100) if estimated_resources > 0 else 0
-        
-        fig_gauge = go.Figure(go.Indicator(
-            mode = "gauge+number",
-            value = extraction_rate,
-            title = {'text': "Resource Extraction Rate"},
-            gauge = {
-                'axis': {'range': [None, 100]},
-                'bar': {'color': "#3b82f6"},
-                'steps': [
-                    {'range': [0, 70], 'color': "#d1fae5"},
-                    {'range': [70, 90], 'color': "#fed7aa"},
-                    {'range': [90, 100], 'color': "#fee2e2"}],
-                'threshold': {
-                    'line': {'color': "red", 'width': 4},
-                    'thickness': 0.75,
-                    'value': 90}}))
-        
-        fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig_gauge, use_container_width=True)
-        st.caption("*Note: Resource limit estimated for demonstration.*")
-
-    with sp2:
+        with sp2:
+            st.markdown("**Resource Sustainability Insights**")
+            if extraction_rate < 70:
+                st.success(f"✅ Extraction rate is sustainable at {extraction_rate:.1f}%")
+            elif extraction_rate < 90:
+                st.warning(f"⚠️ Extraction rate at {extraction_rate:.1f}% - monitor closely")
+            else:
+                st.error(f"🔴 Critical extraction rate at {extraction_rate:.1f}% - action required")
+            
+            st.markdown("""
+            **Recommendations:**
+            - Monitor groundwater levels regularly
+            - Consider alternative water sources
+            - Implement demand-side management
+            - Review infrastructure capacity
+            """)
+    
+    with plan_tab2:
         st.markdown("**Downtime Logger**")
         with st.form("downtime_log"):
             c_log1, c_log2 = st.columns(2)

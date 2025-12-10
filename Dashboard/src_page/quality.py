@@ -8,7 +8,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import prepare_service_data as _prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country, get_user_country_filter
+from utils import (
+    prepare_service_data as _prepare_service_data, 
+    DATA_DIR, 
+    filter_df_by_user_access, 
+    validate_selected_country, 
+    get_user_country_filter,
+    render_section_header,
+    render_domain_pill,
+    render_empty_state,
+    render_standardized_filters,
+    apply_standard_filters,
+    get_month_number
+)
 
 # Required columns for schema validation
 SERVICE_REQUIRED_COLS = ['country', 'zone', 'year', 'month']
@@ -112,19 +124,17 @@ def scene_quality():
     """
     
     # ============================================================================
-    # HEADER WITH DATA FRESHNESS
+    # PAGE TITLE
     # ============================================================================
     
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col1:
-        st.markdown("## 🛠️ Service Quality & Reliability")
-    with header_col2:
-        st.markdown(
-            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
-            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    st.markdown("## 🛠️ Service Quality & Reliability")
+    st.markdown(
+        f"<div style='color: #6b7280; font-size: 0.85rem; margin-bottom: 16px;'>"
+        f"<span class='granularity-badge granularity-monthly'>Monthly</span> "
+        f"<span style='margin-left: 8px;'>Water quality, continuity, and service performance metrics</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
     
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
@@ -210,6 +220,20 @@ def scene_quality():
     if st.session_state.quality_service_data is not None:
         # Use custom service data from session state
         raw_data = st.session_state.quality_service_data.copy()
+        # Ensure date column is proper datetime
+        if 'date' in raw_data.columns:
+            # Convert string date like "Jan 2020" to datetime
+            raw_data['date'] = pd.to_datetime(raw_data['date'], format='%b %Y', errors='coerce')
+            # If that fails, try creating from year/month
+            if raw_data['date'].isna().all() and 'year' in raw_data.columns and 'month' in raw_data.columns:
+                raw_data['date'] = pd.to_datetime(
+                    raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
+                )
+        elif 'year' in raw_data.columns and 'month' in raw_data.columns:
+            raw_data['date'] = pd.to_datetime(
+                raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
+            )
+        raw_data = raw_data.sort_values('date') if 'date' in raw_data.columns else raw_data
         service_data = {"full_data": filter_df_by_user_access(raw_data, "country")}
         df_service = service_data["full_data"]
     else:
@@ -221,129 +245,40 @@ def scene_quality():
     # --- Header Section ---
     header_container = st.container()
     
-    # Filters Row
-    filt_c1, filt_c2, filt_c3, filt_c4 = st.columns([2, 2, 2, 2])
+    # --- Standardized Filters (AUDC Dictionary Compliant) ---
+    filters = render_standardized_filters(
+        df=df_service,
+        page="quality",
+        key_prefix="quality",
+        country_col="country",
+        zone_col="zone",
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=True  # Quality data is Monthly
+    )
     
-    with filt_c1:
-        st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>View Period</label>", unsafe_allow_html=True)
-        view_type = st.radio("View Period", ["Annual", "Quarterly", "Monthly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle_quality")
-        
-    with filt_c2:
-        # Country Filter - Access controlled
-        user_country = get_user_country_filter()
-        available_countries = sorted(df_service['country'].unique().tolist()) if 'country' in df_service.columns else []
-        
-        # Filter to only accessible countries
-        if user_country is None:
-            # Master user - show all with "All" option
-            countries = ['All'] + available_countries
-        else:
-            # Non-master user - show only their assigned country
-            countries = [c for c in available_countries if c.lower() == user_country.lower()]
-            if not countries:
-                countries = [user_country]  # Fallback to assigned country
-        
-        # Try to get default from session state if available
-        default_country_idx = 0
-        if "selected_country" in st.session_state and st.session_state.selected_country in countries:
-            default_country_idx = countries.index(st.session_state.selected_country)
-            
-        selected_country = st.selectbox("Country", countries, index=default_country_idx, key="header_country_select_quality")
-        
-        # Validate selection for non-master users
-        if user_country is not None:
-            selected_country = validate_selected_country(selected_country)
-        
-    with filt_c3:
-        # Zone Filter (dependent on country) - case-insensitive
-        if selected_country != 'All':
-            zones = ['All'] + sorted(df_service[df_service['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
-        else:
-            zones = ['All'] + sorted(df_service['zone'].unique().tolist())
-            
-        default_zone_idx = 0
-        if "selected_zone" in st.session_state and st.session_state.selected_zone in zones:
-            default_zone_idx = zones.index(st.session_state.selected_zone)
-            
-        selected_zone = st.selectbox("Zone/City", zones, index=default_zone_idx, key="header_zone_select_quality")
-        
-    with filt_c4:
-        # Service Type Toggle
-        st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>Service Type</label>", unsafe_allow_html=True)
-        service_type = st.radio("Service Type", ["Water", "Sanitation", "Both"], horizontal=True, label_visibility="collapsed", key="service_type_toggle_quality")
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    selected_month_name = filters.get('month', 'All')  # Keep the name for display
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
+    
+    # Service Type Toggle (Quality-specific)
+    service_type = st.radio("Service Type", ["Water", "Sanitation", "Both"], horizontal=True, key="service_type_toggle_quality")
 
-    # --- 1. Filters (Retrieved from Sidebar/Session State) ---
-    # selected_country = st.session_state.get("selected_country", "All") # Already handled above
-    # selected_zone = st.session_state.get("selected_zone", "All") # Already handled above
-    selected_year = st.session_state.get("selected_year")
-    selected_month_name = st.session_state.get("selected_month", "All")
-
-    # Validate selected_year exists in the data
-    if selected_year and selected_year != 'All':
-        try:
-            year_int = int(selected_year)
-            available_years = df_service['year'].unique().tolist() if 'year' in df_service.columns else []
-            if year_int not in available_years:
-                # Invalid year - reset to most recent available year or None
-                if available_years:
-                    selected_year = max(available_years)
-                    st.session_state["selected_year"] = selected_year
-                else:
-                    selected_year = None
-        except (ValueError, TypeError):
-            pass
-
-    # Map month name to number
-    month_map = {
-        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-    }
-    selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
-
-    # --- Apply Filters (case-insensitive for country/zone) ---
-    # Service Data
-    df_s_filt = df_service.copy()
-    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'].str.lower() == selected_country.lower()]
-    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'].str.lower() == selected_zone.lower()]
-    if selected_year: df_s_filt = _safe_year_filter(df_s_filt, 'year', selected_year)
-    if selected_month != 'All': df_s_filt = df_s_filt[df_s_filt['month'] == selected_month]
-
-    # Billing Data (No Zone/City usually, but check columns)
-    df_b_filt = df_billing.copy()
-    if not df_b_filt.empty:
-        if selected_country != 'All' and 'country' in df_b_filt.columns:
-            # Case-insensitive filtering
-            df_b_filt = df_b_filt[df_b_filt['country'].str.lower() == selected_country.lower()]
-        # Billing often lacks city/zone, so we don't filter by them to avoid empty data
-        # unless we are sure. For now, we filter by year.
-        if 'year' in df_b_filt.columns and selected_year:
-            df_b_filt = _safe_year_filter(df_b_filt, 'year', selected_year)
-        if selected_month != 'All' and 'month' in df_b_filt.columns:
-            df_b_filt = df_b_filt[df_b_filt['month'] == selected_month]
-
-    # Financial Data
-    df_f_filt = df_fin.copy()
-    if not df_f_filt.empty:
-        if selected_country != 'All' and 'country' in df_f_filt.columns:
-            # Case-insensitive filtering
-            df_f_filt = df_f_filt[df_f_filt['country'].str.lower() == selected_country.lower()]
-        if 'year' in df_f_filt.columns and selected_year:
-            df_f_filt = _safe_year_filter(df_f_filt, 'year', selected_year)
-        if selected_month != 'All' and 'month' in df_f_filt.columns:
-            df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
-
-    # Production Data
-    df_p_filt = df_prod.copy()
-    if not df_p_filt.empty:
-        if selected_country != 'All' and 'country' in df_p_filt.columns:
-            # Case-insensitive filtering
-            df_p_filt = df_p_filt[df_p_filt['country'].str.lower() == selected_country.lower()]
-        if 'year' in df_p_filt.columns and selected_year:
-            df_p_filt = _safe_year_filter(df_p_filt, 'year', selected_year)
-        if selected_month != 'All' and 'month' in df_p_filt.columns:
-            df_p_filt = df_p_filt[df_p_filt['month'] == selected_month]
-
-    # National Data (Annual)
+    # --- Apply Filters using standardized helper ---
+    df_s_filt = apply_standard_filters(df_service, filters, year_col='year', month_col='month')
+    df_b_filt = apply_standard_filters(df_billing, filters, year_col='year', month_col='month') if not df_billing.empty else df_billing
+    df_f_filt = apply_standard_filters(df_fin, filters, year_col='year', month_col='month') if not df_fin.empty else df_fin
+    df_p_filt = apply_standard_filters(df_prod, filters, year_col='year', month_col='month') if not df_prod.empty else df_prod
+    
+    # National Data (Annual - uses date_YY column)
     df_n_filt = df_national.copy()
     if not df_n_filt.empty:
         if selected_country != 'All' and 'country' in df_n_filt.columns:
@@ -480,18 +415,19 @@ def scene_quality():
     # 5. Asset Health
     asset_health_score = df_n_filt['asset_health'].mean() if not df_n_filt.empty and 'asset_health' in df_n_filt.columns else None
 
-    # --- Render Cards ---
+    # --- Render Cards with Domain-Specific Styling ---
     c1, c2, c3, c4, c5 = st.columns(5)
     
-    # Card 1: Water Quality
+    # Card 1: Water Quality (Water Domain)
     with c1:
         color_cls = "delta-up" if compliance_rate > 95 else ("delta-warn" if compliance_rate >= 85 else "delta-down")
         color_hex = "#16A34A" if compliance_rate > 95 else ("#EAB308" if compliance_rate >= 85 else "#DC2626")
         alert_icon = "⚠️" if compliance_rate < 95 else "✅"
         
         st.markdown(f"""
-        <div class='metric-container' style='border-left: 4px solid {color_hex};'>
+        <div class='metric-container scorecard-water'>
             <div>
+                <div class='domain-pill domain-pill-water' style='margin-bottom: 6px;'>💧 Water</div>
                 <div class='metric-label'>Water Quality {alert_icon}</div>
                 <div class='metric-value' style='color: {color_hex}'>{compliance_rate:.1f}%</div>
                 <div class='metric-sub'>Samples meeting stds</div>
@@ -502,13 +438,14 @@ def scene_quality():
         </div>
         """, unsafe_allow_html=True)
         
-    # Card 2: Service Continuity
+    # Card 2: Service Continuity (Water Domain)
     with c2:
         st.markdown(f"""
-        <div class='metric-container'>
+        <div class='metric-container scorecard-water'>
             <div>
+                <div class='domain-pill domain-pill-water' style='margin-bottom: 6px;'>💧 Water</div>
                 <div class='metric-label'>Service Continuity</div>
-                <div class='metric-value'>{avg_service_hours:.1f} <span style='font-size:14px'>hrs/day</span></div>
+                <div class='metric-value metric-value-water'>{avg_service_hours:.1f} <span style='font-size:14px'>hrs/day</span></div>
             </div>
             <div class='metric-delta delta-neutral'>
                 Target: 24 hours
@@ -613,318 +550,338 @@ def scene_quality():
             </div>
             """, unsafe_allow_html=True)
 
-    # --- Step 2: The Deep Dive (Quality) ---
-    st.markdown("<div class='section-header'>🔍 Quality Deep Dive <span style='font-size:14px;color:#6b7280;font-weight:400'>| Investigating Issues</span></div>", unsafe_allow_html=True)
+    # ============================================================================
+    # TABBED ANALYSIS SECTIONS
+    # ============================================================================
     
-    q_col1, q_col2 = st.columns(2)
+    st.markdown("---")
+    st.subheader("📊 Quality Analysis")
     
-    with q_col1:
-        #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-        st.markdown("**Testing Performance: Required vs Conducted vs Passed**")
+    quality_tab1, quality_tab2, quality_tab3 = st.tabs(["💧 Water Quality", "🚿 Sanitation", "📞 Customer Service"])
+    
+    # ============================================================================
+    # TAB 1: Water Quality Deep Dive
+    # ============================================================================
+    with quality_tab1:
+        st.markdown("### Water Quality Deep Dive")
+        st.markdown("Water testing performance and contaminant trend analysis.")
         
-        # Determine grouping
-        if selected_country == 'All':
-            group_col = 'country'
-        elif selected_zone == 'All':
-            group_col = 'zone'
-        else:
-            group_col = None
-
-        # Prepare Data
-        metrics_cols = ['tests_chlorine', 'tests_conducted_chlorine', 'test_passed_chlorine']
-        
-        if selected_month == 'All':
-            # Average of monthly sums
-            if group_col:
-                # Group by entity AND month first to get monthly totals, then average
-                monthly_sums = df_s_filt.groupby([group_col, 'month'])[metrics_cols].sum().reset_index()
-                chart_data = monthly_sums.groupby(group_col)[metrics_cols].mean().reset_index()
-                title_suffix = "(Monthly Average)"
-            else:
-                # Group by month first, then average
-                monthly_sums = df_s_filt.groupby('month')[metrics_cols].sum().reset_index()
-                # Create a single row DataFrame for consistency
-                means = monthly_sums[metrics_cols].mean()
-                chart_data = pd.DataFrame([means])
-                chart_data['Label'] = selected_zone # Dummy column for y-axis
-                group_col = 'Label' 
-                title_suffix = "(Monthly Average)"
-        else:
-            # Specific month sums
-            if group_col:
-                chart_data = df_s_filt.groupby(group_col)[metrics_cols].sum().reset_index()
-                title_suffix = f"({selected_month_name})"
-            else:
-                sums = df_s_filt[metrics_cols].sum()
-                chart_data = pd.DataFrame([sums])
-                chart_data['Label'] = selected_zone
-                group_col = 'Label'
-                title_suffix = f"({selected_month_name})"
-
-        # Calculate Rates for annotation
-        # Avoid division by zero
-        chart_data['conduct_rate'] = (chart_data['tests_conducted_chlorine'] / chart_data['tests_chlorine']).fillna(0) * 100
-        chart_data['pass_rate'] = (chart_data['test_passed_chlorine'] / chart_data['tests_conducted_chlorine']).fillna(0) * 100
-
-        # Create Figure
-        fig_perf = go.Figure()
-        
-        # 1. Required
-        fig_perf.add_trace(go.Bar(
-            y=chart_data[group_col],
-            x=chart_data['tests_chlorine'],
-            name='Required',
-            orientation='h',
-            marker_color='#cbd5e1',
-            text=chart_data['tests_chlorine'].apply(lambda x: f"{x:.0f}"),
-            textposition='auto'
-        ))
-        
-        # 2. Conducted
-        fig_perf.add_trace(go.Bar(
-            y=chart_data[group_col],
-            x=chart_data['tests_conducted_chlorine'],
-            name='Conducted',
-            orientation='h',
-            marker_color='#60a5fa',
-            text=chart_data.apply(lambda row: f"{row['tests_conducted_chlorine']:.0f} (conducted rate {row['conduct_rate']:.1f}%)", axis=1),
-            textposition='auto'
-        ))
-        
-        # 3. Passed
-        fig_perf.add_trace(go.Bar(
-            y=chart_data[group_col],
-            x=chart_data['test_passed_chlorine'],
-            name='Passed',
-            orientation='h',
-            marker_color='#34d399',
-            text=chart_data.apply(lambda row: f"{row['test_passed_chlorine']:.0f} (passed rate {row['pass_rate']:.1f}%)", axis=1),
-            textposition='auto'
-        ))
-
-        fig_perf.update_layout(
-            height=300 + (len(chart_data) * 20 if len(chart_data) > 5 else 0), # Dynamic height
-            margin=dict(l=0, r=0, t=30, b=0),
-            barmode='group',
-            legend=dict(orientation="v", y=0.5, x=1.02, xanchor="left", yanchor="middle"),
-            title=dict(text=f"{title_suffix}", font=dict(size=14)),
-            xaxis_title="Number of Tests"
-        )
-        
-        st.plotly_chart(fig_perf, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with q_col2:
-        #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-        st.markdown("**Contaminant Trends: Chlorine vs E. Coli Pass Rate**")
-        
-        if selected_month == 'All':
-            # Line Chart with Range Slider (Multi-year view for YoY comparison)
-            # Use df_service (unfiltered by year) but filtered by country/zone (case-insensitive)
-            df_chart = df_service.copy()
-            if selected_country != 'All':
-                df_chart = df_chart[df_chart['country'].str.lower() == selected_country.lower()]
-            if selected_zone != 'All':
-                df_chart = df_chart[df_chart['zone'].str.lower() == selected_zone.lower()]
+        q_col1, q_col2 = st.columns(2)
+    
+        with q_col1:
+            #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
+            st.markdown("**Testing Performance: Required vs Conducted vs Passed**")
             
-            ts_quality = df_chart.groupby('date').agg({
-                'test_passed_chlorine': 'sum',
-                'tests_conducted_chlorine': 'sum',
-                'tests_passed_ecoli': 'sum',
-                'test_conducted_ecoli': 'sum'
-            }).reset_index()
-            
-            ts_quality['Chlorine %'] = (ts_quality['test_passed_chlorine'] / ts_quality['tests_conducted_chlorine'] * 100).fillna(0)
-            ts_quality['E. Coli %'] = (ts_quality['tests_passed_ecoli'] / ts_quality['test_conducted_ecoli'] * 100).fillna(0)
-            
-            fig_trend = go.Figure()
-            fig_trend.add_trace(go.Scatter(
-                x=ts_quality['date'], 
-                y=ts_quality['Chlorine %'], 
-                name='Chlorine', 
-                line=dict(color='#60a5fa', width=2),
-                mode='lines',
-                hovertemplate='<b>Chlorine</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
-            ))
-            fig_trend.add_trace(go.Scatter(
-                x=ts_quality['date'], 
-                y=ts_quality['E. Coli %'], 
-                name='E. Coli', 
-                line=dict(color='#f87171', width=2),
-                mode='lines',
-                hovertemplate='<b>E. Coli</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
-            ))
-            
-            # Add WHO Threshold
-            fig_trend.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
-
-            fig_trend.update_layout(
-                height=350,  # Increased height for better visibility
-                margin=dict(l=0, r=0, t=20, b=40), 
-                legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
-                xaxis=dict(
-                    rangeslider=dict(visible=True, thickness=0.08),
-                    type="date",
-                    range=[f"{selected_year}-01-01", f"{selected_year}-12-31"],
-                    tickformat='%b %Y',
-                    dtick='M2',  # Show tick every 2 months for less clutter
-                    showgrid=True,
-                    gridcolor='rgba(128,128,128,0.1)'
-                ),
-                yaxis=dict(
-                    title="Pass Rate (%)",
-                    range=[0, 105],
-                    showgrid=True,
-                    gridcolor='rgba(128,128,128,0.1)'
-                ),
-                hovermode='x unified',
-                plot_bgcolor='rgba(250,250,250,0.3)'
-            )
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
-        else:
-            # Bar Charts (Specific Month)
+            # Determine grouping
             if selected_country == 'All':
-                # Compare Countries
                 group_col = 'country'
             elif selected_zone == 'All':
-                # Compare Zones
                 group_col = 'zone'
             else:
-                # Specific Zone
                 group_col = None
 
-            if group_col:
-                # Grouped Bar Chart
-                bar_data = df_s_filt.groupby(group_col).agg({
-                    'test_passed_chlorine': 'sum',
-                    'tests_conducted_chlorine': 'sum',
-                    'tests_passed_ecoli': 'sum',
-                    'test_conducted_ecoli': 'sum'
-                }).reset_index()
-                
-                bar_data['Chlorine %'] = (bar_data['test_passed_chlorine'] / bar_data['tests_conducted_chlorine'] * 100).fillna(0)
-                bar_data['E. Coli %'] = (bar_data['tests_passed_ecoli'] / bar_data['test_conducted_ecoli'] * 100).fillna(0)
-                
-                fig_bar = go.Figure()
-                fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['Chlorine %'], name='Chlorine', marker_color='#60a5fa'))
-                fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['E. Coli %'], name='E. Coli', marker_color='#f87171'))
-                
-                # Add WHO Threshold
-                fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
-
-                fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), barmode='group', legend=dict(orientation="h", y=1.1))
-                st.plotly_chart(fig_bar, use_container_width=True)
-                
+            # Prepare Data
+            metrics_cols = ['tests_chlorine', 'tests_conducted_chlorine', 'test_passed_chlorine']
+            
+            if selected_month == 'All':
+                # Average of monthly sums
+                if group_col:
+                    # Group by entity AND month first to get monthly totals, then average
+                    monthly_sums = df_s_filt.groupby([group_col, 'month'])[metrics_cols].sum().reset_index()
+                    chart_data = monthly_sums.groupby(group_col)[metrics_cols].mean().reset_index()
+                    title_suffix = "(Monthly Average)"
+                else:
+                    # Group by month first, then average
+                    monthly_sums = df_s_filt.groupby('month')[metrics_cols].sum().reset_index()
+                    # Create a single row DataFrame for consistency
+                    means = monthly_sums[metrics_cols].mean()
+                    chart_data = pd.DataFrame([means])
+                    chart_data['Label'] = selected_zone # Dummy column for y-axis
+                    group_col = 'Label' 
+                    title_suffix = "(Monthly Average)"
             else:
-                # Single Zone Bar Chart
-                t_pass_cl = df_s_filt['test_passed_chlorine'].sum()
-                t_cond_cl = df_s_filt['tests_conducted_chlorine'].sum()
-                t_pass_ec = df_s_filt['tests_passed_ecoli'].sum()
-                t_cond_ec = df_s_filt['test_conducted_ecoli'].sum()
-                
-                rate_cl = (t_pass_cl / t_cond_cl * 100) if t_cond_cl > 0 else 0
-                rate_ec = (t_pass_ec / t_cond_ec * 100) if t_cond_ec > 0 else 0
-                
-                fig_bar = go.Figure()
-                fig_bar.add_trace(go.Bar(x=['Chlorine', 'E. Coli'], y=[rate_cl, rate_ec], marker_color=['#60a5fa', '#f87171']))
-                
-                # Add WHO Threshold
-                fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+                # Specific month sums
+                if group_col:
+                    chart_data = df_s_filt.groupby(group_col)[metrics_cols].sum().reset_index()
+                    title_suffix = f"({selected_month_name})"
+                else:
+                    sums = df_s_filt[metrics_cols].sum()
+                    chart_data = pd.DataFrame([sums])
+                    chart_data['Label'] = selected_zone
+                    group_col = 'Label'
+                    title_suffix = f"({selected_month_name})"
 
-                fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, yaxis_title="Pass Rate (%)")
-                st.plotly_chart(fig_bar, use_container_width=True)
-        
-        # Quality Alert Box
-        # Calculate compliance per zone
-        zone_compliance = df_s_filt.groupby('zone').apply(
-            lambda x: ((x['test_passed_chlorine'].sum() + x['tests_passed_ecoli'].sum()) / 
-                       (x['tests_conducted_chlorine'].sum() + x['test_conducted_ecoli'].sum()) * 100)
-            if (x['tests_conducted_chlorine'].sum() + x['test_conducted_ecoli'].sum()) > 0 else 0
-        )
-        
-        non_compliant_zones = zone_compliance[zone_compliance < 80]
-        
-        if not non_compliant_zones.empty:
-            st.markdown("""
-            <div style="background-color: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; margin-top: 16px;">
-                <div style="display: flex; align-items: center; gap: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 8px;">
-                    <span>⚠️ Quality Alert: Critical Compliance Issues</span>
-                </div>
-                <div style="font-size: 13px; color: #7f1d1d;">
-                    The following zones have dropped below 80% compliance:
-                    <ul style="margin: 4px 0 8px 20px; padding: 0;">
-            """ + "".join([f"<li><b>{zone}</b>: {score:.1f}%</li>" for zone, score in non_compliant_zones.items()]) + """
-                    </ul>
-                    <b>Required Actions:</b>
-                    <ul style="margin: 4px 0 0 20px; padding: 0;">
-                        <li>Immediate flushing of distribution lines</li>
-                        <li>Increase chlorine dosage at treatment plant</li>
-                        <li>Deploy emergency water tankers if necessary</li>
-                    </ul>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Calculate Rates for annotation
+            # Avoid division by zero
+            chart_data['conduct_rate'] = (chart_data['tests_conducted_chlorine'] / chart_data['tests_chlorine']).fillna(0) * 100
+            chart_data['pass_rate'] = (chart_data['test_passed_chlorine'] / chart_data['tests_conducted_chlorine']).fillna(0) * 100
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # --- Step 4: The Sanitation Check (Only show when Sanitation or Both selected) ---
-    if service_type in ["Sanitation", "Both"]:
-        st.markdown("<div class='section-header'>🚽 Sanitation Check <span style='font-size:14px;color:#6b7280;font-weight:400'>| The 'Forgotten' Half</span></div>", unsafe_allow_html=True)
-        
-        s_col1, s_col2 = st.columns(2)
-        
-        with s_col1:
-            #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-            st.markdown("**Wastewater Treatment Efficiency**")
+            # Create Figure
+            fig_perf = go.Figure()
             
-            ww_metrics = df_s_filt.agg({
-                'ww_collected': 'sum',
-                'ww_treated': 'sum',
-                'ww_reused': 'sum'
-            }).reset_index()
-            ww_metrics.columns = ['Stage', 'Volume']
-            
-            fig_funnel = go.Figure(go.Funnel(
-                y=ww_metrics['Stage'],
-                x=ww_metrics['Volume'],
-                textinfo="value+percent initial",
-                marker=dict(color=["#60a5fa", "#818cf8", "#a78bfa"])
+            # 1. Required
+            fig_perf.add_trace(go.Bar(
+                y=chart_data[group_col],
+                x=chart_data['tests_chlorine'],
+                name='Required',
+                orientation='h',
+                marker_color='#cbd5e1',
+                text=chart_data['tests_chlorine'].apply(lambda x: f"{x:.0f}"),
+                textposition='auto'
             ))
-            fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
-            st.plotly_chart(fig_funnel, use_container_width=True)
+            
+            # 2. Conducted
+            fig_perf.add_trace(go.Bar(
+                y=chart_data[group_col],
+                x=chart_data['tests_conducted_chlorine'],
+                name='Conducted',
+                orientation='h',
+                marker_color='#60a5fa',
+                text=chart_data.apply(lambda row: f"{row['tests_conducted_chlorine']:.0f} (conducted rate {row['conduct_rate']:.1f}%)", axis=1),
+                textposition='auto'
+            ))
+            
+            # 3. Passed
+            fig_perf.add_trace(go.Bar(
+                y=chart_data[group_col],
+                x=chart_data['test_passed_chlorine'],
+                name='Passed',
+                orientation='h',
+                marker_color='#34d399',
+                text=chart_data.apply(lambda row: f"{row['test_passed_chlorine']:.0f} (passed rate {row['pass_rate']:.1f}%)", axis=1),
+                textposition='auto'
+            ))
+
+            fig_perf.update_layout(
+                height=300 + (len(chart_data) * 20 if len(chart_data) > 5 else 0), # Dynamic height
+                margin=dict(l=0, r=0, t=30, b=0),
+                barmode='group',
+                legend=dict(orientation="v", y=0.5, x=1.02, xanchor="left", yanchor="middle"),
+                title=dict(text=f"{title_suffix}", font=dict(size=14)),
+                xaxis_title="Number of Tests"
+            )
+            
+            st.plotly_chart(fig_perf, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
-        with s_col2:
+        with q_col2:
             #st.markdown("<div class='chart-container'>", unsafe_allow_html=True)
-            st.markdown("**Sewer Health: Blockages**")
+            st.markdown("**Contaminant Trends: Chlorine vs E. Coli Pass Rate**")
             
-            # Blockages from financial data
-            total_blocks = df_f_filt['blocks'].sum() if not df_f_filt.empty else 0
+            # Check if date column exists
+            if 'date' not in df_service.columns:
+                st.warning("⚠️ Date column not available for trend analysis")
+            elif selected_month == 'All':
+                # Line Chart with Range Slider (Multi-year view for YoY comparison)
+                # Use df_service (unfiltered by year) but filtered by country/zone (case-insensitive)
+                df_chart = df_service.copy()
+                if selected_country != 'All':
+                    df_chart = df_chart[df_chart['country'].str.lower() == selected_country.lower()]
+                if selected_zone != 'All':
+                    df_chart = df_chart[df_chart['zone'].str.lower() == selected_zone.lower()]
+                
+                if df_chart.empty:
+                    st.info("No data available for selected filters")
+                else:
+                    ts_quality = df_chart.groupby('date').agg({
+                        'test_passed_chlorine': 'sum',
+                        'tests_conducted_chlorine': 'sum',
+                        'tests_passed_ecoli': 'sum',
+                        'test_conducted_ecoli': 'sum'
+                    }).reset_index()
+                    
+                    ts_quality['Chlorine %'] = (ts_quality['test_passed_chlorine'] / ts_quality['tests_conducted_chlorine'] * 100).fillna(0)
+                    ts_quality['E. Coli %'] = (ts_quality['tests_passed_ecoli'] / ts_quality['test_conducted_ecoli'] * 100).fillna(0)
+                    
+                    fig_trend = go.Figure()
+                    fig_trend.add_trace(go.Scatter(
+                        x=ts_quality['date'], 
+                        y=ts_quality['Chlorine %'], 
+                        name='Chlorine', 
+                        line=dict(color='#60a5fa', width=2),
+                        mode='lines',
+                        hovertemplate='<b>Chlorine</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
+                    ))
+                    fig_trend.add_trace(go.Scatter(
+                        x=ts_quality['date'], 
+                        y=ts_quality['E. Coli %'], 
+                        name='E. Coli', 
+                        line=dict(color='#f87171', width=2),
+                        mode='lines',
+                        hovertemplate='<b>E. Coli</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
+                    ))
+                    
+                    # Add WHO Threshold
+                    fig_trend.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+
+                    fig_trend.update_layout(
+                        height=350,  # Increased height for better visibility
+                        margin=dict(l=0, r=0, t=20, b=40), 
+                        legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
+                        xaxis=dict(
+                            rangeslider=dict(visible=True, thickness=0.08),
+                            type="date",
+                            range=[f"{selected_year}-01-01", f"{selected_year}-12-31"] if selected_year else None,
+                            tickformat='%b %Y',
+                            dtick='M2',  # Show tick every 2 months for less clutter
+                            showgrid=True,
+                            gridcolor='rgba(128,128,128,0.1)'
+                        ),
+                        yaxis=dict(
+                            title="Pass Rate (%)",
+                            range=[0, 105],
+                            showgrid=True,
+                            gridcolor='rgba(128,128,128,0.1)'
+                        ),
+                        hovermode='x unified',
+                        plot_bgcolor='rgba(250,250,250,0.3)'
+                    )
+                    st.plotly_chart(fig_trend, use_container_width=True)
+                
+            elif selected_month != 'All':
+                # Bar Charts (Specific Month)
+                if selected_country == 'All':
+                    # Compare Countries
+                    group_col = 'country'
+                elif selected_zone == 'All':
+                    # Compare Zones
+                    group_col = 'zone'
+                else:
+                    # Specific Zone
+                    group_col = None
+
+                if group_col:
+                    # Grouped Bar Chart
+                    bar_data = df_s_filt.groupby(group_col).agg({
+                        'test_passed_chlorine': 'sum',
+                        'tests_conducted_chlorine': 'sum',
+                        'tests_passed_ecoli': 'sum',
+                        'test_conducted_ecoli': 'sum'
+                    }).reset_index()
+                    
+                    bar_data['Chlorine %'] = (bar_data['test_passed_chlorine'] / bar_data['tests_conducted_chlorine'] * 100).fillna(0)
+                    bar_data['E. Coli %'] = (bar_data['tests_passed_ecoli'] / bar_data['test_conducted_ecoli'] * 100).fillna(0)
+                    
+                    fig_bar = go.Figure()
+                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['Chlorine %'], name='Chlorine', marker_color='#60a5fa'))
+                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['E. Coli %'], name='E. Coli', marker_color='#f87171'))
+                    
+                    # Add WHO Threshold
+                    fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+
+                    fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), barmode='group', legend=dict(orientation="h", y=1.1))
+                    st.plotly_chart(fig_bar, use_container_width=True)
+                    
+                else:
+                    # Single Zone Bar Chart
+                    t_pass_cl = df_s_filt['test_passed_chlorine'].sum()
+                    t_cond_cl = df_s_filt['tests_conducted_chlorine'].sum()
+                    t_pass_ec = df_s_filt['tests_passed_ecoli'].sum()
+                    t_cond_ec = df_s_filt['test_conducted_ecoli'].sum()
+                    
+                    rate_cl = (t_pass_cl / t_cond_cl * 100) if t_cond_cl > 0 else 0
+                    rate_ec = (t_pass_ec / t_cond_ec * 100) if t_cond_ec > 0 else 0
+                    
+                    fig_bar = go.Figure()
+                    fig_bar.add_trace(go.Bar(x=['Chlorine', 'E. Coli'], y=[rate_cl, rate_ec], marker_color=['#60a5fa', '#f87171']))
+                    
+                    # Add WHO Threshold
+                    fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+
+                    fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, yaxis_title="Pass Rate (%)")
+                    st.plotly_chart(fig_bar, use_container_width=True)
             
-            # Trend if possible
-            if not df_f_filt.empty:
-                blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
-                fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
-                fig_blocks.update_traces(line_color='#f87171')
-                fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
-                
-                st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
-                st.plotly_chart(fig_blocks, use_container_width=True)
-            else:
-                st.info("No blockage data available for selected filters.")
-                
+            # Quality Alert Box
+            # Calculate compliance per zone
+            zone_compliance = df_s_filt.groupby('zone').apply(
+                lambda x: ((x['test_passed_chlorine'].sum() + x['tests_passed_ecoli'].sum()) / 
+                           (x['tests_conducted_chlorine'].sum() + x['test_conducted_ecoli'].sum()) * 100)
+                if (x['tests_conducted_chlorine'].sum() + x['test_conducted_ecoli'].sum()) > 0 else 0
+            )
+            
+            non_compliant_zones = zone_compliance[zone_compliance < 80]
+            
+            if not non_compliant_zones.empty:
+                st.markdown("""
+                <div style="background-color: #fee2e2; border: 1px solid #ef4444; border-radius: 8px; padding: 12px; margin-top: 16px;">
+                    <div style="display: flex; align-items: center; gap: 8px; color: #b91c1c; font-weight: 600; margin-bottom: 8px;">
+                        <span>⚠️ Quality Alert: Critical Compliance Issues</span>
+                    </div>
+                    <div style="font-size: 13px; color: #7f1d1d;">
+                        The following zones have dropped below 80% compliance:
+                        <ul style="margin: 4px 0 8px 20px; padding: 0;">
+                """ + "".join([f"<li><b>{zone}</b>: {score:.1f}%</li>" for zone, score in non_compliant_zones.items()]) + """
+                        </ul>
+                        <b>Required Actions:</b>
+                        <ul style="margin: 4px 0 0 20px; padding: 0;">
+                            <li>Immediate flushing of distribution lines</li>
+                            <li>Increase chlorine dosage at treatment plant</li>
+                            <li>Deploy emergency water tankers if necessary</li>
+                        </ul>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- Step 5: Customer Service Performance ---
-    st.markdown("<div class='section-header'>📞 Customer Service Performance <span style='font-size:14px;color:#6b7280;font-weight:400'>| Complaints & Resolution</span></div>", unsafe_allow_html=True)
-    
-    # Since detailed complaint data is missing, we create a demo section with blurred background
-    
-    # Container for the section
-    cs_container = st.container()
-    
-    with cs_container:
+    # ============================================================================
+    # TAB 2: Sanitation Check
+    # ============================================================================
+    with quality_tab2:
+        if service_type in ["Sanitation", "Both"]:
+            st.markdown("### Sanitation Check")
+            st.markdown("Wastewater treatment efficiency and sewer health metrics.")
+            
+            s_col1, s_col2 = st.columns(2)
+        
+            with s_col1:
+                st.markdown("**Wastewater Treatment Efficiency**")
+                
+                ww_metrics = df_s_filt.agg({
+                    'ww_collected': 'sum',
+                    'ww_treated': 'sum',
+                    'ww_reused': 'sum'
+                }).reset_index()
+                ww_metrics.columns = ['Stage', 'Volume']
+                
+                fig_funnel = go.Figure(go.Funnel(
+                    y=ww_metrics['Stage'],
+                    x=ww_metrics['Volume'],
+                    textinfo="value+percent initial",
+                    marker=dict(color=["#60a5fa", "#818cf8", "#a78bfa"])
+                ))
+                fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+                st.plotly_chart(fig_funnel, use_container_width=True)
+
+            with s_col2:
+                st.markdown("**Sewer Health: Blockages**")
+                
+                # Blockages from financial data
+                total_blocks = df_f_filt['blocks'].sum() if not df_f_filt.empty else 0
+                
+                # Trend if possible
+                if not df_f_filt.empty:
+                    blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
+                    fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
+                    fig_blocks.update_traces(line_color='#f87171')
+                    fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
+                    
+                    st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
+                    st.plotly_chart(fig_blocks, use_container_width=True)
+                else:
+                    st.info("No blockage data available for selected filters.")
+        else:
+            st.info("Select 'Sanitation' or 'Both' in the Service Type filter to view sanitation metrics.")
+
+    # ============================================================================
+    # TAB 3: Customer Service Performance
+    # ============================================================================
+    with quality_tab3:
+        st.markdown("### Customer Service Performance")
+        st.markdown("Complaints analysis and resolution efficiency.")
+        
+        # Since detailed complaint data is missing, we create a demo section with blurred background
+        
         # Alert Box
         st.markdown("""
         <div style="background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;">
@@ -1044,113 +1001,115 @@ def scene_quality():
             st.plotly_chart(fig_box, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- Step 6: Organizational Capacity Dashboard ---
-    st.markdown("<div class='section-header'>👥 Organizational Capacity <span style='font-size:14px;color:#6b7280;font-weight:400'>| Workforce & Training</span></div>", unsafe_allow_html=True)
-
-    # Container for the section
-    oc_container = st.container()
-
-    with oc_container:
-        # Alert Box
-        st.markdown("""
-        <div style="background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;">
-            <div style="font-size: 20px;">⚠️</div>
-            <div style="color: #854d0e; font-size: 14px;">
-                <strong>Data Unavailable:</strong> Detailed gender-disaggregated workforce data and training records are currently not being collected. 
-                The visualizations below are a <strong>demonstration</strong> of the intended dashboard capabilities.
-            </div>
+    # ============================================================================
+    # ORGANIZATIONAL CAPACITY SECTION (with tabs)
+    # ============================================================================
+    
+    st.markdown("---")
+    st.subheader("👥 Organizational Capacity")
+    
+    org_tab1, org_tab2, org_tab3 = st.tabs(["📊 Staff Metrics", "📋 Training Matrix", "📈 Diversity & Efficiency"])
+    
+    # Alert Box (shown once above all tabs)
+    st.markdown("""
+    <div style="background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px;">
+        <div style="font-size: 20px;">⚠️</div>
+        <div style="color: #854d0e; font-size: 14px;">
+            <strong>Data Unavailable:</strong> Detailed gender-disaggregated workforce data and training records are currently not being collected. 
+            The visualizations below are a <strong>demonstration</strong> of the intended dashboard capabilities.
         </div>
-        """, unsafe_allow_html=True)
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # TAB 1: Staff Metrics
+    with org_tab1:
+        st.markdown("**Staff Composition & Efficiency (Demo)**")
+        
+        # Demo Data
+        staff_cats = ['Water Supply', 'Sanitation']
+        total_staff = [150, 120]
+        trained_staff = [90, 60]
+        male_staff = [110, 100]
+        female_staff = [40, 20]
+        efficiency = [2.5, 4.1] # Staff per 1000 connections
 
-        # Layout
-        oc_col1, oc_col2, oc_col3 = st.columns([4, 4, 3])
+        fig_staff = go.Figure()
+        
+        # Bars
+        fig_staff.add_trace(go.Bar(x=staff_cats, y=total_staff, name='Total Staff', marker_color='#9ca3af'))
+        fig_staff.add_trace(go.Bar(x=staff_cats, y=trained_staff, name='Trained', marker_color='#60a5fa'))
+        fig_staff.add_trace(go.Bar(x=staff_cats, y=male_staff, name='Male', marker_color='#2563eb')) # Dark Blue
+        fig_staff.add_trace(go.Bar(x=staff_cats, y=female_staff, name='Female', marker_color='#f472b6')) # Pink
+        
+        # Line Overlay (Secondary Y)
+        fig_staff.add_trace(go.Scatter(
+            x=staff_cats, y=efficiency, name='Efficiency (Staff/1000 conn)',
+            mode='lines+markers', yaxis='y2', line=dict(color='#fbbf24', width=3)
+        ))
 
-        # --- Left: Staff Metrics (Demo) ---
-        with oc_col1:
-            st.markdown("**Staff Composition & Efficiency (Demo)**")
-            
-            # Demo Data
-            staff_cats = ['Water Supply', 'Sanitation']
-            total_staff = [150, 120]
-            trained_staff = [90, 60]
-            male_staff = [110, 100]
-            female_staff = [40, 20]
-            efficiency = [2.5, 4.1] # Staff per 1000 connections
+        fig_staff.update_layout(
+            height=350, margin=dict(l=0, r=0, t=20, b=0),
+            barmode='group',
+            legend=dict(orientation="h", y=1.1),
+            yaxis2=dict(title="Staff/1000 Conn", overlaying='y', side='right', showgrid=False)
+        )
 
-            fig_staff = go.Figure()
-            
-            # Bars
-            fig_staff.add_trace(go.Bar(x=staff_cats, y=total_staff, name='Total Staff', marker_color='#9ca3af'))
-            fig_staff.add_trace(go.Bar(x=staff_cats, y=trained_staff, name='Trained', marker_color='#60a5fa'))
-            fig_staff.add_trace(go.Bar(x=staff_cats, y=male_staff, name='Male', marker_color='#2563eb')) # Dark Blue
-            fig_staff.add_trace(go.Bar(x=staff_cats, y=female_staff, name='Female', marker_color='#f472b6')) # Pink
-            
-            # Line Overlay (Secondary Y)
-            fig_staff.add_trace(go.Scatter(
-                x=staff_cats, y=efficiency, name='Efficiency (Staff/1000 conn)',
-                mode='lines+markers', yaxis='y2', line=dict(color='#fbbf24', width=3)
-            ))
+        st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_staff, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            fig_staff.update_layout(
-                height=350, margin=dict(l=0, r=0, t=20, b=0),
-                barmode='group',
-                legend=dict(orientation="h", y=1.1),
-                yaxis2=dict(title="Staff/1000 Conn", overlaying='y', side='right', showgrid=False)
-            )
+    # TAB 2: Training Matrix
+    with org_tab2:
+        st.markdown("**Training Completion Matrix (Demo)**")
+        
+        # Demo Data
+        header = ['Category', 'Q1', 'Q2', 'Q3', 'Q4']
+        cells = [
+            ['Technical Ops', 'Safety', 'Management', 'Soft Skills'], # Category
+            ['15 (10M/5F)', '20 (15M/5F)', '5 (3M/2F)', '10 (5M/5F)'], # Q1
+            ['12 (8M/4F)', '18 (14M/4F)', '6 (4M/2F)', '12 (6M/6F)'], # Q2
+            ['18 (12M/6F)', '22 (18M/4F)', '4 (2M/2F)', '15 (8M/7F)'], # Q3
+            ['10 (6M/4F)', '15 (12M/3F)', '8 (5M/3F)', '8 (4M/4F)']  # Q4
+        ]
+        
+        # Heatmap coloring simulation (just random colors for demo)
+        fill_colors = [
+            ['#f3f4f6']*4, # Col 1
+            ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe'], # Q1
+            ['#bfdbfe', '#93c5fd', '#bfdbfe', '#93c5fd'], # Q2
+            ['#93c5fd', '#60a5fa', '#93c5fd', '#60a5fa'], # Q3
+            ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe']  # Q4
+        ]
 
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_staff, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        fig_table = go.Figure(data=[go.Table(
+            header=dict(values=header, fill_color='#f9fafb', align='left', font=dict(color='black', size=12)),
+            cells=dict(values=cells, fill_color=fill_colors, align='left', font=dict(color='black', size=11), height=40)
+        )])
+        
+        fig_table.update_layout(height=350, margin=dict(l=0, r=0, t=20, b=0))
 
-        # --- Center: Training Matrix (Demo) ---
-        with oc_col2:
-            st.markdown("**Training Completion Matrix (Demo)**")
-            
-            # Demo Data
-            header = ['Category', 'Q1', 'Q2', 'Q3', 'Q4']
-            cells = [
-                ['Technical Ops', 'Safety', 'Management', 'Soft Skills'], # Category
-                ['15 (10M/5F)', '20 (15M/5F)', '5 (3M/2F)', '10 (5M/5F)'], # Q1
-                ['12 (8M/4F)', '18 (14M/4F)', '6 (4M/2F)', '12 (6M/6F)'], # Q2
-                ['18 (12M/6F)', '22 (18M/4F)', '4 (2M/2F)', '15 (8M/7F)'], # Q3
-                ['10 (6M/4F)', '15 (12M/3F)', '8 (5M/3F)', '8 (4M/4F)']  # Q4
-            ]
-            
-            # Heatmap coloring simulation (just random colors for demo)
-            fill_colors = [
-                ['#f3f4f6']*4, # Col 1
-                ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe'], # Q1
-                ['#bfdbfe', '#93c5fd', '#bfdbfe', '#93c5fd'], # Q2
-                ['#93c5fd', '#60a5fa', '#93c5fd', '#60a5fa'], # Q3
-                ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe']  # Q4
-            ]
+        # Add No Data Annotation
+        fig_table.add_annotation(
+            text="NO DATA AVAILABLE",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5,
+            showarrow=False,
+            font=dict(size=20, color="#374151"),
+            bgcolor="rgba(255,255,255,0.7)",
+            borderpad=10
+        )
 
-            fig_table = go.Figure(data=[go.Table(
-                header=dict(values=header, fill_color='#f9fafb', align='left', font=dict(color='black', size=12)),
-                cells=dict(values=cells, fill_color=fill_colors, align='left', font=dict(color='black', size=11), height=40)
-            )])
-            
-            fig_table.update_layout(height=350, margin=dict(l=0, r=0, t=20, b=0))
+        st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
+        st.plotly_chart(fig_table, use_container_width=True)
+        st.markdown('</div>', unsafe_allow_html=True)
 
-            # Add No Data Annotation
-            fig_table.add_annotation(
-                text="NO DATA AVAILABLE",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=20, color="#374151"),
-                bgcolor="rgba(255,255,255,0.7)",
-                borderpad=10
-            )
-
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_table, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- Right: Diversity & Efficiency Cards (Demo) ---
-        with oc_col3:
-            st.markdown("**Diversity & Efficiency (Demo)**")
-            
+    # TAB 3: Diversity & Efficiency
+    with org_tab3:
+        st.markdown("**Diversity & Efficiency (Demo)**")
+        
+        div_col1, div_col2 = st.columns(2)
+        
+        with div_col1:
             # 1. Women in Decision Making (Ring Chart)
             current_pct = 18
             target_pct = 30
@@ -1167,12 +1126,13 @@ def scene_quality():
             fig_ring.add_annotation(text=f"{current_pct}%", x=0.5, y=0.5, font_size=20, showarrow=False, font_weight='bold', font_color='#f472b6')
             fig_ring.add_annotation(text=f"Target: {target_pct}%", x=0.5, y=0.35, font_size=10, showarrow=False, font_color='#6b7280')
             
-            fig_ring.update_layout(height=160, margin=dict(l=0, r=0, t=30, b=0), title=dict(text="Women in Leadership", font=dict(size=12), x=0.5, xanchor='center'))
+            fig_ring.update_layout(height=200, margin=dict(l=0, r=0, t=30, b=0), title=dict(text="Women in Leadership", font=dict(size=12), x=0.5, xanchor='center'))
             
             st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
             st.plotly_chart(fig_ring, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
-            
+        
+        with div_col2:
             # 2. Staff Efficiency (Gauge)
             eff_val = 4.2
             

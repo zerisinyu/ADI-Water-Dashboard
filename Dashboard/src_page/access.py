@@ -5,7 +5,21 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
-from utils import prepare_access_data, prepare_service_data, DATA_DIR, filter_df_by_user_access, validate_selected_country
+from utils import (
+    prepare_access_data, 
+    prepare_service_data, 
+    DATA_DIR, 
+    filter_df_by_user_access, 
+    validate_selected_country,
+    render_page_hero,
+    render_section_header,
+    render_domain_pill,
+    render_granularity_badge,
+    render_empty_state,
+    render_standardized_filters,
+    apply_standard_filters,
+    get_month_number
+)
 
 # Required columns for schema validation
 WATER_ACCESS_REQUIRED_COLS = ['country', 'zone', 'year', 'popn_total']
@@ -139,46 +153,23 @@ def set_active_tab(tab_name):
 
 
 def render_tab_selector(selected_tab: str) -> str:
-    """Render horizontal tab selector and return selected tab name."""
+    """Render horizontal tab selector using native Streamlit tabs for better UX."""
     tabs_list = list(TAB_STRUCTURE.keys())
     
     st.markdown("---")
-    st.markdown("<h3 style='margin-top: 0; margin-bottom: 16px;'>Dashboard Sections</h3>", unsafe_allow_html=True)
     
-    # Create horizontal tabs using columns
-    cols = st.columns(len(tabs_list))
+    # Use native Streamlit tabs for better accessibility and UX
+    tab_labels = [f"{TAB_STRUCTURE[t]['icon']} {t}" for t in tabs_list]
     
-    for idx, (col, tab_name) in enumerate(zip(cols, tabs_list)):
-        tab_info = TAB_STRUCTURE[tab_name]
-        is_active = tab_name == selected_tab
-        
-        with col:
-            # Style based on active state
-            bg_color = "#e0e7ff" if is_active else "#f3f4f6"
-            border_style = "3px solid #4f46e5" if is_active else "1px solid #d1d5db"
-            text_color = "#4f46e5" if is_active else "#6b7280"
-            font_weight = "700" if is_active else "600"
-            
-            if st.button(
-                f"{tab_info['icon']} {tab_name}",
-                key=f"tab_{tab_name}",
-                use_container_width=True,
-                help=tab_info['description']
-            ):
-                set_active_tab(tab_name)
-                st.rerun()
-            
-            # Apply styling with markdown
-            if is_active:
-                st.markdown(
-                    f"""<div style='background: {bg_color}; border: {border_style}; 
-                    border-radius: 6px; padding: 8px; text-align: center; 
-                    color: {text_color}; font-weight: {font_weight}; 
-                    font-size: 13px; margin-top: -42px;'>
-                    {tab_info['icon']} {tab_name}
-                    </div>""",
-                    unsafe_allow_html=True
-                )
+    # Create tabs
+    tabs = st.tabs(tab_labels)
+    
+    # Store which tab is active based on index
+    for idx, tab in enumerate(tabs):
+        with tab:
+            # This just marks which tab is currently visible
+            if idx == tabs_list.index(selected_tab) if selected_tab in tabs_list else 0:
+                pass  # Content will be rendered separately
     
     return selected_tab
 
@@ -233,19 +224,17 @@ def scene_access():
     """
     
     # ============================================================================
-    # HEADER WITH DATA FRESHNESS
+    # PAGE TITLE
     # ============================================================================
     
-    header_col1, header_col2 = st.columns([3, 1])
-    with header_col1:
-        st.markdown("## 🗺️ Access & Coverage")
-    with header_col2:
-        st.markdown(
-            f"<div style='text-align: right; color: #6b7280; font-size: 0.85rem;'>"
-            f"📅 Last refreshed: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    st.markdown("## 🗺️ Access & Coverage")
+    st.markdown(
+        f"<div style='color: #6b7280; font-size: 0.85rem; margin-bottom: 16px;'>"
+        f"<span class='granularity-badge granularity-annual'>Annual</span> "
+        f"<span style='margin-left: 8px;'>Zone-level water and sanitation access metrics</span>"
+        f"</div>",
+        unsafe_allow_html=True
+    )
     
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
@@ -379,88 +368,30 @@ def scene_access():
     # --- Header Section ---
     header_container = st.container()
     
-    # Get user access restrictions for filtering
-    try:
-        from auth import get_current_user, UserRole, get_allowed_countries
-        user = get_current_user()
-        allowed_countries = get_allowed_countries()
-        is_master_user = user is not None and user.role == UserRole.MASTER_USER
-    except ImportError:
-        user = None
-        allowed_countries = []
-        is_master_user = True  # Default to no restrictions if auth not available
+    # --- Standardized Filters (AUDC Dictionary Compliant) ---
+    filters = render_standardized_filters(
+        df=df_water,
+        page="access",
+        key_prefix="access",
+        country_col="country",
+        zone_col="zone",
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=False  # Access data is Annual/Quarterly
+    )
     
-    # Filters Row
-    filt_c1, filt_c2, filt_c3, filt_c4 = st.columns([2, 2, 2, 2])
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    selected_month = get_month_number(filters.get('month', 'All'))
+    if selected_month is None:
+        selected_month = 'All'
     
-    with filt_c1:
-        st.markdown("<label style='font-size: 12px; font-weight: 600; color: #374151;'>View Period</label>", unsafe_allow_html=True)
-        view_type = st.radio("View Period", ["Annual", "Quarterly"], horizontal=True, label_visibility="collapsed", key="view_type_toggle")
-        
-    with filt_c2:
-        # Country Filter - Restricted based on user access
-        if is_master_user:
-            countries = ['All'] + sorted(df_water['country'].unique().tolist()) if 'country' in df_water.columns else ['All']
-        else:
-            # Non-master users can only see their assigned country
-            countries = allowed_countries if allowed_countries else ['All']
-        
-        # Try to get default from session state if available
-        default_country_idx = 0
-        if "selected_country" in st.session_state:
-            validated_country = validate_selected_country(st.session_state.selected_country)
-            if validated_country in countries:
-                default_country_idx = countries.index(validated_country)
-        
-        # Check if country selector should be locked
-        is_country_locked = not is_master_user and len(countries) == 1
-        
-        if is_country_locked:
-            # Show locked indicator
-            st.markdown(f"""
-            <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
-                        padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-top: 24px;'>
-                <span style='font-size: 1rem;'>🔒</span>
-                <span style='font-weight: 600; color: #334155;'>{countries[0]}</span>
-            </div>
-            """, unsafe_allow_html=True)
-            selected_country = countries[0]
-        else:
-            selected_country = st.selectbox("Country", countries, index=default_country_idx, key="access_country_select")
-            # Validate the selection
-            selected_country = validate_selected_country(selected_country)
-        
-    with filt_c3:
-        # Zone Filter (dependent on country) - case-insensitive
-        if selected_country != 'All':
-            zones = ['All'] + sorted(df_water[df_water['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
-        else:
-            zones = ['All'] + sorted(df_water['zone'].unique().tolist())
-            
-        default_zone_idx = 0
-        if "selected_zone" in st.session_state and st.session_state.selected_zone in zones:
-            default_zone_idx = zones.index(st.session_state.selected_zone)
-            
-        selected_zone = st.selectbox("Zone/City", zones, index=default_zone_idx, key="access_zone_select")
-        
-    with filt_c4:
-        # Year Filter
-        years = sorted(df_water['year'].unique().tolist(), reverse=True)
-        default_year_idx = 0
-        if "selected_year" in st.session_state and st.session_state.selected_year in years:
-            default_year_idx = years.index(st.session_state.selected_year)
-            
-        selected_year = st.selectbox("Year", years, index=default_year_idx, key="access_year_select")
-
-    # Map month name to number (for Service Data)
-    selected_month_name = st.session_state.get("selected_month", "All")
-    month_map = {
-        'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-        'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
-    }
-    selected_month = month_map.get(selected_month_name) if selected_month_name != 'All' else 'All'
-
-    # --- Apply Filters (case-insensitive for country/zone) ---
+    # --- Apply Filters using standardized helper ---
     # Helper function for safe year filtering
     def _safe_year_filter(df, year_col, year_value):
         if year_value is None or df.empty or year_col not in df.columns:
@@ -471,33 +402,11 @@ def scene_access():
         except (ValueError, TypeError):
             return df[df[year_col] == year_value]
 
-    # Water Data
-    df_w_filt = df_water.copy()
-    if selected_country != 'All': df_w_filt = df_w_filt[df_w_filt['country'].str.lower() == selected_country.lower()]
-    if selected_zone != 'All': df_w_filt = df_w_filt[df_w_filt['zone'].str.lower() == selected_zone.lower()]
-    if selected_year: df_w_filt = _safe_year_filter(df_w_filt, 'year', selected_year)
-
-    # Sewer Data
-    df_s_filt = df_sewer.copy()
-    if selected_country != 'All': df_s_filt = df_s_filt[df_s_filt['country'].str.lower() == selected_country.lower()]
-    if selected_zone != 'All': df_s_filt = df_s_filt[df_s_filt['zone'].str.lower() == selected_zone.lower()]
-    if selected_year: df_s_filt = _safe_year_filter(df_s_filt, 'year', selected_year)
-
-    # Service Data (Monthly)
-    df_svc_filt = df_service.copy()
-    if selected_country != 'All': df_svc_filt = df_svc_filt[df_svc_filt['country'].str.lower() == selected_country.lower()]
-    if selected_zone != 'All': df_svc_filt = df_svc_filt[df_svc_filt['zone'].str.lower() == selected_zone.lower()]
-    if selected_year: df_svc_filt = _safe_year_filter(df_svc_filt, 'year', selected_year)
-    if selected_month != 'All': df_svc_filt = df_svc_filt[df_svc_filt['month'] == selected_month]
-
-    # Financial Data (for Pro-Poor)
-    df_f_filt = df_fin.copy()
-    if selected_country != 'All' and 'country' in df_f_filt.columns:
-        df_f_filt = df_f_filt[df_f_filt['country'].str.lower() == selected_country.lower()]
-    if 'year' in df_f_filt.columns and selected_year:
-        df_f_filt = _safe_year_filter(df_f_filt, 'year', selected_year)
-    if selected_month != 'All' and 'month' in df_f_filt.columns:
-        df_f_filt = df_f_filt[df_f_filt['month'] == selected_month]
+    # Apply filters to all datasets
+    df_w_filt = apply_standard_filters(df_water, filters, year_col='year')
+    df_s_filt = apply_standard_filters(df_sewer, filters, year_col='year')
+    df_svc_filt = apply_standard_filters(df_service, filters, year_col='year', month_col='month')
+    df_f_filt = apply_standard_filters(df_fin, filters, year_col='year', month_col='month')
 
     # --- Populate Header with Export Button ---
     with header_container:
@@ -783,19 +692,20 @@ def scene_access():
     piped_water_pct = None  # Placeholder - data not available
     has_piped_data = False  # Flag to indicate data gap
     
-    # Render Scorecard Cards
+    # Render Scorecard Cards with domain-specific styling
     kpi_c1, kpi_c2, kpi_c3, kpi_c4 = st.columns(4)
     
-    # === Card 1: Water Supply Coverage ===
+    # === Card 1: Water Supply Coverage (Water Domain) ===
     with kpi_c1:
         st.markdown(f"""
-        <div class="metric-container">
+        <div class="metric-container scorecard-water">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div>
+                    <div class="domain-pill domain-pill-water" style="margin-bottom: 8px;">💧 Water</div>
                     <div class="metric-label">Water Supply Coverage</div>
-                    <div class="metric-value">{muni_supply_pct:.1f}%</div>
+                    <div class="metric-value metric-value-water">{muni_supply_pct:.1f}%</div>
                 </div>
-                <div style="font-size: 24px;">🚰</div>
+                <div class="domain-icon-water">🚰</div>
             </div>
             <div class="metric-delta">
                 <span class="{'delta-up' if muni_yoy_growth >= 0 else 'delta-down'}">
@@ -807,18 +717,19 @@ def scene_access():
         </div>
         """, unsafe_allow_html=True)
         if water_spark_data:
-            st.plotly_chart(create_sparkline(water_spark_data, "#3b82f6"), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_sparkline(water_spark_data, "#0ea5e9"), use_container_width=True, config={'displayModeBar': False})
     
-    # === Card 2: Sewer Coverage ===
+    # === Card 2: Sewer Coverage (Sanitation Domain) ===
     with kpi_c2:
         st.markdown(f"""
-        <div class="metric-container">
+        <div class="metric-container scorecard-sanitation">
             <div style="display: flex; justify-content: space-between; align-items: start;">
                 <div>
+                    <div class="domain-pill domain-pill-sanitation" style="margin-bottom: 8px;">🚿 Sanitation</div>
                     <div class="metric-label">Sewer Coverage</div>
-                    <div class="metric-value">{sewer_conn_pct:.1f}%</div>
+                    <div class="metric-value metric-value-sanitation">{sewer_conn_pct:.1f}%</div>
                 </div>
-                <div style="font-size: 24px;">🚽</div>
+                <div class="domain-icon-sanitation">🚽</div>
             </div>
             <div class="metric-delta">
                 <span class="{'delta-up' if sewer_growth >= 0 else 'delta-down'}">
@@ -830,7 +741,7 @@ def scene_access():
         </div>
         """, unsafe_allow_html=True)
         if sewer_spark_data:
-            st.plotly_chart(create_sparkline(sewer_spark_data, "#8b5cf6"), use_container_width=True, config={'displayModeBar': False})
+            st.plotly_chart(create_sparkline(sewer_spark_data, "#14b8a6"), use_container_width=True, config={'displayModeBar': False})
     
     # === Card 3: % Metered Connections (DATA GAP - understated design) ===
     with kpi_c3:
@@ -874,7 +785,16 @@ def scene_access():
     s_ladder_labels = ['Safely Managed', 'Basic', 'Limited', 'Unimproved', 'Open Defecation']
 
     # --- Step 2: The "Ladder" Analysis (Quality of Access) ---
-    st.markdown("<div class='section-header'>🪜 Ladder Analysis <span style='font-size:14px;color:#6b7280;font-weight:400'>| Quality of Access</span></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class='section-header'>
+        🪜 Ladder Analysis 
+        <span style='font-size:14px;color:#6b7280;font-weight:400;margin-left:8px;'>Quality of Access</span>
+        <div style='display:inline-flex;gap:8px;margin-left:16px;'>
+            <span class='domain-pill domain-pill-water'>💧 Water</span>
+            <span class='domain-pill domain-pill-sanitation'>🚿 Sanitation</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Professional controls layout
     with st.container():
