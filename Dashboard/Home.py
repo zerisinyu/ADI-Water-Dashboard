@@ -596,7 +596,6 @@ def _render_overview_banner() -> None:
                     st.selectbox(
                         "Country",
                         options=countries,
-                        index=countries.index(current_country) if current_country in countries else 0,
                         key="header_country_select",
                         label_visibility="collapsed",
                         on_change=on_country_change
