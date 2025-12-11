@@ -136,7 +136,14 @@ def filter_dataframe(df, country, zone, year, month):
         elif "year" in filtered.columns:
              filtered = filtered[filtered["year"] == int(year)]
         elif "date_YY" in filtered.columns: # for national data
-             filtered = filtered[filtered["date_YY"] == int(year)]
+             # Handle 2-digit years (e.g., 23 -> 2023)
+             year_val = int(year)
+             if year_val > 1000:
+                 # Filter year is 4-digit, data is 2-digit
+                 filtered = filtered[filtered["date_YY"] == (year_val - 2000)]
+             else:
+                 # Filter year is 2-digit (unlikely but safe fallback)
+                 filtered = filtered[filtered["date_YY"] == year_val]
         
     if month and month != "All":
         # Map month name to number

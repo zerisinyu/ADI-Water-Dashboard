@@ -85,54 +85,87 @@ def _render_llm_error(exc: Exception) -> None:
     
     # Check for common configuration issues
     provider = (_get_secret_value("LLM_PROVIDER") or "gemini").lower()
-    key = _get_secret_value("GEMINI_API_KEY") or _get_secret_value("GOOGLE_API_KEY")
-    key_present = bool(key)
+    
+    if provider == "grok":
+        key = _get_secret_value("GROK_API_KEY") or _get_secret_value("XAI_API_KEY")
+        model = _get_secret_value("MODEL_ID") or "grok-beta"
+    else:
+        key = _get_secret_value("GEMINI_API_KEY") or _get_secret_value("GOOGLE_API_KEY")
+        model = _get_secret_value("MODEL_ID") or "gemini-1.5-flash"
+        
+    key_present = bool(key) and "your_api_key_here" not in (key or "") and "your_key_here" not in (key or "")
 
     # Show user-friendly error message
     if not key_present:
-        st.warning("⚠️ **MajiBot AI is not configured**\n\nTo enable the AI assistant, please configure your Gemini API key in the environment variables or Streamlit secrets.")
-    elif "leaked" in error_msg.lower() or "403" in error_msg:
-        st.error("🔐 **API Key Revoked**\n\nYour Gemini API key has been reported as leaked and disabled by Google. Please generate a new API key from [Google AI Studio](https://aistudio.google.com/app/apikey) and update your secrets.toml file.")
-    elif "API" in error_msg or "key" in error_msg.lower():
-        st.warning("⚠️ **MajiBot AI Configuration Error**\n\nThere was an issue with the API key. Please verify your Gemini API key is valid.")
-    else:
+        if key and ("your_api_key_here" in key or "your_key_here" in key):
+             st.warning(f"⚠️ **MajiBot AI Configuration Incomplete**\n\nThe API key is still set to the placeholder value. Please replace it with your actual {provider} API key.")
+        elif provider == "grok":
+            st.warning("⚠️ **MajiBot AI is not configured**\n\nTo enable the AI assistant with Grok, please configure your `GROK_API_KEY` in the environment variables or Streamlit secrets.")
+        else:
+            st.warning("⚠️ **MajiBot AI is not configured**\n\nTo enable the AI assistant, please configure your Gemini API key in the environment variables or Streamlit secrets.")
+    elif error_msg and ("leaked" in error_msg.lower() or "403" in error_msg):
+         st.error("🔐 **API Key Check Failed**\n\nThe API key appears to be invalid or revoked. Please check your configuration.")
+    elif error_msg and ("API" in error_msg or "key" in error_msg.lower()):
+        st.warning(f"⚠️ **MajiBot AI Configuration Error**\n\nThere was an issue with the API key for {provider}. Please verify it is valid.\n\n**Error Details:** {error_msg}")
+    elif error_msg:
         st.error(f"⚠️ **MajiBot Error**: {error_msg[:200]}")
 
     # Diagnostics in expander (for debugging)
     with st.expander("🔧 Diagnostics (for administrators)"):
-        model = _get_secret_value("MODEL_ID") or "gemini-2.5-flash"
         
-        try:
-            import google.generativeai as genai
-            sdk_ok = True
-            sdk_version = getattr(genai, "__version__", "?")
-        except Exception:
-            sdk_ok = False
-            sdk_version = None
+        sdk_status = {}
+        if provider == "grok":
+            try:
+                import openai
+                sdk_status["openai_installed"] = True
+                sdk_status["openai_version"] = getattr(openai, "__version__", "?")
+            except Exception:
+                sdk_status["openai_installed"] = False
+        else:
+            try:
+                import google.generativeai as genai
+                sdk_status["google-generativeai_installed"] = True
+                sdk_status["google-generativeai_version"] = getattr(genai, "__version__", "?")
+            except Exception:
+                sdk_status["google-generativeai_installed"] = False
 
-        st.write({
+        diag_info = {
             "provider": provider,
             "model": model,
             "api_key_configured": key_present,
-            "google-generativeai_installed": sdk_ok,
-            "google-generativeai_version": sdk_version,
-        })
+        }
+        diag_info.update(sdk_status)
+        st.write(diag_info)
         
         st.markdown("**To fix this:**")
-        st.markdown("""
-        1. Create a `.env` file in the Dashboard folder with:
-           ```
-           GEMINI_API_KEY=your_api_key_here
-           ```
-        2. Or set the environment variable before running:
-           ```
-           export GEMINI_API_KEY=your_api_key_here
-           ```
-        3. Or add to Streamlit secrets (`.streamlit/secrets.toml`):
-           ```
-           GEMINI_API_KEY = "your_api_key_here"
-           ```
-        """)
+        
+        if provider == "grok":
+            st.markdown("""
+            1. Add to `.env` or `.streamlit/secrets.toml`:
+               ```
+               LLM_PROVIDER = "grok"
+               GROK_API_KEY = "your_key_here"
+               ```
+            2. Ensure `openai` package is installed:
+               ```
+               pip install openai
+               ```
+            """)
+        else:
+            st.markdown("""
+            1. Create a `.env` file in the Dashboard folder with:
+               ```
+               GEMINI_API_KEY=your_api_key_here
+               ```
+            2. Or set the environment variable before running:
+               ```
+               export GEMINI_API_KEY=your_api_key_here
+               ```
+            3. Or add to Streamlit secrets (`.streamlit/secrets.toml`):
+               ```
+               GEMINI_API_KEY = "your_api_key_here"
+               ```
+            """)
 
 
 def _inject_styles() -> None:

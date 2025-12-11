@@ -257,6 +257,10 @@ def scene_production():
             df_prod['month'] = df_prod['date_dt'].dt.month.astype('Int64')
             df_prod['day'] = df_prod['date_dt'].dt.day.astype('Int64')
         
+        # Clean zone column to ensure matching works
+        if 'zone' in df_prod.columns:
+            df_prod['zone'] = df_prod['zone'].astype(str).str.strip()
+
         # Apply access control filtering
         df_prod = filter_df_by_user_access(df_prod, "country")
     else:
@@ -275,7 +279,7 @@ def scene_production():
         zone_col="zone",
         year_col="year",
         show_period=True,
-        show_zone=True,
+        show_zone=False, # We use a custom multiselect for zone on this page
         show_year=True,
         show_month=True  # Production data is Monthly/Daily
     )

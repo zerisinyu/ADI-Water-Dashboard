@@ -141,19 +141,20 @@ class ChatLLM:
     def __init__(self, cfg: Optional[LLMConfig] = None):
         self.cfg = cfg or LLMConfig(
             provider=_get_secret("LLM_PROVIDER", "gemini") or "gemini",
-            model=_get_secret("MODEL_ID", "gemini-2.5-flash") or "gemini-2.5-flash",
+            model=_get_secret("MODEL_ID", "gemini-1.5-flash") or "gemini-1.5-flash",
             temperature=float(_get_secret("TEMPERATURE", "0.2") or 0.2),
             max_tokens=int(_get_secret("MAX_TOKENS", "512") or 512),
         )
 
         self.provider = (self.cfg.provider or "gemini").lower()
-        if self.provider != "gemini":
+        if self.provider not in ["gemini", "grok"]:
             raise LLMNotConfiguredError(
-                f"Unsupported LLM_PROVIDER '{self.provider}'. Supported: 'gemini'."
+                f"Unsupported LLM_PROVIDER '{self.provider}'. Supported: 'gemini', 'grok'."
             )
 
-        # Lazy init for Gemini model
+        # Lazy init for providers
         self._gemini_model = None
+        self._grok_client = None
 
     # ---------------- Gemini helpers ----------------
     def _ensure_gemini(self):
@@ -165,9 +166,18 @@ class ChatLLM:
             raise LLMNotConfiguredError(
                 "Missing GEMINI_API_KEY or GOOGLE_API_KEY in st.secrets or environment."
             )
+        
+        # Sanitize key (remove whitespace and quotes)
+        api_key = str(api_key).strip().strip('"').strip("'")
+        
+        # Check for placeholder values
+        if "your_api_key_here" in api_key or "your_key_here" in api_key:
+            raise LLMNotConfiguredError(
+                "API key is still set to placeholder 'your_api_key_here'. Please configure a valid API key."
+            )
         try:
             import google.generativeai as genai  # type: ignore
-
+            
             genai.configure(api_key=api_key)
         except Exception as e:  # pragma: no cover
             raise LLMNotConfiguredError(
@@ -191,6 +201,33 @@ class ChatLLM:
             },
         )
         return self._gemini_model
+
+    def _ensure_grok(self):
+        if self._grok_client is not None:
+            return self._grok_client
+            
+        api_key = _get_secret("GROK_API_KEY") or _get_secret("XAI_API_KEY")
+        if not api_key:
+            raise LLMNotConfiguredError(
+                "Missing GROK_API_KEY in st.secrets or environment."
+            )
+        
+        # Sanitize key
+        api_key = str(api_key).strip().strip('"').strip("'")
+        try:
+            import openai
+            self._grok_client = openai.OpenAI(
+                api_key=api_key,
+                base_url="https://api.x.ai/v1",
+            )
+        except ImportError:
+            raise LLMNotConfiguredError(
+                "OpenAI SDK not installed. Add 'openai' to requirements.txt."
+            )
+        except Exception as e:
+            raise LLMNotConfiguredError(f"Failed to initialize Grok client: {e}")
+            
+        return self._grok_client
 
     # ---------------- Internal transform ----------------
     @staticmethod
@@ -244,7 +281,23 @@ class ChatLLM:
                 resp = mdl.generate_content(contents)
                 return (getattr(resp, "text", None) or "").strip()
             except Exception as e:
+                print(e)
                 raise LLMNotConfiguredError(str(e))
+        
+        elif self.provider == "grok":
+            client = self._ensure_grok()
+            # Convert messages: just pass through, system message is supported by Grok/OpenAI
+            try:
+                response = client.chat.completions.create(
+                    model=model or self.cfg.model,
+                    messages=messages,
+                    temperature=temperature if temperature is not None else self.cfg.temperature,
+                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
+                )
+                return response.choices[0].message.content or ""
+            except Exception as e:
+                raise LLMNotConfiguredError(str(e))
+                
         raise LLMNotConfiguredError("No supported provider configured")
 
     def stream_chat(
@@ -360,6 +413,26 @@ class ChatLLM:
                         yield f"I encountered an error: {str(e)[:100]}. Please try again."
                     return
             return
+        
+        elif self.provider == "grok":
+            client = self._ensure_grok()
+            try:
+                stream = client.chat.completions.create(
+                    model=model or self.cfg.model,
+                    messages=messages,
+                    temperature=temperature if temperature is not None else self.cfg.temperature,
+                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
+                    stream=True
+                )
+                
+                for chunk in stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        yield content
+            except Exception as e:
+                yield f"I encountered an error: {str(e)[:100]}. Please try again."
+            return
+
         raise LLMNotConfiguredError("No supported provider configured")
 
     # ---------------- Utilities ----------------

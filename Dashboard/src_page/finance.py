@@ -412,7 +412,8 @@ def scene_finance():
 
     # Add year column to national_df if not present
     if 'year' not in national_df.columns and 'date_YY' in national_df.columns:
-        national_df['year'] = national_df['date_YY']
+        # Convert 2-digit year to 4-digit year (e.g. 23 -> 2023, but leave 2023 as 2023)
+        national_df['year'] = national_df['date_YY'].apply(lambda x: x + 2000 if x < 100 else x)
     
     # Standardized Filters
     filters = render_standardized_filters(
@@ -452,7 +453,13 @@ def scene_finance():
 
     # Year filter
     if selected_year:
-        national_filtered = national_filtered[national_filtered['date_YY'] == selected_year]
+        # Filter using the standardized 4-digit 'year' column we created
+        if 'year' in national_filtered.columns:
+             national_filtered = national_filtered[national_filtered['year'] == selected_year]
+        elif 'date_YY' in national_filtered.columns:
+             # Fallback if year column missing (shouldn't happen due to logic above)
+             target_yy = selected_year - 2000 if selected_year > 2000 else selected_year
+             national_filtered = national_filtered[national_filtered['date_YY'] == target_yy]
         if 'year' in fin_service_filtered.columns:
             fin_service_filtered = fin_service_filtered[fin_service_filtered['year'] == selected_year]
 
