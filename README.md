@@ -1,12 +1,11 @@
 # Water Utility Performance Dashboard 
-By Applied Data 25', Equitech Futures
 
-🔗 [**Demo link**](https://adi-water-dashboard.streamlit.app)
+🔗 [**Demo link**](https://adi-water-dashboard.streamlit.app)(It might take a long time to install some heavy packages)
 
 ## 🌍 Overview
 This repository hosts the **Water Utility Performance Dashboard**, a comprehensive suite of tools designed to monitor, analyze, and improve water and sanitation services. The platform combines secure role-based dashboards, AI-powered insights, and ad-hoc visualization tools to support decision-making at national, city, and zone levels.
 
-It is also a capstone group project collaborated with [Athena Infonomics](https://www.athenainfonomics.com) & Africa Utility Data Collaborative (AUDC), done by Fusion 4, a team from Applied Data Institute 2025, [Equitech Futures](https://www.equitechfutures.com/programs/adi).  
+It is also a capstone group project collaborated with [Athena Infonomics](https://www.athenainfonomics.com) & Africa Utility Data Collaborative (AUDC), done by Fusion 4, a team from Applied Data Institute 25' cohort, [Equitech Futures](https://www.equitechfutures.com/programs/adi).  
 
 ## 📂 Repository Structure
 
