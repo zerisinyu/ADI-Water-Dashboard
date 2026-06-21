@@ -1,0 +1,19 @@
+__pycache__
+my-react-app
+templates
+Homeworks
+Outputs
+*.pyc
+visualize.ipynb
+Dashboard/.env
+.env
+Dashboard/.env
+Dashboard/.streamlit/secrets.toml
+
+# Local tooling / virtualenv / OS cruft
+.claude/
+venv/
+.venv/
+.DS_Store
+*.DS_Store
+

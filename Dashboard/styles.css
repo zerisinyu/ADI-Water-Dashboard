@@ -1,0 +1,2095 @@
+/* =============================================================================
+ * ADI Water Dashboard — Design system
+ *
+ * Aesthetic: Stripe / Notion — neutral surfaces, hairline borders, disciplined
+ * typography, a single brand accent reserved for primary actions and selected
+ * states. Inline icons via Material Symbols (no decorative emoji in chrome).
+ * Domain colors (water / sanitation) live inside charts, never in the chrome.
+ *
+ * Sections:
+ *   1. Reset & Streamlit base resets
+ *   2. Design tokens
+ *   3. Typography
+ *   4. Icons
+ *   5. Layout primitives
+ *   6. Components
+ *   7. Streamlit overrides
+ *   8. Tables
+ *   9. Form controls
+ *  10. Sidebar
+ *  11. Login page
+ *  12. Chat / FAB / dialog
+ *  13. Responsive
+ * ============================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400..600,0..1,-25..0&display=swap');
+
+
+/* ---------- 1. Reset & Streamlit base ----------------------------------- */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html, body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+/* Streamlit padding tightening — give us more usable canvas. */
+.stApp .block-container {
+    max-width: 1440px;
+    padding-top: 1rem;
+    padding-bottom: 3rem;
+    padding-left: 2.25rem;
+    padding-right: 2.25rem;
+}
+
+/* Hide the default Streamlit "Made with Streamlit" footer & menu */
+footer, #MainMenu { visibility: hidden; }
+
+
+/* ---------- 2. Design tokens -------------------------------------------- */
+
+:root {
+    /* Brand */
+    --brand:           #0071e3;
+    --brand-soft:      rgba(0, 113, 227, 0.08);
+    --brand-strong:    #0058b8;
+    --brand-ring:      rgba(0, 113, 227, 0.18);
+
+    /* Surfaces — Stripe-style: cool near-white sunken, pure white surface */
+    --surface:         #ffffff;
+    --surface-sunken:  #f6f8fb;
+    --surface-muted:   #f9fafc;
+    --surface-overlay: rgba(15, 23, 42, 0.32);
+
+    /* Borders & dividers — slightly cool greys, hairline weight */
+    --border:          #e4e9f1;
+    --border-strong:   #cdd5e2;
+    --divider:         #eef1f6;
+
+    /* Text — Stripe-style cool slates */
+    --text-primary:    #0f1729;
+    --text-secondary:  #525f7f;
+    --text-tertiary:   #8792a3;
+    --text-on-brand:   #ffffff;
+
+    /* Semantic */
+    --success:         #0e7e51;
+    --success-soft:    rgba(14, 126, 81, 0.10);
+    --warning:         #b06000;
+    --warning-soft:    rgba(176, 96, 0, 0.10);
+    --danger:          #b3261e;
+    --danger-soft:     rgba(179, 38, 30, 0.10);
+    --info:            #0058b8;
+    --info-soft:       rgba(0, 88, 184, 0.08);
+
+    /* Chart-only data colors (do not use in chrome) */
+    --data-water:        #0071e3;
+    --data-sanitation:   #00c1d4;
+
+    /* Type scale */
+    --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+    --font-mono:    'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Roboto Mono', monospace;
+
+    --text-display: 28px;
+    --text-h1:      20px;
+    --text-h2:      15px;
+    --text-body:    14px;
+    --text-caption: 12px;
+    --text-eyebrow: 11px;
+
+    --leading-tight:  1.2;
+    --leading-snug:   1.4;
+    --leading-normal: 1.5;
+
+    /* Spacing scale (4px base) */
+    --space-1:  4px;
+    --space-2:  8px;
+    --space-3:  12px;
+    --space-4:  16px;
+    --space-5:  20px;
+    --space-6:  24px;
+    --space-8:  32px;
+    --space-10: 40px;
+    --space-12: 48px;
+
+    /* Radius */
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-full: 9999px;
+
+    /* Shadow — restrained */
+    --shadow-card:     0 1px 2px rgba(15, 23, 42, 0.04);
+    --shadow-elevated: 0 4px 12px rgba(15, 23, 42, 0.06);
+    --shadow-overlay:  0 16px 40px rgba(15, 23, 42, 0.12);
+
+    /* Motion */
+    --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+    --duration-1:  120ms;
+    --duration-2:  180ms;
+}
+
+
+/* ---------- 3. Typography ----------------------------------------------- */
+
+html, body, .stApp, [data-testid="stAppViewContainer"] {
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    color: var(--text-primary);
+    background: var(--surface-sunken);
+}
+
+.stMarkdown, .stMarkdown p {
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--leading-normal);
+    color: var(--text-primary);
+}
+
+h1, h2, h3, h4, h5, h6,
+.stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+    font-family: var(--font-sans);
+    color: var(--text-primary);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: var(--leading-tight);
+    margin: 0 0 var(--space-3);
+}
+
+h1, .stMarkdown h1 { font-size: var(--text-display); letter-spacing: -0.02em; font-weight: 600; }
+h2, .stMarkdown h2 { font-size: var(--text-h1);      letter-spacing: -0.015em; }
+h3, .stMarkdown h3 { font-size: var(--text-h2);      letter-spacing: -0.005em; }
+h4, h5, h6,
+.stMarkdown h4 { font-size: var(--text-body); font-weight: 600; }
+
+a, .stMarkdown a {
+    color: var(--brand);
+    text-decoration: none;
+    transition: color var(--duration-1) var(--ease);
+}
+
+a:hover, .stMarkdown a:hover {
+    color: var(--brand-strong);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+code, .stMarkdown code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    padding: 0.05em 0.4em;
+    border-radius: var(--radius-xs);
+    color: var(--text-primary);
+}
+
+/* Utility text classes */
+.text-eyebrow {
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.text-caption {
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.text-mono-num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+
+
+/* ---------- 4. Icons --------------------------------------------------- */
+
+/*
+ * Material Symbols (Rounded). Use via either:
+ *   <span class="icon">trending_up</span>          — default 18px
+ *   <span class="icon icon-sm">check</span>        — 14px
+ *   <span class="icon icon-lg">water_drop</span>   — 22px
+ * The `--icon-fill` variable supports filled vs outlined per-instance.
+ */
+.icon,
+.material-symbols-rounded {
+    font-family: 'Material Symbols Rounded';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings:
+        'FILL' var(--icon-fill, 0),
+        'wght' var(--icon-wght, 400),
+        'GRAD' 0,
+        'opsz' 20;
+    vertical-align: -3px;
+    color: inherit;
+}
+
+.icon-sm   { font-size: 14px; vertical-align: -2px; font-variation-settings: 'FILL' var(--icon-fill, 0), 'wght' var(--icon-wght, 400), 'GRAD' 0, 'opsz' 20; }
+.icon-lg   { font-size: 22px; vertical-align: -4px; }
+.icon-xl   { font-size: 32px; vertical-align: -6px; font-variation-settings: 'FILL' var(--icon-fill, 0), 'wght' var(--icon-wght, 400), 'GRAD' 0, 'opsz' 24; }
+.icon-fill { --icon-fill: 1; }
+.icon-brand   { color: var(--brand); }
+.icon-success { color: var(--success); }
+.icon-warning { color: var(--warning); }
+.icon-danger  { color: var(--danger); }
+.icon-muted   { color: var(--text-tertiary); }
+
+
+/* ---------- 5. Layout primitives ---------------------------------------- */
+
+.shell {
+    width: 100%;
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 0;
+}
+
+.section {
+    margin-bottom: var(--space-8);
+}
+
+.divider {
+    border: 0;
+    border-top: 1px solid var(--divider);
+    margin: var(--space-6) 0;
+}
+
+/* Override Streamlit's hr to use our divider style */
+hr, .stMarkdown hr {
+    border: 0 !important;
+    border-top: 1px solid var(--divider) !important;
+    margin: var(--space-5) 0 !important;
+}
+
+
+/* ---------- 6. Components ----------------------------------------------- */
+
+/* Card — neutral surface, hairline border, no shadow by default. */
+.card,
+.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-5);
+    margin-bottom: var(--space-4);
+    transition: border-color var(--duration-2) var(--ease);
+}
+
+.card:hover,
+.panel:hover {
+    border-color: var(--border-strong);
+}
+
+.panel h3 {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 0;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
+}
+
+.card--elevated {
+    box-shadow: var(--shadow-card);
+}
+
+.card--quiet {
+    background: var(--surface-muted);
+    border-color: var(--divider);
+}
+
+/* Page header — appears at the top of every scene */
+.page-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-2) 0 var(--space-5);
+    margin-bottom: var(--space-5);
+    border-bottom: 1px solid var(--divider);
+}
+
+.page-header__row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.page-header__main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.page-header__eyebrow {
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+}
+
+.page-header__title {
+    font-size: var(--text-display);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1.15;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.page-header__icon {
+    flex-shrink: 0;
+}
+
+.page-header__subtitle {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.page-header__meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+    color: var(--text-secondary);
+    font-size: var(--text-caption);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+}
+
+.page-header__meta-time {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.page-header__meta-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--success);
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.page-header__badges {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: var(--space-1);
+}
+
+/* Section header — between sub-sections inside a page */
+.section-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--divider);
+}
+
+.section-header__lead {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.section-header__title {
+    font-size: var(--text-h1);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.section-header__icon {
+    flex-shrink: 0;
+}
+
+.section-header__eyebrow {
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-1);
+}
+
+.section-header__meta {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+/* KPI cards — single canonical pattern */
+.kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-5);
+}
+
+.kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4) var(--space-5);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    transition: border-color var(--duration-2) var(--ease), background-color var(--duration-2) var(--ease);
+}
+
+.kpi-card:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-muted);
+}
+
+.kpi-card__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.kpi-card__icon {
+    color: var(--text-tertiary);
+    flex-shrink: 0;
+    font-size: 18px;
+}
+
+.kpi-card__label {
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    line-height: 1.2;
+}
+
+.kpi-card__value {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+
+.kpi-card__spark {
+    width: 100%;
+    max-width: 100px;
+    height: 22px;
+    margin-top: 2px;
+    color: var(--brand);
+    overflow: visible;
+}
+
+.kpi-card__delta {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi-card__delta--positive { color: var(--success); }
+.kpi-card__delta--negative { color: var(--danger); }
+.kpi-card__delta--neutral  { color: var(--text-secondary); }
+
+.kpi-card__footnote {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+}
+
+/* Chart card — wraps a Plotly figure. Header is plain hierarchy text;
+   the white separator below it was visual noise, removed. */
+/* Chart-card: header-only pairing. Streamlit wraps each st.markdown call in
+   its own element-container, so a true wrapping <div class="chart-card"> can't
+   span the chart that follows. Instead we render a flat header that floats
+   above the chart with shared margins — no box, no white background. */
+.chart-card {
+    margin-bottom: var(--space-4);
+    background: transparent;
+    border: 0;
+    padding: 0;
+}
+
+.chart-card__header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin: var(--space-3) 0 var(--space-1);
+}
+
+.chart-card__title {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.3;
+}
+
+.chart-card__meta {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+}
+
+.chart-card__footnote {
+    margin-top: var(--space-3);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+}
+
+/* Pills & badges — neutral by default */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 3px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.pill--brand   { background: var(--brand-soft);   color: var(--brand-strong); border-color: rgba(0, 113, 227, 0.18); }
+.pill--success { background: var(--success-soft); color: var(--success);      border-color: rgba(29, 131, 72, 0.18); }
+.pill--warning { background: var(--warning-soft); color: var(--warning);      border-color: rgba(178, 94, 9, 0.18); }
+.pill--danger  { background: var(--danger-soft);  color: var(--danger);       border-color: rgba(179, 38, 30, 0.18); }
+.pill--info    { background: var(--info-soft);    color: var(--info);         border-color: rgba(0, 88, 184, 0.18); }
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--surface-muted);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.badge--success { background: var(--success-soft); color: var(--success); border-color: transparent; }
+.badge--warning { background: var(--warning-soft); color: var(--warning); border-color: transparent; }
+.badge--danger  { background: var(--danger-soft);  color: var(--danger);  border-color: transparent; }
+.badge--brand   { background: var(--brand-soft);   color: var(--brand-strong); border-color: transparent; }
+
+/* Status dot */
+.dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background: var(--text-tertiary);
+    vertical-align: middle;
+    margin-right: var(--space-1);
+}
+
+.dot--good     { background: var(--success); }
+.dot--warning  { background: var(--warning); }
+.dot--danger   { background: var(--danger); }
+.dot--info     { background: var(--info); }
+
+/* Granularity badge */
+.granularity-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--surface-muted);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+/* Domain pill (used inside chart legends, not chrome) */
+.domain-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 8px;
+    border-radius: var(--radius-sm);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+/* Filter bar — page-local filter strip */
+.filter-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-5);
+}
+
+/* Locked indicator (for non-master users restricted to a country) */
+.locked-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: var(--text-body);
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.locked-indicator__hint {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-weight: 400;
+}
+
+/* Empty state */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: var(--space-12) var(--space-6);
+    color: var(--text-secondary);
+}
+
+.empty-state-icon,
+.empty-state__icon {
+    font-size: 36px;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-3);
+    opacity: 0.6;
+}
+
+.empty-state-title,
+.empty-state__title {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-1);
+}
+
+.empty-state-description,
+.empty-state__description {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    max-width: 360px;
+    line-height: var(--leading-snug);
+}
+
+/* Admin · managed-user row */
+.managed-user__name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: var(--text-body);
+    line-height: 1.3;
+}
+.managed-user__handle {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-top: 2px;
+}
+.managed-user__country {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+.managed-user__divider {
+    border: none;
+    border-top: 1px solid var(--divider);
+    margin: 8px 0 12px;
+}
+
+
+/* ---------- 7. Streamlit overrides -------------------------------------- */
+
+/* Native st.metric */
+[data-testid="stMetric"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    transition: border-color var(--duration-2) var(--ease);
+}
+
+[data-testid="stMetric"]:hover {
+    border-color: var(--border-strong);
+}
+
+[data-testid="stMetricLabel"] {
+    font-size: var(--text-eyebrow) !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.08em !important;
+    text-transform: uppercase !important;
+    color: var(--text-secondary) !important;
+}
+
+[data-testid="stMetricValue"] {
+    font-size: 26px !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.02em !important;
+    color: var(--text-primary) !important;
+    font-variant-numeric: tabular-nums !important;
+}
+
+[data-testid="stMetricDelta"] {
+    font-size: var(--text-caption) !important;
+    font-weight: 500 !important;
+    font-variant-numeric: tabular-nums !important;
+}
+
+/* Buttons */
+.stButton > button,
+.stDownloadButton > button,
+[data-testid="stFormSubmitButton"] > button {
+    background: var(--surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 14px;
+    font-size: var(--text-body);
+    font-weight: 500;
+    line-height: 1.4;
+    box-shadow: none;
+    transition: all var(--duration-1) var(--ease);
+}
+
+.stButton > button:hover,
+.stDownloadButton > button:hover,
+[data-testid="stFormSubmitButton"] > button:hover {
+    background: var(--surface-muted);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+}
+
+.stButton > button:focus,
+.stDownloadButton > button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--brand-ring);
+    border-color: var(--brand);
+}
+
+/* Primary / kind="primary" button */
+.stButton > button[kind="primary"],
+[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+    background: var(--brand);
+    color: var(--text-on-brand);
+    border-color: var(--brand);
+}
+
+.stButton > button[kind="primary"]:hover,
+[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover {
+    background: var(--brand-strong);
+    border-color: var(--brand-strong);
+    color: var(--text-on-brand);
+}
+
+/* Tabs */
+[data-baseweb="tab-list"] {
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: transparent;
+    padding: 0;
+}
+
+[data-baseweb="tab"] {
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 10px 16px !important;
+    font-size: var(--text-body) !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+    transition: color var(--duration-1) var(--ease) !important;
+    border-bottom: 2px solid transparent !important;
+    margin-bottom: -1px !important;
+}
+
+[data-baseweb="tab"]:hover {
+    color: var(--text-primary) !important;
+}
+
+[data-baseweb="tab"][aria-selected="true"] {
+    color: var(--brand) !important;
+    border-bottom-color: var(--brand) !important;
+    font-weight: 600 !important;
+}
+
+[data-baseweb="tab-highlight"] { display: none !important; }
+[data-baseweb="tab-border"] { display: none !important; }
+
+[data-baseweb="tab-panel"] {
+    padding-top: var(--space-5);
+}
+
+/* Expander */
+[data-testid="stExpander"] {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: none;
+}
+
+[data-testid="stExpander"] summary {
+    font-size: var(--text-body);
+    font-weight: 500;
+    color: var(--text-primary);
+    padding: var(--space-3) var(--space-4);
+}
+
+[data-testid="stExpander"] summary:hover {
+    background: var(--surface-muted);
+}
+
+/* Alerts — Stripe-style: tinted background + matching border + colored icon */
+[data-testid="stAlert"],
+[data-testid="stNotification"] {
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border);
+    padding: var(--space-3) var(--space-4);
+    font-size: var(--text-body);
+    box-shadow: none;
+    background: var(--surface);
+}
+
+[data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
+    margin: 0;
+    color: var(--text-primary);
+}
+
+/* Streamlit emits alerts with [data-baseweb="notification"] kind variants */
+[data-baseweb="notification"][kind="info"]    { background: var(--info-soft)    !important; border-color: rgba(0, 88, 184, 0.18)   !important; }
+[data-baseweb="notification"][kind="positive"]{ background: var(--success-soft) !important; border-color: rgba(14, 126, 81, 0.18)  !important; }
+[data-baseweb="notification"][kind="warning"] { background: var(--warning-soft) !important; border-color: rgba(176, 96, 0, 0.20)   !important; }
+[data-baseweb="notification"][kind="negative"]{ background: var(--danger-soft)  !important; border-color: rgba(179, 38, 30, 0.18)  !important; }
+
+/* Radio horizontal */
+[role="radiogroup"] {
+    gap: var(--space-2);
+}
+
+div[data-testid="stHorizontalBlock"] {
+    gap: var(--space-4);
+}
+
+/* Plotly charts inside chart cards: trim default Plotly bottom padding */
+[data-testid="stPlotlyChart"] {
+    margin-top: 0;
+}
+
+/* Page link styling */
+[data-testid="stPageLink"] a {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    font-size: var(--text-caption);
+    font-weight: 500;
+    color: var(--text-secondary);
+    transition: all var(--duration-1) var(--ease);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+[data-testid="stPageLink"] a p,
+[data-testid="stPageLink"] a span {
+    color: inherit !important;
+}
+
+[data-testid="stPageLink"] a:hover {
+    background: var(--surface) !important;
+    border-color: var(--border-strong) !important;
+    color: var(--text-primary) !important;
+    text-decoration: none;
+}
+
+[data-testid="stPageLink"] a:hover p,
+[data-testid="stPageLink"] a:hover span {
+    color: var(--text-primary) !important;
+}
+
+
+/* ---------- 8. Tables --------------------------------------------------- */
+
+[data-testid="stDataFrame"],
+[data-testid="stTable"] {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+    font-variant-numeric: tabular-nums;
+}
+
+[data-testid="stDataFrame"] table,
+[data-testid="stTable"] table {
+    font-family: var(--font-sans);
+    font-size: var(--text-caption);
+    color: var(--text-primary);
+    border-collapse: collapse;
+    width: 100%;
+}
+
+[data-testid="stDataFrame"] thead th,
+[data-testid="stTable"] thead th {
+    background: var(--surface-muted);
+    color: var(--text-secondary);
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-2) var(--space-3);
+}
+
+[data-testid="stDataFrame"] tbody td,
+[data-testid="stTable"] tbody td {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--divider);
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+[data-testid="stDataFrame"] tbody tr:hover {
+    background: var(--surface-muted);
+}
+
+
+/* ---------- 9. Form controls -------------------------------------------- */
+
+.stTextInput input,
+.stTextArea textarea,
+.stNumberInput input,
+[data-baseweb="input"] input,
+[data-baseweb="select"] > div,
+[data-baseweb="textarea"] textarea {
+    border-radius: var(--radius-sm) !important;
+    border: 1px solid var(--border) !important;
+    background: var(--surface) !important;
+    font-family: var(--font-sans) !important;
+    font-size: var(--text-body) !important;
+    color: var(--text-primary) !important;
+    transition: border-color var(--duration-1) var(--ease), box-shadow var(--duration-1) var(--ease) !important;
+    box-shadow: none !important;
+}
+
+.stTextInput input:focus,
+.stTextArea textarea:focus,
+.stNumberInput input:focus,
+[data-baseweb="input"] input:focus,
+[data-baseweb="textarea"] textarea:focus {
+    border-color: var(--brand) !important;
+    box-shadow: 0 0 0 3px var(--brand-ring) !important;
+    outline: none !important;
+}
+
+/* Selectbox dropdown */
+[data-baseweb="select"] [role="combobox"] {
+    min-height: 38px;
+    font-size: var(--text-body);
+}
+
+/* Labels for inputs */
+.stTextInput label,
+.stTextArea label,
+.stNumberInput label,
+.stSelectbox label,
+.stMultiSelect label,
+.stRadio label,
+.stDateInput label,
+.stTimeInput label {
+    font-size: var(--text-caption) !important;
+    font-weight: 500 !important;
+    color: var(--text-secondary) !important;
+    margin-bottom: var(--space-1) !important;
+}
+
+/* File uploader */
+[data-testid="stFileUploader"] section {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    background: var(--surface-muted);
+    padding: var(--space-5);
+    transition: border-color var(--duration-1) var(--ease);
+}
+
+[data-testid="stFileUploader"] section:hover {
+    border-color: var(--brand);
+}
+
+
+/* ---------- 10. Sidebar -------------------------------------------------- */
+
+/* User identity card inside the sidebar — flat, no border. Matches the
+   tone of the sidebar nav links rather than competing as a separate panel. */
+.user-card {
+    padding: var(--space-2) var(--space-2);
+    margin: 0 0 var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    border-top: 1px solid var(--divider);
+    padding-top: var(--space-3);
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] [data-testid="stVerticalBlock"] {
+    gap: 0.4rem;
+}
+
+.user-card__row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.user-card__avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-full);
+    background: var(--surface-muted);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: -0.01em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+}
+
+.user-card__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.user-card__name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.005em;
+}
+
+.user-card__role {
+    font-size: var(--text-eyebrow);
+    color: var(--text-tertiary);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.user-card__scope {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+}
+
+[data-testid="stSidebar"] {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    min-width: 264px !important;
+    max-width: 264px !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    padding: var(--space-3) var(--space-3) var(--space-5);
+}
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: var(--space-4) 0 var(--space-2);
+}
+
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {
+    font-size: var(--text-body);
+    color: var(--text-primary);
+}
+
+/* ----- Streamlit's auto-generated multi-page nav -----
+ * Streamlit renders this as [data-testid="stSidebarNav"]. We want it to read
+ * as a real product nav: dense, sectioned, with a clear active state and a
+ * left accent rail.
+ */
+
+[data-testid="stSidebarNav"] {
+    background: transparent;
+    padding: 2px 0 var(--space-2);
+    margin: 0 -4px var(--space-2);
+    border-bottom: none;
+}
+
+[data-testid="stSidebarNav"]::before {
+    content: "Navigation";
+    display: block;
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding: 4px 12px 6px;
+}
+
+[data-testid="stSidebarNav"] ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+[data-testid="stSidebarNav"] li {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+[data-testid="stSidebarNav"] a,
+[data-testid="stSidebarNav"] li a {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px 7px 14px;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    line-height: 1.3;
+    transition: background-color var(--duration-1) var(--ease),
+                color var(--duration-1) var(--ease);
+    text-decoration: none;
+}
+
+/* Inline Material Symbols icons per nav item.
+ * Streamlit's auto-generated multi-page nav has no icon hook, so we use
+ * `::after` (placed before the label via `order: -1`) and target by
+ * `href` substring. Pages with new slugs need a new selector below.
+ */
+[data-testid="stSidebarNav"] a::after {
+    font-family: 'Material Symbols Rounded';
+    font-weight: normal;
+    font-style: normal;
+    font-size: 18px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    white-space: nowrap;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    order: -1;
+    color: var(--text-tertiary);
+    width: 18px;
+    text-align: center;
+    flex: 0 0 auto;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+[data-testid="stSidebarNav"] a[href$="/"]::after,
+[data-testid="stSidebarNav"] a[href$="Home"]::after,
+[data-testid="stSidebarNav"] a:first-child::after { content: "home"; }
+[data-testid="stSidebarNav"] a[href*="Access"]::after { content: "public"; }
+[data-testid="stSidebarNav"] a[href*="Service_Quality"]::after,
+[data-testid="stSidebarNav"] a[href*="Service%20Quality"]::after { content: "water_drop"; }
+[data-testid="stSidebarNav"] a[href*="Financial_Health"]::after,
+[data-testid="stSidebarNav"] a[href*="Financial%20Health"]::after { content: "payments"; }
+[data-testid="stSidebarNav"] a[href*="Production"]::after { content: "factory"; }
+[data-testid="stSidebarNav"] a[href*="Admin_Settings"]::after,
+[data-testid="stSidebarNav"] a[href*="Admin%20Settings"]::after { content: "settings"; }
+[data-testid="stSidebarNav"] a[href*="Forecasting"]::after { content: "trending_up"; }
+[data-testid="stSidebarNav"] a[aria-current="page"]::after { color: var(--brand); }
+
+[data-testid="stSidebarNav"] a span,
+[data-testid="stSidebarNav"] li a span {
+    font-size: 13.5px;
+    color: inherit;
+}
+
+[data-testid="stSidebarNav"] a:hover {
+    background: var(--surface-muted);
+    color: var(--text-primary);
+    text-decoration: none;
+}
+
+[data-testid="stSidebarNav"] a[aria-current="page"] {
+    background: var(--brand-soft);
+    color: var(--brand-strong);
+    font-weight: 600;
+}
+
+/* Left accent rail on the active item — gives the nav a "selected" feel */
+[data-testid="stSidebarNav"] a[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+    background: var(--brand);
+}
+
+/* Brand mark at top of sidebar (purely CSS — no HTML change needed) */
+[data-testid="stSidebar"] [data-testid="stSidebarContent"]::before {
+    content: "ADI · Water Utility";
+    display: block;
+    font-size: var(--text-eyebrow);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    padding: 6px 12px 10px;
+    border-bottom: none;
+    margin: 0 -4px var(--space-1);
+}
+
+/* Sidebar scrollbar — slim and unobtrusive */
+[data-testid="stSidebar"] *::-webkit-scrollbar {
+    width: 6px;
+}
+[data-testid="stSidebar"] *::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 3px;
+}
+[data-testid="stSidebar"] *::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.22);
+}
+
+/* Sidebar collapse arrow — neutralize */
+[data-testid="stSidebar"] [data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebar"] [data-testid="baseButton-headerNoPadding"] {
+    color: var(--text-tertiary);
+}
+
+
+/* ---------- 11. Login page --------------------------------------------- */
+
+.login-container {
+    max-width: 380px;
+    margin: 64px auto;
+    padding: var(--space-6);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: var(--space-6);
+}
+
+.login-logo {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: var(--radius-lg);
+    background: var(--brand-soft);
+    margin: 0 auto var(--space-4);
+}
+
+.login-logo .icon {
+    font-size: 30px;
+    vertical-align: middle;
+    --icon-wght: 500;
+}
+
+.login-header h1 {
+    font-size: 24px;
+    letter-spacing: -0.02em;
+    margin-bottom: var(--space-1);
+}
+
+.login-header p {
+    color: var(--text-secondary);
+    font-size: var(--text-body);
+    margin: 0;
+}
+
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    box-shadow: var(--shadow-card);
+}
+
+.demo-credentials {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-4);
+    margin-top: var(--space-5);
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+}
+
+.demo-credentials__title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-3);
+}
+
+.demo-credentials dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px var(--space-3);
+    margin: 0;
+    font-size: var(--text-caption);
+}
+
+.demo-credentials dt {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.demo-credentials dd {
+    margin: 0;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.demo-credentials code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: var(--radius-xs);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-primary);
+}
+
+.login-footer {
+    text-align: center;
+    margin-top: var(--space-5);
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+}
+
+.login-footer p {
+    margin: 2px 0;
+}
+
+
+/* ---------- 12. Chat / FAB / dialog ------------------------------------ */
+
+/* Floating action button (MajiBot) */
+.fab {
+    position: fixed;
+    right: 28px;
+    bottom: 28px;
+    width: 52px;
+    height: 52px;
+    border-radius: var(--radius-full);
+    background: var(--brand);
+    color: var(--text-on-brand);
+    border: none;
+    box-shadow: var(--shadow-elevated);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color var(--duration-1) var(--ease), transform var(--duration-1) var(--ease);
+}
+
+.fab:hover,
+.fab:focus {
+    background: var(--brand-strong);
+    transform: translateY(-1px);
+}
+
+.fab-emoji {
+    font-size: 24px;
+    line-height: 1;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* Chat sidebar header */
+.chat-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--divider);
+    margin-bottom: var(--space-3);
+}
+
+.chat-sidebar-header h3 {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.chat-close-link {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+}
+
+/* Chat bubbles */
+.chat-bubble {
+    display: block;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-body);
+    line-height: var(--leading-snug);
+    margin-bottom: var(--space-2);
+    max-width: 85%;
+    word-wrap: break-word;
+}
+
+.chat-bubble--user {
+    background: var(--brand);
+    color: var(--text-on-brand);
+    margin-left: auto;
+    border-bottom-right-radius: var(--radius-xs);
+}
+
+.chat-bubble--assistant {
+    background: var(--surface-muted);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    margin-right: auto;
+    border-bottom-left-radius: var(--radius-xs);
+}
+
+/* MajiBot bottom-right floating panel — Intercom-inspired two-line header */
+.majibot-panel__title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+}
+.majibot-panel__avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--brand-soft);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.majibot-panel__avatar .icon {
+    font-size: 18px;
+}
+.majibot-panel__name {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.15;
+}
+.majibot-panel__name-main {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    color: var(--text-primary);
+}
+.majibot-panel__name-sub {
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    letter-spacing: 0.01em;
+}
+
+.majibot-divider {
+    border: 0 !important;
+    border-top: 1px solid var(--divider) !important;
+    margin: 6px 0 !important;
+}
+
+.majibot-section-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin: 0 0 4px;
+}
+
+.majibot-saved-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--success-soft);
+    color: var(--success);
+    font-size: var(--text-caption);
+    border: 1px solid rgba(29, 131, 72, 0.18);
+}
+
+.majibot-key-stored {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    margin-bottom: 6px;
+}
+
+.majibot-key-stored__label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    margin-bottom: 4px;
+}
+
+.majibot-key-stored__value {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono, "SF Mono", monospace);
+}
+
+.majibot-key-stored__value code {
+    color: var(--text-primary);
+    background: transparent;
+    padding: 0;
+}
+
+/* Welcome state — borrowed layout cue from mature support chats:
+ * a large left-aligned greeting that frames the conversation, no
+ * giant robot icon, leaving room for the suggested-question cards. */
+.majibot-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    padding: var(--space-5) var(--space-1) var(--space-3);
+    gap: var(--space-2);
+}
+
+.majibot-empty__hero {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+}
+
+.majibot-empty__title {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: var(--space-2);
+}
+
+.majibot-empty__body {
+    font-size: var(--text-caption);
+    color: var(--text-secondary);
+    line-height: var(--leading-snug);
+    max-width: 320px;
+}
+
+/* Modal / dialog header */
+.gemini-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--divider);
+    margin-bottom: var(--space-3);
+}
+
+.gemini-title {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* Indicator search results card */
+.indicator-result {
+    background: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-3);
+    margin: 6px 0;
+}
+
+.indicator-result__title {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: var(--text-caption);
+}
+
+.indicator-result__meta {
+    color: var(--text-secondary);
+    font-size: var(--text-eyebrow);
+    margin-top: 4px;
+}
+
+/* AI quick insight bar */
+.quick-insight {
+    background: var(--brand-soft);
+    border: 1px solid rgba(0, 113, 227, 0.16);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin: var(--space-3) 0;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+}
+
+.quick-insight__icon {
+    font-size: 18px;
+    line-height: 1.2;
+}
+
+.quick-insight__title {
+    font-weight: 600;
+    color: var(--brand-strong);
+    font-size: var(--text-caption);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+}
+
+.quick-insight__body {
+    color: var(--text-primary);
+    font-size: var(--text-body);
+    line-height: var(--leading-snug);
+}
+
+
+/* ---------- 13. Responsive --------------------------------------------- */
+
+@media (max-width: 1024px) {
+    .stApp .block-container {
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+    }
+
+    .kpi-row {
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .stApp .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    :root {
+        --text-display: 24px;
+        --text-h1: 18px;
+    }
+
+    .page-header__row {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .page-header__meta {
+        align-items: flex-start;
+        text-align: left;
+    }
+
+    [data-testid="stSidebar"] {
+        min-width: 240px !important;
+        max-width: 240px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .kpi-row {
+        grid-template-columns: 1fr;
+    }
+
+    .kpi-card__value {
+        font-size: 22px;
+    }
+
+    .fab {
+        width: 48px;
+        height: 48px;
+        right: 16px;
+        bottom: 16px;
+    }
+}
+
+
+
+/* ---------- 14. Daily Briefing components -------------------------------- */
+
+/* Two-column briefing strip: header (status badge) lives at top, the
+ * overnight delta row + risks/wins/actions panels stack below.
+ */
+.briefing-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+.briefing-header__title {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+.briefing-header__title h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+    letter-spacing: -0.005em;
+}
+.briefing-header__title .briefing-date {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* Overnight delta band — compact cards, one row */
+.delta-band {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+}
+.delta-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.delta-card__label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+.delta-card__value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+.delta-card__change {
+    font-size: 12.5px;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.delta-card__change--up   { color: var(--success); }
+.delta-card__change--down { color: var(--danger); }
+.delta-card__change--flat { color: var(--text-tertiary); }
+
+/* Target-bar — "actual vs target" progress card */
+.target-bar {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.target-bar__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.target-bar__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: inline-flex;
+    align-items: center;
+}
+.target-bar__target {
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+.target-bar__track {
+    position: relative;
+    height: 8px;
+    background: var(--surface-sunken);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.target-bar__fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 240ms var(--ease);
+}
+.target-bar__value {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+.target-bar__actual {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.target-bar__delta {
+    font-size: 11.5px;
+    color: var(--text-tertiary);
+}
+
+/* Risk / wins cards */
+.risk-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--risk-accent, var(--text-secondary));
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    height: 100%;
+}
+.risk-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+.risk-card__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.risk-card__row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--divider);
+}
+.risk-card__row:last-child { border-bottom: none; }
+.risk-card__label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.risk-card__detail {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+}
+.risk-card__action {
+    font-style: italic;
+    font-size: 12px;
+    color: var(--risk-accent, var(--text-tertiary));
+    margin-top: 2px;
+}
+.risk-card__empty {
+    font-size: 12.5px;
+    color: var(--text-tertiary);
+    font-style: italic;
+}
+
+/* Action checklist */
+.action-checklist {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    margin-bottom: var(--space-3);
+}
+.action-checklist__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+.action-checklist__list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.action-checklist__row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+.action-checklist__text {
+    flex: 1 1 auto;
+}
+
+
+/* ---------- 15. MajiBot floating action button --------------------------- */
+
+/* Anchored to the keyed container `st.container(key="majibot-fab-host")` —
+ * Streamlit emits `st-key-majibot-fab-host` on the wrapper. We pin it to
+ * the viewport corner and hide the underlying st.button so the whole
+ * 52×52 circle behaves like one clickable target.
+ */
+.st-key-majibot-fab-host {
+    position: fixed !important;
+    right: 40px;
+    bottom: 40px;
+    width: 52px;
+    height: 52px;
+    border-radius: 9999px;
+    background: var(--brand);
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
+    z-index: 1000;
+    cursor: pointer;
+    transition: background-color 120ms var(--ease),
+                transform 120ms var(--ease),
+                box-shadow 120ms var(--ease);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+.st-key-majibot-fab-host:hover {
+    background: var(--brand-strong);
+    transform: translateY(-1px);
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+}
+
+/* Icon: absolute fill + flex centring guarantees pixel-accurate placement
+ * regardless of the wrapped Streamlit markup. */
+.st-key-majibot-fab-host .adi-majibot-fab__icon {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Material Symbols Rounded';
+    font-size: 26px;
+    line-height: 1;
+    color: #ffffff;
+    pointer-events: none;
+    user-select: none;
+    font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+    z-index: 2;
+}
+
+/* Hide every Streamlit chrome inside the host except the button hit-area. */
+.st-key-majibot-fab-host [data-testid="stMarkdownContainer"],
+.st-key-majibot-fab-host [data-testid="stElementContainer"],
+.st-key-majibot-fab-host [data-testid="stVerticalBlock"],
+.st-key-majibot-fab-host .stMarkdown {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: transparent !important;
+}
+
+.st-key-majibot-fab-host button,
+.st-key-majibot-fab-host [data-testid="stButton"] button {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: transparent !important;
+    border: none !important;
+    color: transparent !important;
+    box-shadow: none !important;
+    z-index: 3;
+}

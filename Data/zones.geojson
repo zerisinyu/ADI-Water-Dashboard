@@ -1,0 +1,1319 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Rubaga",
+        "city": "Kampala",
+        "country": "Uganda",
+        "safeAccess": 36.74,
+        "water_year": 2024,
+        "water_safely_pct": 39.45,
+        "water_basic_pct": 27.38,
+        "water_limited_pct": 21.7,
+        "water_unimproved_pct": 7.72,
+        "water_surface_pct": 3.76,
+        "water_municipal_coverage": 211427,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 34.03,
+        "sewer_basic_pct": 34.33,
+        "sewer_limited_pct": 18.78,
+        "sewer_unimproved_pct": 9.01,
+        "sewer_open_def_pct": 3.85
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              32.62563692615848,
+              0.311
+            ],
+            [
+              32.61356437813865,
+              0.35749311266313916
+            ],
+            [
+              32.57486132798288,
+              0.38803038418841773
+            ],
+            [
+              32.52891081697214,
+              0.37634276334610883
+            ],
+            [
+              32.499913593124504,
+              0.347634873587133
+            ],
+            [
+              32.462556200218216,
+              0.311
+            ],
+            [
+              32.48552369686586,
+              0.2638398748874802
+            ],
+            [
+              32.534654596424225,
+              0.26345377343553145
+            ],
+            [
+              32.56877384430828,
+              0.25283108638621016
+            ],
+            [
+              32.616545326009025,
+              0.262326522339373
+            ],
+            [
+              32.62563692615848,
+              0.311
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Central",
+        "city": "Kampala",
+        "country": "Uganda",
+        "safeAccess": 38.08,
+        "water_year": 2024,
+        "water_safely_pct": 41.66,
+        "water_basic_pct": 27.06,
+        "water_limited_pct": 21.53,
+        "water_unimproved_pct": 7.6,
+        "water_surface_pct": 2.16,
+        "water_municipal_coverage": 147716,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 34.5,
+        "sewer_basic_pct": 27.4,
+        "sewer_limited_pct": 22.06,
+        "sewer_unimproved_pct": 10.22,
+        "sewer_open_def_pct": 5.82
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              32.6297785426497,
+              0.315
+            ],
+            [
+              32.6202447084505,
+              0.3407791490108405
+            ],
+            [
+              32.60328007559421,
+              0.3716389981238648
+            ],
+            [
+              32.56722122309168,
+              0.3700857739491064
+            ],
+            [
+              32.54727171806668,
+              0.342595717049216
+            ],
+            [
+              32.54165329242922,
+              0.315
+            ],
+            [
+              32.550001121309556,
+              0.28940065903111395
+            ],
+            [
+              32.56306697496313,
+              0.24704270094442998
+            ],
+            [
+              32.60337826480518,
+              0.2580567723609319
+            ],
+            [
+              32.624915161642036,
+              0.2858047265816643
+            ],
+            [
+              32.6297785426497,
+              0.315
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Nakawa",
+        "city": "Kampala",
+        "country": "Uganda",
+        "safeAccess": 42.38,
+        "water_year": 2024,
+        "water_safely_pct": 47.04,
+        "water_basic_pct": 26.99,
+        "water_limited_pct": 16.03,
+        "water_unimproved_pct": 6.87,
+        "water_surface_pct": 3.08,
+        "water_municipal_coverage": 45149,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 37.73,
+        "sewer_basic_pct": 30.44,
+        "sewer_limited_pct": 18.58,
+        "sewer_unimproved_pct": 9.8,
+        "sewer_open_def_pct": 3.45
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              32.67182297496293,
+              0.335
+            ],
+            [
+              32.657483327882105,
+              0.3551021779747445
+            ],
+            [
+              32.6409019700081,
+              0.3687786040888589
+            ],
+            [
+              32.617909060695716,
+              0.37246250003610076
+            ],
+            [
+              32.603386856933724,
+              0.35446569719215093
+            ],
+            [
+              32.59145650721971,
+              0.335
+            ],
+            [
+              32.59842637410189,
+              0.31190604828372626
+            ],
+            [
+              32.61930571192402,
+              0.30186487647072774
+            ],
+            [
+              32.64198009341904,
+              0.29788094424689104
+            ],
+            [
+              32.658779092831395,
+              0.3139500584306943
+            ],
+            [
+              32.67182297496293,
+              0.335
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Kawempe",
+        "city": "Kampala",
+        "country": "Uganda",
+        "safeAccess": 37.21,
+        "water_year": 2024,
+        "water_safely_pct": 40.91,
+        "water_basic_pct": 32.96,
+        "water_limited_pct": 18.89,
+        "water_unimproved_pct": 5.13,
+        "water_surface_pct": 2.1,
+        "water_municipal_coverage": 326835,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 33.51,
+        "sewer_basic_pct": 28.96,
+        "sewer_limited_pct": 23.56,
+        "sewer_unimproved_pct": 8.49,
+        "sewer_open_def_pct": 5.48
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              32.65257113293456,
+              0.37
+            ],
+            [
+              32.64978276115228,
+              0.42835542345374605
+            ],
+            [
+              32.59824655086965,
+              0.45751862939725996
+            ],
+            [
+              32.54993642129998,
+              0.4321646485878075
+            ],
+            [
+              32.513118276916046,
+              0.41160494058368463
+            ],
+            [
+              32.489640709781206,
+              0.37
+            ],
+            [
+              32.48885777357807,
+              0.31065022425341143
+            ],
+            [
+              32.54480927813384,
+              0.29194949884580673
+            ],
+            [
+              32.590046753140875,
+              0.307887483436459
+            ],
+            [
+              32.65989790010005,
+              0.3042460708030952
+            ],
+            [
+              32.65257113293456,
+              0.37
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 1",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "water_year": 2024,
+        "water_safely_pct": 44.04,
+        "water_basic_pct": 40.99,
+        "water_limited_pct": 10.01,
+        "water_unimproved_pct": 3.15,
+        "water_surface_pct": 1.82,
+        "water_municipal_coverage": 426228,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 33.42,
+        "sewer_basic_pct": 33.45,
+        "sewer_limited_pct": 19.1,
+        "sewer_unimproved_pct": 8.99,
+        "sewer_open_def_pct": 5.04,
+        "safeAccess": 38.73
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.59290648151848,
+              3.866
+            ],
+            [
+              11.594509853422558,
+              3.923294905275998
+            ],
+            [
+              11.552239547743065,
+              3.97803082371483
+            ],
+            [
+              11.494980757037615,
+              3.9309788214696684
+            ],
+            [
+              11.44851530307944,
+              3.915248968748322
+            ],
+            [
+              11.410625802035215,
+              3.866
+            ],
+            [
+              11.431255669552423,
+              3.804155299315886
+            ],
+            [
+              11.487176299501188,
+              3.776894503091324
+            ],
+            [
+              11.552388106975577,
+              3.7535099207418394
+            ],
+            [
+              11.60076167644819,
+              3.804142640554996
+            ],
+            [
+              11.59290648151848,
+              3.866
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 2",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 43.44,
+        "water_year": 2024,
+        "water_safely_pct": 44.86,
+        "water_basic_pct": 39.64,
+        "water_limited_pct": 9.15,
+        "water_unimproved_pct": 5.27,
+        "water_surface_pct": 1.09,
+        "water_municipal_coverage": 198265,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 42.02,
+        "sewer_basic_pct": 27.2,
+        "sewer_limited_pct": 18.45,
+        "sewer_unimproved_pct": 9.83,
+        "sewer_open_def_pct": 2.51
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.594391553747107,
+              3.837
+            ],
+            [
+              11.571335725395437,
+              3.870816028764694
+            ],
+            [
+              11.541151729182525,
+              3.886933106154388
+            ],
+            [
+              11.502014466377869,
+              3.9080598275515293
+            ],
+            [
+              11.479990103826903,
+              3.8698484324070863
+            ],
+            [
+              11.446627201074055,
+              3.837
+            ],
+            [
+              11.485740746836521,
+              3.808348413714759
+            ],
+            [
+              11.505717272469445,
+              3.777387405593013
+            ],
+            [
+              11.539782009623814,
+              3.791301384862272
+            ],
+            [
+              11.579181140669697,
+              3.7974583505328963
+            ],
+            [
+              11.594391553747107,
+              3.837
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 3",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 41.16,
+        "water_year": 2024,
+        "water_safely_pct": 46.47,
+        "water_basic_pct": 36.7,
+        "water_limited_pct": 10.49,
+        "water_unimproved_pct": 4.68,
+        "water_surface_pct": 1.66,
+        "water_municipal_coverage": 133507,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 35.85,
+        "sewer_basic_pct": 35.69,
+        "sewer_limited_pct": 17.13,
+        "sewer_unimproved_pct": 10.07,
+        "sewer_open_def_pct": 1.26
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.55212111436292,
+              3.902
+            ],
+            [
+              11.537108673980425,
+              3.9363774922511876
+            ],
+            [
+              11.508705705073002,
+              3.9598242909953796
+            ],
+            [
+              11.474494607613982,
+              3.949931276464989
+            ],
+            [
+              11.449667285201173,
+              3.931432745040589
+            ],
+            [
+              11.426773663087559,
+              3.902
+            ],
+            [
+              11.438007482654818,
+              3.8640585295417904
+            ],
+            [
+              11.475069394295815,
+              3.8558455414748245
+            ],
+            [
+              11.509133970541836,
+              3.842851826959198
+            ],
+            [
+              11.529265747289593,
+              3.8733458730817616
+            ],
+            [
+              11.55212111436292,
+              3.902
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 4",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 40.57,
+        "water_year": 2024,
+        "water_safely_pct": 43.68,
+        "water_basic_pct": 41.72,
+        "water_limited_pct": 8.66,
+        "water_unimproved_pct": 3.85,
+        "water_surface_pct": 2.08,
+        "water_municipal_coverage": 181933,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 37.46,
+        "sewer_basic_pct": 33.01,
+        "sewer_limited_pct": 18.67,
+        "sewer_unimproved_pct": 7.94,
+        "sewer_open_def_pct": 2.92
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.609534234544789,
+              3.912
+            ],
+            [
+              11.612619203200245,
+              3.955506515732842
+            ],
+            [
+              11.571288883902996,
+              3.9685351124141497
+            ],
+            [
+              11.53013029923516,
+              3.982695462362601
+            ],
+            [
+              11.508192517660529,
+              3.9446978109520137
+            ],
+            [
+              11.506239648334573,
+              3.912
+            ],
+            [
+              11.492695295868831,
+              3.8679932468363405
+            ],
+            [
+              11.534585240845617,
+              3.8550757784677017
+            ],
+            [
+              11.567620937708048,
+              3.866803346048398
+            ],
+            [
+              11.60412989610857,
+              3.8746884709949123
+            ],
+            [
+              11.609534234544789,
+              3.912
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 5",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 40.14,
+        "water_year": 2024,
+        "water_safely_pct": 45.43,
+        "water_basic_pct": 39.28,
+        "water_limited_pct": 10.69,
+        "water_unimproved_pct": 3.01,
+        "water_surface_pct": 1.59,
+        "water_municipal_coverage": 60258,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 34.85,
+        "sewer_basic_pct": 29.68,
+        "sewer_limited_pct": 20.88,
+        "sewer_unimproved_pct": 9.64,
+        "sewer_open_def_pct": 4.95
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.533274091348417,
+              3.85
+            ],
+            [
+              11.516483259743516,
+              3.869327312015107
+            ],
+            [
+              11.498840770919456,
+              3.8773308460529923
+            ],
+            [
+              11.476059765105209,
+              3.893095609797288
+            ],
+            [
+              11.456456003547537,
+              3.8744801920892344
+            ],
+            [
+              11.46043598001407,
+              3.85
+            ],
+            [
+              11.458616832936158,
+              3.8270967672507323
+            ],
+            [
+              11.476788151136525,
+              3.8091561628897788
+            ],
+            [
+              11.50235587970297,
+              3.8118023530880154
+            ],
+            [
+              11.524459977224566,
+              3.8248513310558114
+            ],
+            [
+              11.533274091348417,
+              3.85
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 6",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 40.62,
+        "water_year": 2024,
+        "water_safely_pct": 41.13,
+        "water_basic_pct": 41.52,
+        "water_limited_pct": 12.25,
+        "water_unimproved_pct": 3.84,
+        "water_surface_pct": 1.26,
+        "water_municipal_coverage": 112085,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 40.1,
+        "sewer_basic_pct": 31.32,
+        "sewer_limited_pct": 16.97,
+        "sewer_unimproved_pct": 7.94,
+        "sewer_open_def_pct": 3.66
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.591672942552604,
+              3.83
+            ],
+            [
+              11.591943685815648,
+              3.856961895143925
+            ],
+            [
+              11.573470549613722,
+              3.8871022120616634
+            ],
+            [
+              11.543863423828482,
+              3.864429031484502
+            ],
+            [
+              11.516083010880903,
+              3.858402032898998
+            ],
+            [
+              11.509817757883468,
+              3.83
+            ],
+            [
+              11.519311375331652,
+              3.803954061840487
+            ],
+            [
+              11.542508283385006,
+              3.7913815145688115
+            ],
+            [
+              11.56979818132157,
+              3.7842510155018108
+            ],
+            [
+              11.587176871896673,
+              3.806516976393023
+            ],
+            [
+              11.591672942552604,
+              3.83
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Yaounde 7",
+        "city": "Yaound\u00e9",
+        "country": "Cameroon",
+        "safeAccess": 40.83,
+        "water_year": 2024,
+        "water_safely_pct": 40.37,
+        "water_basic_pct": 41.26,
+        "water_limited_pct": 11.78,
+        "water_unimproved_pct": 4.84,
+        "water_surface_pct": 1.75,
+        "water_municipal_coverage": 50767,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 41.28,
+        "sewer_basic_pct": 30.43,
+        "sewer_limited_pct": 17.34,
+        "sewer_unimproved_pct": 6.68,
+        "sewer_open_def_pct": 4.27
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              11.564528908062345,
+              3.95
+            ],
+            [
+              11.558938497867466,
+              3.978413683408073
+            ],
+            [
+              11.53022329319454,
+              3.9816010912769757
+            ],
+            [
+              11.50849222366027,
+              3.985571540753719
+            ],
+            [
+              11.494156305224312,
+              3.9688583176462178
+            ],
+            [
+              11.488793424053105,
+              3.95
+            ],
+            [
+              11.48654601326035,
+              3.925588401196327
+            ],
+            [
+              11.50692600718633,
+              3.9095871474683017
+            ],
+            [
+              11.530664478054387,
+              3.917035167826551
+            ],
+            [
+              11.543492130795281,
+              3.9328576343835833
+            ],
+            [
+              11.564528908062345,
+              3.95
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Maseru Urban Council",
+        "city": "Maseru",
+        "country": "Lesotho",
+        "safeAccess": 45.53,
+        "water_year": 2024,
+        "water_safely_pct": 51.05,
+        "water_basic_pct": 34.58,
+        "water_limited_pct": 8.88,
+        "water_unimproved_pct": 4.2,
+        "water_surface_pct": 1.29,
+        "water_municipal_coverage": 96409,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 40.02,
+        "sewer_basic_pct": 40.53,
+        "sewer_limited_pct": 12.04,
+        "sewer_unimproved_pct": 6.48,
+        "sewer_open_def_pct": 0.94
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              27.54930689438041,
+              -29.315
+            ],
+            [
+              27.52389652404139,
+              -29.290192718720174
+            ],
+            [
+              27.505046700267126,
+              -29.260840556151006
+            ],
+            [
+              27.47206025471869,
+              -29.28004115896158
+            ],
+            [
+              27.443845007810523,
+              -29.288752321255572
+            ],
+            [
+              27.443196645074966,
+              -29.315
+            ],
+            [
+              27.44188996985151,
+              -29.34249455562501
+            ],
+            [
+              27.466204923471494,
+              -29.365777977338865
+            ],
+            [
+              27.50474198817601,
+              -29.368336214231704
+            ],
+            [
+              27.53862518712095,
+              -29.349200873558196
+            ],
+            [
+              27.54930689438041,
+              -29.315
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Maseru Rural Council",
+        "city": "Maseru",
+        "country": "Lesotho",
+        "safeAccess": 36.28,
+        "water_year": 2024,
+        "water_safely_pct": 45.73,
+        "water_basic_pct": 38.72,
+        "water_limited_pct": 10.3,
+        "water_unimproved_pct": 3.9,
+        "water_surface_pct": 1.34,
+        "water_municipal_coverage": 21203,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 26.83,
+        "sewer_basic_pct": 44.06,
+        "sewer_limited_pct": 17.26,
+        "sewer_unimproved_pct": 8.92,
+        "sewer_open_def_pct": 2.93
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              27.590383138340144,
+              -29.36
+            ],
+            [
+              27.585467981571824,
+              -29.337389344882393
+            ],
+            [
+              27.559391424302852,
+              -29.33463872667082
+            ],
+            [
+              27.53588906982163,
+              -29.321893835733306
+            ],
+            [
+              27.520183150761486,
+              -29.34099191256597
+            ],
+            [
+              27.5110078810712,
+              -29.36
+            ],
+            [
+              27.528426216145036,
+              -29.37375317581404
+            ],
+            [
+              27.53557502615448,
+              -29.398954230228043
+            ],
+            [
+              27.55948730278477,
+              -29.38562019043353
+            ],
+            [
+              27.58658079942724,
+              -29.38332007075454
+            ],
+            [
+              27.590383138340144,
+              -29.36
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Rural Hinterland",
+        "city": "Maseru",
+        "country": "Lesotho",
+        "safeAccess": 34.66,
+        "water_year": 2024,
+        "water_safely_pct": 43.13,
+        "water_basic_pct": 40.73,
+        "water_limited_pct": 5.56,
+        "water_unimproved_pct": 5.89,
+        "water_surface_pct": 4.7,
+        "water_municipal_coverage": 37870,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 26.19,
+        "sewer_basic_pct": 44.67,
+        "sewer_limited_pct": 12.3,
+        "sewer_unimproved_pct": 11.64,
+        "sewer_open_def_pct": 5.2
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              27.639622664915045,
+              -29.45
+            ],
+            [
+              27.638740353794223,
+              -29.42532507835126
+            ],
+            [
+              27.609081577045064,
+              -29.425497161803282
+            ],
+            [
+              27.589045244111556,
+              -29.420443171963726
+            ],
+            [
+              27.559951903658366,
+              -29.42449213694175
+            ],
+            [
+              27.561520347383823,
+              -29.45
+            ],
+            [
+              27.56871715475633,
+              -29.469925005317126
+            ],
+            [
+              27.58747446282747,
+              -29.483794924509542
+            ],
+            [
+              27.61536308217442,
+              -29.49145085317833
+            ],
+            [
+              27.630715640452127,
+              -29.469563735157735
+            ],
+            [
+              27.639622664915045,
+              -29.45
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Old Town",
+        "city": "Lilongwe",
+        "country": "Malawi",
+        "safeAccess": 20.33,
+        "water_year": 2024,
+        "water_safely_pct": 12.67,
+        "water_basic_pct": 65.31,
+        "water_limited_pct": 12.11,
+        "water_unimproved_pct": 7.6,
+        "water_surface_pct": 2.31,
+        "water_municipal_coverage": 71299,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 27.99,
+        "sewer_basic_pct": 25.61,
+        "sewer_limited_pct": 23.65,
+        "sewer_unimproved_pct": 18.45,
+        "sewer_open_def_pct": 4.3
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              33.83366670949172,
+              -13.983
+            ],
+            [
+              33.815435022150076,
+              -13.962817683389481
+            ],
+            [
+              33.80173466149609,
+              -13.93869828612256
+            ],
+            [
+              33.776074437213296,
+              -13.950150846549496
+            ],
+            [
+              33.76039321034867,
+              -13.964115307387543
+            ],
+            [
+              33.75025507502475,
+              -13.983
+            ],
+            [
+              33.758593079935046,
+              -14.003162370602517
+            ],
+            [
+              33.774629697530486,
+              -14.020192954906165
+            ],
+            [
+              33.79772932936279,
+              -14.015259151637318
+            ],
+            [
+              33.818136651898634,
+              -14.005099851496269
+            ],
+            [
+              33.83366670949172,
+              -13.983
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Capital Hill",
+        "city": "Lilongwe",
+        "country": "Malawi",
+        "safeAccess": 20.05,
+        "water_year": 2024,
+        "water_safely_pct": 13.45,
+        "water_basic_pct": 61.37,
+        "water_limited_pct": 14.11,
+        "water_unimproved_pct": 8.46,
+        "water_surface_pct": 2.61,
+        "water_municipal_coverage": 51699,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 26.66,
+        "sewer_basic_pct": 29.94,
+        "sewer_limited_pct": 23.14,
+        "sewer_unimproved_pct": 14.39,
+        "sewer_open_def_pct": 5.87
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              33.813421541515254,
+              -13.962
+            ],
+            [
+              33.79795320902633,
+              -13.942157850281575
+            ],
+            [
+              33.78353498362753,
+              -13.921301565341999
+            ],
+            [
+              33.760395985346655,
+              -13.933121622782837
+            ],
+            [
+              33.744621895292994,
+              -13.943985747944287
+            ],
+            [
+              33.73919986090007,
+              -13.962
+            ],
+            [
+              33.72962706179031,
+              -13.990658100891915
+            ],
+            [
+              33.758405224878196,
+              -13.996864408458487
+            ],
+            [
+              33.781268907943634,
+              -13.995884556216103
+            ],
+            [
+              33.796975808723026,
+              -13.981148357347939
+            ],
+            [
+              33.813421541515254,
+              -13.962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Kanengo",
+        "city": "Lilongwe",
+        "country": "Malawi",
+        "safeAccess": 15.29,
+        "water_year": 2024,
+        "water_safely_pct": 8.96,
+        "water_basic_pct": 66.66,
+        "water_limited_pct": 11.13,
+        "water_unimproved_pct": 10.47,
+        "water_surface_pct": 2.78,
+        "water_municipal_coverage": 2829,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 21.63,
+        "sewer_basic_pct": 27.93,
+        "sewer_limited_pct": 23.98,
+        "sewer_unimproved_pct": 19.75,
+        "sewer_open_def_pct": 6.71
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              33.84801735019466,
+              -13.942
+            ],
+            [
+              33.84511408951924,
+              -13.924881504948464
+            ],
+            [
+              33.82766758262407,
+              -13.921949461561157
+            ],
+            [
+              33.8142259898675,
+              -13.921629416206082
+            ],
+            [
+              33.79654497031929,
+              -13.924639472900674
+            ],
+            [
+              33.78913421558432,
+              -13.942
+            ],
+            [
+              33.797733799597,
+              -13.958516581982037
+            ],
+            [
+              33.81266040938137,
+              -13.967078546707333
+            ],
+            [
+              33.82871970289408,
+              -13.965214440426314
+            ],
+            [
+              33.84895041924436,
+              -13.961841890075974
+            ],
+            [
+              33.84801735019466,
+              -13.942
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Limbadzi",
+        "city": "Lilongwe",
+        "country": "Malawi",
+        "safeAccess": 17.02,
+        "water_year": 2024,
+        "water_safely_pct": 12.19,
+        "water_basic_pct": 63.67,
+        "water_limited_pct": 12.18,
+        "water_unimproved_pct": 9.49,
+        "water_surface_pct": 2.47,
+        "water_municipal_coverage": 1679,
+        "sewer_year": 2024,
+        "sewer_safely_pct": 21.85,
+        "sewer_basic_pct": 33.84,
+        "sewer_limited_pct": 17.87,
+        "sewer_unimproved_pct": 18.91,
+        "sewer_open_def_pct": 7.53
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              33.776378484160944,
+              -13.755
+            ],
+            [
+              33.76798264522236,
+              -13.73796111294634
+            ],
+            [
+              33.752133118183224,
+              -13.730522664248163
+            ],
+            [
+              33.73642491992931,
+              -13.732202129114537
+            ],
+            [
+              33.723985493176535,
+              -13.740780345827671
+            ],
+            [
+              33.71337328359873,
+              -13.755
+            ],
+            [
+              33.721794153170656,
+              -13.770776529759246
+            ],
+            [
+              33.73489725206448,
+              -13.782395521921934
+            ],
+            [
+              33.75236256914754,
+              -13.780167888645042
+            ],
+            [
+              33.77146491253499,
+              -13.77451292437858
+            ],
+            [
+              33.776378484160944,
+              -13.755
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,257 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          32.55,
+          0.311
+        ]
+      },
+      "properties": {
+        "country": "Uganda",
+        "zone": "Rubaga"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          32.585,
+          0.315
+        ]
+      },
+      "properties": {
+        "country": "Uganda",
+        "zone": "Central"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          32.63,
+          0.335
+        ]
+      },
+      "properties": {
+        "country": "Uganda",
+        "zone": "Nakawa"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          32.57,
+          0.37
+        ]
+      },
+      "properties": {
+        "country": "Uganda",
+        "zone": "Kawempe"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.516,
+          3.866
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.525,
+          3.837
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 2"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.49,
+          3.902
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 3"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.553,
+          3.912
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 4"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.49,
+          3.85
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 5"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.555,
+          3.83
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 6"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.52,
+          3.95
+        ]
+      },
+      "properties": {
+        "country": "Cameroon",
+        "zone": "Yaounde 7"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          27.485,
+          -29.315
+        ]
+      },
+      "properties": {
+        "country": "Lesotho",
+        "zone": "Maseru Urban Council"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          27.55,
+          -29.36
+        ]
+      },
+      "properties": {
+        "country": "Lesotho",
+        "zone": "Maseru Rural Council"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          27.6,
+          -29.45
+        ]
+      },
+      "properties": {
+        "country": "Lesotho",
+        "zone": "Rural Hinterland"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          33.787,
+          -13.983
+        ]
+      },
+      "properties": {
+        "country": "Malawi",
+        "zone": "Old Town"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          33.77,
+          -13.962
+        ]
+      },
+      "properties": {
+        "country": "Malawi",
+        "zone": "Capital Hill"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          33.821,
+          -13.942
+        ]
+      },
+      "properties": {
+        "country": "Malawi",
+        "zone": "Kanengo"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          33.744,
+          -13.755
+        ]
+      },
+      "properties": {
+        "country": "Malawi",
+        "zone": "Lumbadzi"
+      }
+    }
+  ]
+}

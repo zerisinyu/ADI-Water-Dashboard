@@ -1,0 +1,23 @@
+streamlit==1.50.0
+pandas==2.2.3
+numpy==1.26.4
+plotly==6.3.1
+google-generativeai==0.8.5
+python-dotenv==1.0.1
+toml==0.10.2
+tomli
+tomlkit==0.13.3
+openpyxl==3.0.10
+openai==1.59.9
+
+# Data Engineering
+duckdb>=1.1.0
+pandera>=0.20.0
+
+# Forecasting & ML
+statsforecast>=1.7.0
+statsmodels>=0.14.0
+scikit-learn>=1.5.0
+
+# Report Export
+fpdf2>=2.8.0

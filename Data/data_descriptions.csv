@@ -1,0 +1,80 @@
+#,Table name,Variables,Frequency,Granularity,Description,Data Range
+1.0,production,date,daily,source,Date,2020-01-01 - 2024-12-01
+2.0,production,source,daily,source,Extraction source,2020-01-01 - 2024-12-01
+3.0,production,production_m3,daily,source,Production volume,2020-01-01 - 2024-12-01
+4.0,production,service_hours,daily,source,Number of hours of service,2020-01-01 - 2024-12-01
+5.0,all data - billing,date,monthly,customer,Date,2020-01-01 - 2024-12-01
+6.0,all data - billing,customer_id,monthly,customer,Customer ID,2020-01-01 - 2024-12-01
+7.0,all data - billing,consumption_m3,monthly,customer,Monthly water consumption per customer,2020-01-01 - 2024-12-01
+8.0,all data - billing,billed,monthly,customer,Total billed amount per customer per month,2020-01-01 - 2024-12-01
+9.0,all data - billing,paid,monthly,customer,Total paid amount per customer per month,2020-01-01 - 2024-12-01
+10.0,Water Access Data,popn_total,annual,zones,Total population in each zone (in thousands),2020 - 2024
+11.0,Water Access Data,zone,annual,zones,Administrative zone identifier,2020 - 2024
+12.0,Water Access Data,surface_water,annual,zones,Population percentage using surface water,2020 - 2024
+13.0,Water Access Data,unimproved,annual,zones,Population percentage using unimproved sources,2020 - 2024
+14.0,Water Access Data,limited,annual,zones,Population percentage with limited access,2020 - 2024
+15.0,Water Access Data,basic,annual,zones,Population percentage with basic access,2020 - 2024
+16.0,Water Access Data,safely_managed,annual,zones,Population percentage with safely managed access,2020 - 2024
+17.0,Water Access Data,date,annual,zones,,2020 - 2024
+18.0,Water Access Data,households,annual,zones,,2020 - 2024
+19.0,Water Access Data,municipal_coverage,annual,zones,Population coverage under municipal water supply,2020 - 2024
+20.0,Sewer Access Data,popn_total,annual,zones,,2020 - 2024
+21.0,Sewer Access Data,zone,annual,zones,,2020 - 2024
+22.0,Sewer Access Data,open_def,annual,zones,Population practising open defecation,2020 - 2024
+23.0,Sewer Access Data,unimproved,annual,zones,,2020 - 2024
+24.0,Sewer Access Data,limited,annual,zones,,2020 - 2024
+25.0,Sewer Access Data,basic,annual,zones,,2020 - 2024
+26.0,Sewer Access Data,safely_managed,annual,zones,,2020 - 2024
+27.0,Sewer Access Data,date,annual,zones,,2020 - 2024
+28.0,Sewer Access Data,households,annual,zones,,2020 - 2024
+29.0,Service_Data,date,monthly,zones,,2020-01-01 - 2024-12-01
+30.0,Service_Data,households,annual,zones,,2020-01-01 - 2024-12-01
+31.0,Service_Data,sewer_connections,monthly,zones,,2020-01-01 - 2024-12-01
+32.0,Service_Data,public_toilets,monthly,zones,public toilets maintained,2020-01-01 - 2024-12-01
+33.0,Service_Data,workforce,monthly,zones,sanitation managerial workforce,2020-01-01 - 2024-12-01
+34.0,Service_Data,f_workforce,monthly,zones,sanitation female managerial workforce,2020-01-01 - 2024-12-01
+35.0,Service_Data,ww_collected,monthly,zones,Volume of wastewater collected monthly per zone,2020-01-01 - 2024-12-01
+36.0,Service_Data,ww_treated,monthly,zones,Volume of wastewater treated monthly per zone,2020-01-01 - 2024-12-01
+37.0,Service_Data,ww_reused,monthly,zones,Volume of treated wastewater reused monthly per zone,2020-01-01 - 2024-12-01
+38.0,Service_Data,w_supplied,monthly,zones,Total volume of water supplied per zone per month,2020-01-01 - 2024-12-01
+39.0,Service_Data,hh_emptied,monthly,zones,households with emptied sanitation systems per month,2020-01-01 - 2024-12-01
+40.0,Service_Data,fs_treated,monthly,zones,Volume of faecal sludge treated per zone per month,2020-01-01 - 2024-12-01
+41.0,Service_Data,fs_reused,monthly,zones,Volume of treated faecal sludge reused per zone per month,2020-01-01 - 2024-12-01
+42.0,Service_Data,households,annual,zones,,2020-01-01 - 2024-12-01
+43.0,Service_Data,date,monthly,zones,,2020-01-01 - 2024-12-01
+44.0,Service_Data,tests_chlorine,monthly,zones,Number of chlorine tests required per month per zone,2020-01-01 - 2024-12-01
+45.0,Service_Data,tests_ecoli,monthly,zones,Number of E. coli tests required per month per zone,2020-01-01 - 2024-12-01
+46.0,Service_Data,tests_conducted_chlorine,monthly,zones,Number of chlorine tests actually conducted per month,2020-01-01 - 2024-12-01
+47.0,Service_Data,test_conducted_ecoli,monthly,zones,Number of E. coli tests actually conducted per month,2020-01-01 - 2024-12-01
+48.0,Service_Data,test_passed_chlorine,monthly,zones,Number of chlorine tests that passed per month,2020-01-01 - 2024-12-01
+49.0,Service_Data,tests_passed_ecoli,monthly,zones,Number of E. coli tests that passed per month,2020-01-01 - 2024-12-01
+50.0,Service_Data,w_supplied,monthly,zones,Total volume of water supplied per zone per month,2020-01-01 - 2024-12-01
+51.0,Service_Data,total_consumption,monthly,zones,Total water consumption estimated across all sources per month,2020-01-01 - 2024-12-01
+52.0,Service_Data,metered,monthly,zones,water consumption recorded through meters,2020-01-01 - 2024-12-01
+53.0,Service_Data,ww_capacity,monthly,zones,Total wastewater treatment capacity per zone per month,2020-01-01 - 2024-12-01
+54.0,Service_Data,zone,monthly,zones,,2020-01-01 - 2024-12-01
+55.0,financial_services,date,monthly,city,,2020-01-01 - 2024-12-01
+56.0,financial_services,complaints,monthly,city,Total complaints received monthly at city level,2020-01-01 - 2024-12-01
+57.0,financial_services,resolved,monthly,city,Total complaints resolved monthly at city level,2020-01-01 - 2024-12-01
+58.0,financial_services,sewer_length,annual,city,Total sewer network length (km) maintained per year,2020-01-01 - 2024-12-01
+59.0,financial_services,blocks,monthly,city,Number of sewer blockages reported monthly,2020-01-01 - 2024-12-01
+60.0,financial_services,sewer_billed,monthly,city,Total sewer all data - billing per month (UGX),2020-01-01 - 2024-12-01
+61.0,financial_services,sewer_revenue,monthly,city,Total sewer revenue collected per month (UGX),2020-01-01 - 2024-12-01
+62.0,financial_services,opex,monthly,city,Monthly operational expenditure (UGX),2020-01-01 - 2024-12-01
+63.0,financial_services,san_staff,monthly,city,Number of sanitation staff employed monthly,2020-01-01 - 2024-12-01
+64.0,financial_services,w_staff,monthly,city,Number of water staff employed monthly,2020-01-01 - 2024-12-01
+65.0,financial_services,propoor_popn,monthly,city,Proportion of total population in pro-poor category,2020-01-01 - 2024-12-01
+66.0,all_national,date,annual,city,,No date column
+67.0,all_national,budget_allocated,annual,city,total allocated budget_WASH,No date column
+68.0,all_national,san_allocation,annual,city,% sanitation allocation,No date column
+69.0,all_national,wat_allocation,annual,city,% water allocation,No date column
+70.0,all_national,staff_cost,annual,city,staff cost - annual HR,No date column
+71.0,all_national,water_resources,annual,city,total renewable resources available,No date column
+72.0,all_national,trained_staff,annual,city,trained staff,No date column
+73.0,all_national,complaint_resolution,annual,city,complaint resolution time,No date column
+74.0,all_national,registered_wtps,annual,city,registered water treatment plants,No date column
+75.0,all_national,inspected_wtps,annual,city,inspected wtps,No date column
+76.0,all_national,total_service_providers,annual,city,private and public service providers,No date column
+77.0,all_national,licensed_service_providers,annual,city,licensed service providers,No date column
+78.0,all_national,asset_health,annual,city,asset health index,No date column
+79.0,all_national,staff_training_budget,annual,city,budget allocated for staff management,No date column
