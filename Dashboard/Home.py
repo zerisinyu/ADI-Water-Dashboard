@@ -1168,6 +1168,28 @@ def _majibot_panel_css() -> str:
         """
 
 
+def _stream_into_bubble(placeholder, chunk_iter) -> str:
+    """Stream model chunks into an assistant chat bubble with a live cursor.
+
+    Returns the full accumulated text once the stream is exhausted. Keeping this
+    in one place means both the text-to-SQL answer and the general-chat answer
+    stream identically, so responses appear token-by-token instead of after a
+    long blocking wait.
+    """
+    full = ""
+    for chunk in chunk_iter:
+        full += chunk
+        placeholder.markdown(
+            "<div class='chat-bubble chat-bubble--assistant'>" + full + "▌</div>",
+            unsafe_allow_html=True,
+        )
+    placeholder.markdown(
+        "<div class='chat-bubble chat-bubble--assistant'>" + full + "</div>",
+        unsafe_allow_html=True,
+    )
+    return full
+
+
 @st.fragment
 def _render_majibot_panel() -> None:
     """Render MajiBot as a bottom-right floating chat panel.
@@ -1276,6 +1298,14 @@ def _render_majibot_panel() -> None:
         if show_chat_surface and last_msg and last_msg.get("role") == "user":
             user_query = last_msg.get("content", "")
             with msg_container, st.chat_message("assistant"):
+                # Immediate feedback so there's no dead air before the model
+                # responds; replaced in-place by the first streamed token.
+                placeholder = st.empty()
+                placeholder.markdown(
+                    "<div class='chat-bubble chat-bubble--assistant'>"
+                    "<span style='opacity:0.6'>MajiBot is thinking…</span></div>",
+                    unsafe_allow_html=True,
+                )
                 try:
                     from ai_insights import parse_data_query, execute_data_query
                     from utils import load_billing_data, load_production_data
@@ -1286,8 +1316,8 @@ def _render_majibot_panel() -> None:
                         prod_df = load_production_data()
                         fin_df = pd.DataFrame()
                         response = execute_data_query(parsed_query, billing_df, prod_df, fin_df)
-                        st.markdown(
-                            f"<div class='chat-bubble chat-bubble--assistant'>" + response + "</div>",
+                        placeholder.markdown(
+                            "<div class='chat-bubble chat-bubble--assistant'>" + response + "</div>",
                             unsafe_allow_html=True,
                         )
                         messages.append({"role": "assistant", "content": response})
@@ -1318,17 +1348,16 @@ def _render_majibot_panel() -> None:
                                             f"as CSV:\n{preview_csv}"
                                         )},
                                     ]
-                                    answer = client.chat_once(summary_messages, inject_context=False)
+                                    answer = _stream_into_bubble(
+                                        placeholder,
+                                        client.stream_chat(summary_messages, inject_context=False),
+                                    )
                                     if answer and answer.strip():
                                         sql_response = answer.strip()
                         except Exception:
                             pass
 
                         if sql_response:
-                            st.markdown(
-                                f"<div class='chat-bubble chat-bubble--assistant'>" + sql_response + "</div>",
-                                unsafe_allow_html=True,
-                            )
                             messages.append({"role": "assistant", "content": sql_response})
                         else:
                             raise ValueError("Query not matched - fall back to LLM")
@@ -1336,23 +1365,14 @@ def _render_majibot_panel() -> None:
                     try:
                         client = ChatLLM()
                         trimmed = ChatLLM.trim_history(messages, max_messages=16)
-                        placeholder = st.empty()
-                        full_response = ""
-                        for chunk in client.stream_chat(trimmed):
-                            full_response += chunk
-                            placeholder.markdown(
-                                f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "\u258c</div>",
-                                unsafe_allow_html=True,
-                            )
-                        placeholder.markdown(
-                            f"<div class='chat-bubble chat-bubble--assistant'>" + full_response + "</div>",
-                            unsafe_allow_html=True,
-                        )
+                        full_response = _stream_into_bubble(placeholder, client.stream_chat(trimmed))
                         if full_response.strip():
                             messages.append({"role": "assistant", "content": full_response})
                         else:
+                            placeholder.empty()
                             _render_llm_error(RuntimeError("No content returned by model"))
                     except Exception as e:
+                        placeholder.empty()
                         _render_llm_error(e)
 
         # Suggested questions (above the input, inside the scroll region).

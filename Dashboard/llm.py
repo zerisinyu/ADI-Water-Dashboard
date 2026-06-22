@@ -212,7 +212,7 @@ class ChatLLM:
             provider=ss_provider or _get_secret("LLM_PROVIDER", "gemini") or "gemini",
             model=ss_model or _get_secret("MODEL_ID", "gemini-1.5-flash") or "gemini-1.5-flash",
             temperature=float(_get_secret("TEMPERATURE", "0.2") or 0.2),
-            max_tokens=int(_get_secret("MAX_TOKENS", "512") or 512),
+            max_tokens=int(_get_secret("MAX_TOKENS", "2048") or 2048),
         )
 
         self.provider = (self.cfg.provider or "gemini").lower()
