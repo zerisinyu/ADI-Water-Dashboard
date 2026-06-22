@@ -1,6 +1,6 @@
 # Water Utility Performance Dashboard 
 
-🔗 [**Demo link**](https://adi-water-dashboard.streamlit.app)(It might take a long time to install some heavy packages)
+🔗 [**Demo link**](https://adi-water-dashboard.streamlit.app) (It might take 1-2 mins to install heavy packages; BYOK if you're interested in trying out Majibot, but remember to clear it after the current session ends)
 
 ## 🌍 Overview
 This repository hosts the **Water Utility Performance Dashboard**, a comprehensive suite of tools designed to monitor, analyze, and improve water and sanitation services. The platform combines secure role-based dashboards, AI-powered insights, and ad-hoc visualization tools to support decision-making at national, city, and zone levels.
@@ -15,7 +15,6 @@ It is also a capstone group project collaborated with [Athena Infonomics](https:
 | **`Data/`** | Central storage for input CSV/JSON datasets. Used by both the Dashboard and analysis scripts. |
 | **`Outputs/`** | Generated reports, static plots, and export artifacts. |
 | **`visualize.py`** | CLI utility for generating quick static Plotly visualizations without running the full dashboard. |
-| **`visualize.ipynb`** | Jupyter notebook for exploratory data analysis and prototyping new visuals. |
 
 ## 🚀 Getting Started
 
