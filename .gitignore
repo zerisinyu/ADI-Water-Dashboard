@@ -17,3 +17,7 @@ venv/
 .DS_Store
 *.DS_Store
 
+# Raw billing source — shipped as billing.parquet instead (see
+# scripts/convert_billing_to_parquet.py). Kept locally for regeneration.
+Data/billing.csv
+

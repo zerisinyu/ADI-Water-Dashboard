@@ -26,7 +26,13 @@ _initialized: bool = False
 # CSV-to-table mapping with column type overrides
 TABLE_DEFINITIONS: dict[str, dict] = {
     "billing": {
-        "file": "billing.csv",
+        # Stored as pre-typed Parquet instead of a 54 MB CSV. DuckDB reads it
+        # ~4x smaller and far faster, which is the biggest lever on cold-start
+        # and wake-up time. The CSV-era transforms (date parsing, country
+        # title-casing, header-row filtering) were applied once at conversion
+        # time, so the load here is a straight columnar read.
+        # Regenerate via scripts/convert_billing_to_parquet.py if data changes.
+        "file": "billing.parquet",
         "ddl": """
             CREATE TABLE IF NOT EXISTS billing (
                 customer_id   INTEGER,
@@ -41,17 +47,8 @@ TABLE_DEFINITIONS: dict[str, dict] = {
         """,
         "load_sql": """
             INSERT INTO billing
-            SELECT
-                CAST(customer_id AS INTEGER),
-                strptime(date, '%m/%d/%Y')::DATE,
-                CAST(consumption_m3 AS DOUBLE),
-                CAST(billed AS DOUBLE),
-                CAST(paid AS DOUBLE),
-                CONCAT(UPPER(SUBSTR(TRIM(country), 1, 1)), LOWER(SUBSTR(TRIM(country), 2))),
-                TRIM(zone),
-                TRIM(source)
-            FROM read_csv_auto('{path}', header=true, all_varchar=true, ignore_errors=true)
-            WHERE customer_id != 'customer_id'
+            SELECT customer_id, date, consumption_m3, billed, paid, country, zone, source
+            FROM read_parquet('{path}')
         """,
     },
     "production": {
