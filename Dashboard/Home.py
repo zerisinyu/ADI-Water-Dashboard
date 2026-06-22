@@ -835,6 +835,8 @@ def _render_llm_provider_form(scope: str = "panel") -> None:
     from data import keystore
     from llm import KNOWN_BASE_URLS
 
+    persists = keystore.persistence_enabled()
+
     if scope == "panel":
         st.markdown(
             '<div class="majibot-section-title">'
@@ -907,7 +909,13 @@ def _render_llm_provider_form(scope: str = "panel") -> None:
         if keystore.get_preference(f"base_url:{provider}") != base_url:
             keystore.set_preference(f"base_url:{provider}", base_url)
 
-    st.caption("Provider, model and base URL auto-save for future sessions.")
+    if persists:
+        st.caption("Provider, model and base URL auto-save for future sessions.")
+    else:
+        st.caption(
+            "On this deployment your key and settings are used for this session "
+            "only — nothing is stored on the server or shared with other visitors."
+        )
 
     # ---- API key: masked "Stored" view with Edit/Clear, or an edit field. ----
     key_label = f"{provider.upper()}_API_KEY"
@@ -952,7 +960,11 @@ def _render_llm_provider_form(scope: str = "panel") -> None:
             value=st.session_state.get(key_state, ""),
             type="password",
             key=widget_key,
-            help="Stored locally at ~/.adi_water_dashboard/keys.json (chmod 0600).",
+            help=(
+                "Remembered on this machine at ~/.adi_water_dashboard/keys.json (chmod 0600)."
+                if persists
+                else "Used for this session only — not stored on the server, not shared with other visitors."
+            ),
             placeholder=f"Paste your {key_label}",
         )
         save_col, cancel_col = st.columns(2)
