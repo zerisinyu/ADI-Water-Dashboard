@@ -69,6 +69,72 @@ class LLMConfig:
     model: str = "gemini-2.5-flash"
     temperature: float = 0.2
     max_tokens: int = 4096
+    base_url: Optional[str] = None
+
+
+# Built-in OpenAI-compatible providers. Adding a new provider is just a new
+# entry here (or, at runtime, typing a custom provider name + base URL in the
+# MajiBot settings panel). "gemini" is special-cased — it uses Google's SDK,
+# not the OpenAI-compatible chat-completions API — so it is intentionally
+# absent from this map.
+KNOWN_BASE_URLS: Dict[str, str] = {
+    "grok": "https://api.x.ai/v1",
+    "glm": "https://open.bigmodel.cn/api/paas/v4/",
+    "openai": "https://api.openai.com/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "together": "https://api.together.xyz/v1",
+}
+
+# Alternative env/secret names accepted for a provider's API key, in addition
+# to the canonical "<PROVIDER>_API_KEY".
+_KEY_ALIASES: Dict[str, list] = {
+    "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    "grok": ["GROK_API_KEY", "XAI_API_KEY"],
+    "glm": ["GLM_API_KEY", "ZHIPU_API_KEY"],
+}
+
+
+def resolve_base_url(provider: str, explicit: Optional[str] = None) -> Optional[str]:
+    """Resolve the base URL for an OpenAI-compatible provider.
+
+    Order: explicit value -> session/secret override -> built-in default.
+    Returns None for gemini (handled by its own SDK).
+    """
+    provider = (provider or "").lower()
+    if provider == "gemini":
+        return None
+    if explicit:
+        return explicit.strip()
+    ss = None
+    try:
+        ss = st.session_state.get(f"ai_base_url_{provider}")
+    except Exception:
+        ss = None
+    secret = _get_secret(f"{provider.upper()}_BASE_URL")
+    return (ss or secret or KNOWN_BASE_URLS.get(provider) or "").strip() or None
+
+
+def resolve_api_key(provider: str) -> Optional[str]:
+    """Resolve an API key for any provider from session, secrets, or env.
+
+    Checks, in order: the in-session key entered via the settings panel,
+    then the canonical "<PROVIDER>_API_KEY", then any known aliases.
+    """
+    provider = (provider or "").lower()
+    try:
+        ss_key = st.session_state.get(f"ai_api_key_{provider}")
+    except Exception:
+        ss_key = None
+    if ss_key:
+        return str(ss_key)
+    names = _KEY_ALIASES.get(provider, [f"{provider.upper()}_API_KEY"])
+    for name in names:
+        val = _get_secret(name)
+        if val:
+            return str(val)
+    return None
 
 
 _local_secrets_cache: Optional[Dict[str, Any]] = None  # type: ignore[name-defined]
@@ -150,22 +216,27 @@ class ChatLLM:
         )
 
         self.provider = (self.cfg.provider or "gemini").lower()
-        if self.provider not in ["gemini", "grok", "glm"]:
+        # Any provider name is accepted: "gemini" uses the Google SDK, anything
+        # else is treated as OpenAI-compatible and dispatched through a base URL
+        # (built-in or user-supplied). This is what makes new providers pluggable
+        # without code changes.
+        self.base_url = resolve_base_url(self.provider, self.cfg.base_url)
+        if self.provider != "gemini" and not self.base_url:
             raise LLMNotConfiguredError(
-                f"Unsupported LLM_PROVIDER '{self.provider}'. Supported: 'gemini', 'grok', 'glm'."
+                f"No base URL configured for provider '{self.provider}'. "
+                f"Add one in MajiBot settings or set {self.provider.upper()}_BASE_URL."
             )
 
         # Lazy init for providers
         self._gemini_model = None
-        self._grok_client = None
-        self._glm_client = None
+        self._openai_client = None
 
     # ---------------- Gemini helpers ----------------
     def _ensure_gemini(self):
         if self._gemini_model is not None:
             return self._gemini_model
 
-        api_key = st.session_state.get("ai_api_key_gemini") or _get_secret("GEMINI_API_KEY") or _get_secret("GOOGLE_API_KEY")
+        api_key = resolve_api_key("gemini")
         if not api_key:
             raise LLMNotConfiguredError(
                 "Missing GEMINI_API_KEY or GOOGLE_API_KEY in st.secrets or environment."
@@ -206,58 +277,34 @@ class ChatLLM:
         )
         return self._gemini_model
 
-    def _ensure_grok(self):
-        if self._grok_client is not None:
-            return self._grok_client
-            
-        api_key = st.session_state.get("ai_api_key_grok") or _get_secret("GROK_API_KEY") or _get_secret("XAI_API_KEY")
+    def _ensure_openai(self):
+        """Build (and cache) an OpenAI-compatible client for any non-Gemini
+        provider, pointed at the resolved base URL (Grok, GLM, OpenAI,
+        DeepSeek, OpenRouter, or any custom provider the user configures)."""
+        if self._openai_client is not None:
+            return self._openai_client
+
+        api_key = resolve_api_key(self.provider)
         if not api_key:
             raise LLMNotConfiguredError(
-                "Missing GROK_API_KEY in st.secrets or environment."
-            )
-        
-        # Sanitize key
-        api_key = str(api_key).strip().strip('"').strip("'")
-        try:
-            import openai
-            self._grok_client = openai.OpenAI(
-                api_key=api_key,
-                base_url="https://api.x.ai/v1",
-            )
-        except ImportError:
-            raise LLMNotConfiguredError(
-                "OpenAI SDK not installed. Add 'openai' to requirements.txt."
-            )
-        except Exception as e:
-            raise LLMNotConfiguredError(f"Failed to initialize Grok client: {e}")
-            
-        return self._grok_client
-
-    def _ensure_glm(self):
-        if self._glm_client is not None:
-            return self._glm_client
-
-        api_key = st.session_state.get("ai_api_key_glm") or _get_secret("GLM_API_KEY") or _get_secret("ZHIPU_API_KEY")
-        if not api_key:
-            raise LLMNotConfiguredError(
-                "Missing GLM_API_KEY in st.secrets or environment."
+                f"Missing API key for '{self.provider}'. Add it in MajiBot "
+                f"settings or set {self.provider.upper()}_API_KEY."
             )
 
         api_key = str(api_key).strip().strip('"').strip("'")
         try:
             import openai
-            self._glm_client = openai.OpenAI(
-                api_key=api_key,
-                base_url="https://open.bigmodel.cn/api/paas/v4/",
-            )
+            self._openai_client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
         except ImportError:
             raise LLMNotConfiguredError(
                 "OpenAI SDK not installed. Add 'openai' to requirements.txt."
             )
         except Exception as e:
-            raise LLMNotConfiguredError(f"Failed to initialize GLM client: {e}")
+            raise LLMNotConfiguredError(
+                f"Failed to initialize '{self.provider}' client: {e}"
+            )
 
-        return self._glm_client
+        return self._openai_client
 
     # ---------------- Internal transform ----------------
     @staticmethod
@@ -314,33 +361,18 @@ class ChatLLM:
                 print(e)
                 raise LLMNotConfiguredError(str(e))
         
-        elif self.provider == "grok":
-            client = self._ensure_grok()
-            try:
-                response = client.chat.completions.create(
-                    model=model or self.cfg.model,
-                    messages=messages,
-                    temperature=temperature if temperature is not None else self.cfg.temperature,
-                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
-                )
-                return response.choices[0].message.content or ""
-            except Exception as e:
-                raise LLMNotConfiguredError(str(e))
-
-        elif self.provider == "glm":
-            client = self._ensure_glm()
-            try:
-                response = client.chat.completions.create(
-                    model=model or self.cfg.model,
-                    messages=messages,
-                    temperature=temperature if temperature is not None else self.cfg.temperature,
-                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
-                )
-                return response.choices[0].message.content or ""
-            except Exception as e:
-                raise LLMNotConfiguredError(str(e))
-
-        raise LLMNotConfiguredError("No supported provider configured")
+        # Any non-Gemini provider goes through the OpenAI-compatible path.
+        client = self._ensure_openai()
+        try:
+            response = client.chat.completions.create(
+                model=model or self.cfg.model,
+                messages=messages,
+                temperature=temperature if temperature is not None else self.cfg.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
+            )
+            return response.choices[0].message.content or ""
+        except Exception as e:
+            raise LLMNotConfiguredError(str(e))
 
     def stream_chat(
         self,
@@ -456,45 +488,24 @@ class ChatLLM:
                     return
             return
         
-        elif self.provider == "grok":
-            client = self._ensure_grok()
-            try:
-                stream = client.chat.completions.create(
-                    model=model or self.cfg.model,
-                    messages=messages,
-                    temperature=temperature if temperature is not None else self.cfg.temperature,
-                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
-                    stream=True
-                )
+        # Any non-Gemini provider goes through the OpenAI-compatible path.
+        client = self._ensure_openai()
+        try:
+            stream = client.chat.completions.create(
+                model=model or self.cfg.model,
+                messages=messages,
+                temperature=temperature if temperature is not None else self.cfg.temperature,
+                max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
+                stream=True
+            )
 
-                for chunk in stream:
-                    content = chunk.choices[0].delta.content
-                    if content:
-                        yield content
-            except Exception as e:
-                yield f"I encountered an error: {str(e)[:100]}. Please try again."
-            return
-
-        elif self.provider == "glm":
-            client = self._ensure_glm()
-            try:
-                stream = client.chat.completions.create(
-                    model=model or self.cfg.model,
-                    messages=messages,
-                    temperature=temperature if temperature is not None else self.cfg.temperature,
-                    max_tokens=max_tokens if max_tokens is not None else self.cfg.max_tokens,
-                    stream=True
-                )
-
-                for chunk in stream:
-                    content = chunk.choices[0].delta.content
-                    if content:
-                        yield content
-            except Exception as e:
-                yield f"I encountered an error: {str(e)[:100]}. Please try again."
-            return
-
-        raise LLMNotConfiguredError("No supported provider configured")
+            for chunk in stream:
+                content = chunk.choices[0].delta.content
+                if content:
+                    yield content
+        except Exception as e:
+            yield f"I encountered an error: {str(e)[:100]}. Please try again."
+        return
 
     # ---------------- Utilities ----------------
     @staticmethod

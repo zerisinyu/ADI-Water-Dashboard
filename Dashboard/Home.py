@@ -298,19 +298,29 @@ def _hydrate_api_keys_from_store() -> None:
         return
     try:
         from data import keystore
-        for provider in _MAJIBOT_MODELS.keys():
-            key = keystore.get_api_key(provider)
-            if key:
-                st.session_state.setdefault(f"ai_api_key_{provider}", key)
-        # Also hydrate the user's default provider/model preference so the
-        # selectboxes — and any LLM call before the user opens settings —
-        # use the previously chosen defaults.
+        from llm import KNOWN_BASE_URLS
+
+        # Restore the previously chosen default provider/model first so any LLM
+        # call made before the user opens settings uses them.
         default_provider = keystore.get_preference("default_provider")
-        if default_provider in _MAJIBOT_MODELS:
+        if default_provider:
             st.session_state.setdefault("ai_provider", default_provider)
         default_model = keystore.get_preference("default_model")
         if default_model:
             st.session_state.setdefault("ai_model", default_model)
+
+        # Hydrate stored keys + base URLs for every known provider plus the
+        # user's default (which may be a custom one).
+        providers = set(KNOWN_BASE_URLS) | {"gemini"}
+        if default_provider:
+            providers.add(default_provider)
+        for provider in providers:
+            key = keystore.get_api_key(provider)
+            if key:
+                st.session_state.setdefault(f"ai_api_key_{provider}", key)
+            base_url = keystore.get_preference(f"base_url:{provider}")
+            if base_url:
+                st.session_state.setdefault(f"ai_base_url_{provider}", base_url)
     except Exception:
         pass
     st.session_state["_api_keys_hydrated"] = True
@@ -734,52 +744,11 @@ def _sidebar_filters() -> None:
         st.session_state["selected_month"] = "All"
         st.rerun()
 
-    # AI Model Settings
+    # AI Model Settings — same editable, scalable form used in the chat panel.
     if check_feature_access("ai_assistant"):
         st.sidebar.markdown("---")
         with st.sidebar.expander("AI settings", expanded=False):
-            provider_options = {"Gemini": "gemini", "Grok (xAI)": "grok", "GLM (Zhipu)": "glm"}
-            model_defaults = {
-                "gemini": ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"],
-                "grok": ["grok-3-mini", "grok-3", "grok-beta"],
-                "glm": ["glm-4-flash", "glm-4-plus", "glm-4"],
-            }
-            key_names = {"gemini": "GEMINI_API_KEY", "grok": "GROK_API_KEY", "glm": "GLM_API_KEY"}
-
-            current_provider = st.session_state.get("ai_provider", _get_secret("LLM_PROVIDER", "gemini") or "gemini").lower()
-            display_labels = list(provider_options.keys())
-            provider_values = list(provider_options.values())
-            current_idx = provider_values.index(current_provider) if current_provider in provider_values else 0
-
-            selected_label = st.selectbox("Provider", display_labels, index=current_idx, key="ai_provider_select")
-            selected_provider = provider_options[selected_label]
-
-            models = model_defaults.get(selected_provider, [])
-            current_model = st.session_state.get("ai_model", "")
-            model_idx = models.index(current_model) if current_model in models else 0
-            selected_model = st.selectbox("Model", models, index=model_idx, key="ai_model_select")
-
-            api_key_input = st.text_input(
-                f"{key_names[selected_provider]}",
-                type="password",
-                value=st.session_state.get(f"ai_api_key_{selected_provider}", ""),
-                placeholder="Enter API key",
-                key=f"ai_key_input_{selected_provider}",
-            )
-
-            if st.button("Apply", key="ai_settings_apply", type="primary", use_container_width=True):
-                st.session_state["ai_provider"] = selected_provider
-                st.session_state["ai_model"] = selected_model
-                if api_key_input:
-                    st.session_state[f"ai_api_key_{selected_provider}"] = api_key_input
-                    os.environ[key_names[selected_provider]] = api_key_input
-                os.environ["LLM_PROVIDER"] = selected_provider
-                os.environ["MODEL_ID"] = selected_model
-                from llm import _local_secrets_cache
-                import llm as _llm_mod
-                _llm_mod._local_secrets_cache = None
-                st.success(f"Switched to {selected_label} / {selected_model}")
-                st.rerun()
+            _render_llm_provider_form(scope="sidebar")
 
 
 def _render_indicator_search() -> Optional[str]:
@@ -837,77 +806,115 @@ def _render_indicator_search() -> Optional[str]:
     return None
 
 
-_MAJIBOT_MODELS = {
-    "gemini": ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
-    "grok":   ["grok-4-fast", "grok-3", "grok-3-mini"],
-    "glm":    ["glm-4-flash", "glm-4-air", "glm-4", "glm-4-airx"],
+# Free-text suggestions only — the model field is editable, not a fixed list.
+_MODEL_SUGGESTIONS = {
+    "gemini": "gemini-2.5-flash, gemini-2.5-pro, gemini-1.5-flash",
+    "grok": "grok-4-fast, grok-3, grok-3-mini",
+    "glm": "glm-4-flash, glm-4-air, glm-4",
+    "openai": "gpt-4o-mini, gpt-4o, o4-mini",
+    "deepseek": "deepseek-chat, deepseek-reasoner",
+    "openrouter": "openai/gpt-4o-mini, anthropic/claude-3.5-sonnet",
+    "mistral": "mistral-small-latest, mistral-large-latest",
+    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
 }
 
-_PROVIDER_LABELS = {"gemini": "Google Gemini", "grok": "xAI Grok", "glm": "Zhipu GLM"}
-_PROVIDER_KEY_LABELS = {"gemini": "GEMINI_API_KEY", "grok": "GROK_API_KEY", "glm": "GLM_API_KEY"}
 
+def _render_llm_provider_form(scope: str = "panel") -> None:
+    """Editable, provider-agnostic MajiBot configuration.
 
-def _render_majibot_settings() -> None:
-    """Provider / model / API-key configuration shown inside the panel.
+    Provider, model and base URL are free-text inputs (not fixed dropdowns),
+    so any OpenAI-compatible service can be wired up at runtime — type the
+    provider name, paste its base URL and key, and pick a model. Known
+    providers (gemini, grok, glm, openai, deepseek, openrouter, ...) auto-fill
+    their base URL. Everything is persisted via `data.keystore` so it survives
+    future sessions.
 
-    The API key is persisted across browser sessions via `data.keystore`
-    (a JSON file under `~/.adi_water_dashboard/`). Once a provider has
-    a stored key, the field switches to a masked read-only "Stored" view
-    with an Edit button — the user only re-enters when they explicitly
-    choose to. Provider / model changes auto-save; the API key save
-    happens via the explicit "Save key" action.
+    `scope` namespaces the widget keys so the sidebar and chat-panel copies of
+    this form don't collide in Streamlit's session state.
     """
     from data import keystore
+    from llm import KNOWN_BASE_URLS
 
-    st.markdown(
-        '<div class="majibot-section-title">'
-        '<span class="icon icon-sm icon-muted">tune</span>'
-        '<span>Model settings</span>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    if scope == "panel":
+        st.markdown(
+            '<div class="majibot-section-title">'
+            '<span class="icon icon-sm icon-muted">tune</span>'
+            '<span>Model settings</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
-    providers = list(_MAJIBOT_MODELS.keys())
-    current_provider = (st.session_state.get("ai_provider") or "gemini").lower()
-    if current_provider not in providers:
-        current_provider = "gemini"
+    current_provider = (
+        st.session_state.get("ai_provider")
+        or keystore.get_preference("default_provider")
+        or "gemini"
+    ).lower()
 
-    new_provider = st.selectbox(
+    provider = st.text_input(
         "Provider",
-        providers,
-        index=providers.index(current_provider),
-        key="majibot_provider_select",
-        format_func=lambda p: _PROVIDER_LABELS.get(p, p),
-    )
-    st.session_state["ai_provider"] = new_provider
-    # Auto-persist the preferred provider so it survives full app restarts.
-    if keystore.get_preference("default_provider") != new_provider:
-        keystore.set_preference("default_provider", new_provider)
+        value=current_provider,
+        key=f"majibot_provider_input_{scope}",
+        help="e.g. gemini, openai, grok, glm, deepseek, openrouter — or any OpenAI-compatible service.",
+        placeholder="gemini",
+    ).strip().lower() or "gemini"
 
-    model_options = _MAJIBOT_MODELS[new_provider]
-    current_model = st.session_state.get("ai_model")
-    if current_model not in model_options:
-        current_model = model_options[0]
-    new_model = st.selectbox(
+    is_gemini = provider == "gemini"
+
+    # Base URL — OpenAI-compatible providers only; auto-filled for known ones.
+    base_url = ""
+    if not is_gemini:
+        default_base = (
+            st.session_state.get(f"ai_base_url_{provider}")
+            or keystore.get_preference(f"base_url:{provider}")
+            or KNOWN_BASE_URLS.get(provider, "")
+        )
+        base_url = st.text_input(
+            "Base URL",
+            value=default_base,
+            key=f"majibot_base_url_input_{scope}_{provider}",
+            help="OpenAI-compatible endpoint. Auto-filled for known providers; required for custom ones.",
+            placeholder="https://api.example.com/v1",
+        ).strip()
+
+    # Model — free text, with a helpful default/suggestion for known providers.
+    default_model = ""
+    if st.session_state.get("ai_provider") == provider:
+        default_model = st.session_state.get("ai_model") or ""
+    if not default_model and keystore.get_preference("default_provider") == provider:
+        default_model = keystore.get_preference("default_model") or ""
+    if not default_model and provider in _MODEL_SUGGESTIONS:
+        default_model = _MODEL_SUGGESTIONS[provider].split(",")[0].strip()
+    model = st.text_input(
         "Model",
-        model_options,
-        index=model_options.index(current_model),
-        key=f"majibot_model_{new_provider}",
-    )
-    st.session_state["ai_model"] = new_model
-    if keystore.get_preference("default_model") != new_model:
-        keystore.set_preference("default_model", new_model)
+        value=default_model,
+        key=f"majibot_model_input_{scope}_{provider}",
+        placeholder="model name",
+        help=("Suggestions: " + _MODEL_SUGGESTIONS[provider])
+        if provider in _MODEL_SUGGESTIONS
+        else "Any model name your provider supports.",
+    ).strip()
 
-    st.caption(
-        "Provider and model auto-save as your default for future sessions."
-    )
+    # Auto-persist provider / model / base URL as defaults for next session.
+    st.session_state["ai_provider"] = provider
+    if keystore.get_preference("default_provider") != provider:
+        keystore.set_preference("default_provider", provider)
+    if model:
+        st.session_state["ai_model"] = model
+        if keystore.get_preference("default_model") != model:
+            keystore.set_preference("default_model", model)
+    if not is_gemini and base_url:
+        st.session_state[f"ai_base_url_{provider}"] = base_url
+        if keystore.get_preference(f"base_url:{provider}") != base_url:
+            keystore.set_preference(f"base_url:{provider}", base_url)
 
-    key_state = f"ai_api_key_{new_provider}"
-    edit_flag = f"majibot_key_edit_{new_provider}"
+    st.caption("Provider, model and base URL auto-save for future sessions.")
 
-    # Pull persisted key into session_state on first render so other
-    # parts of the app (llm.py) can read st.session_state[key_state].
-    stored_key = keystore.get_api_key(new_provider) or ""
+    # ---- API key: masked "Stored" view with Edit/Clear, or an edit field. ----
+    key_label = f"{provider.upper()}_API_KEY"
+    key_state = f"ai_api_key_{provider}"
+    edit_flag = f"majibot_key_edit_{scope}_{provider}"
+
+    stored_key = keystore.get_api_key(provider) or ""
     if stored_key and not st.session_state.get(key_state):
         st.session_state[key_state] = stored_key
 
@@ -915,11 +922,11 @@ def _render_majibot_settings() -> None:
     in_edit_mode = st.session_state.get(edit_flag, False) or not has_stored
 
     if has_stored and not in_edit_mode:
-        # Read-only "Stored" view with Edit / Clear actions.
-        masked = "•" * 4 + (st.session_state[key_state][-4:] if len(st.session_state[key_state]) > 4 else "••••")
+        val = st.session_state[key_state]
+        masked = "•" * 4 + (val[-4:] if len(val) > 4 else "••••")
         st.markdown(
             f'<div class="majibot-key-stored">'
-            f'<div class="majibot-key-stored__label">{_PROVIDER_KEY_LABELS[new_provider]}</div>'
+            f'<div class="majibot-key-stored__label">{key_label}</div>'
             f'<div class="majibot-key-stored__value">'
             f'<span class="icon icon-sm" style="color: var(--success);">lock</span>'
             f'<code>{masked}</code>'
@@ -929,35 +936,32 @@ def _render_majibot_settings() -> None:
         )
         edit_col, clear_col = st.columns(2)
         with edit_col:
-            if st.button("Edit", key=f"majibot_key_edit_btn_{new_provider}",
-                         width="stretch"):
+            if st.button("Edit", key=f"majibot_key_edit_btn_{scope}_{provider}", width="stretch"):
                 st.session_state[edit_flag] = True
                 st.rerun()
         with clear_col:
-            if st.button("Clear", key=f"majibot_key_clear_btn_{new_provider}",
-                         width="stretch"):
-                keystore.clear_api_key(new_provider)
+            if st.button("Clear", key=f"majibot_key_clear_btn_{scope}_{provider}", width="stretch"):
+                keystore.clear_api_key(provider)
                 st.session_state[key_state] = ""
                 st.session_state[edit_flag] = True
                 st.rerun()
     else:
-        # Edit mode: text input + Save key button.
-        widget_key = f"majibot_key_input_{new_provider}"
+        widget_key = f"majibot_key_input_{scope}_{provider}"
         st.text_input(
-            _PROVIDER_KEY_LABELS[new_provider],
+            key_label,
             value=st.session_state.get(key_state, ""),
             type="password",
             key=widget_key,
             help="Stored locally at ~/.adi_water_dashboard/keys.json (chmod 0600).",
-            placeholder=f"Paste your {_PROVIDER_KEY_LABELS[new_provider]}",
+            placeholder=f"Paste your {key_label}",
         )
         save_col, cancel_col = st.columns(2)
         with save_col:
-            if st.button("Save key", key=f"majibot_key_save_btn_{new_provider}",
+            if st.button("Save key", key=f"majibot_key_save_btn_{scope}_{provider}",
                          icon=":material/save:", type="primary", width="stretch"):
                 value = st.session_state.get(widget_key, "").strip()
                 if value:
-                    keystore.set_api_key(new_provider, value)
+                    keystore.set_api_key(provider, value)
                     st.session_state[key_state] = value
                     st.session_state[edit_flag] = False
                     st.toast("API key saved", icon=":material/check_circle:")
@@ -966,10 +970,14 @@ def _render_majibot_settings() -> None:
                     st.warning("Enter a key first.")
         with cancel_col:
             if has_stored:
-                if st.button("Cancel", key=f"majibot_key_cancel_btn_{new_provider}",
-                             width="stretch"):
+                if st.button("Cancel", key=f"majibot_key_cancel_btn_{scope}_{provider}", width="stretch"):
                     st.session_state[edit_flag] = False
                     st.rerun()
+
+
+def _render_majibot_settings() -> None:
+    """Provider / model / API-key configuration shown inside the chat panel."""
+    _render_llm_provider_form(scope="panel")
 
 
 def _majibot_panel_css() -> str:
