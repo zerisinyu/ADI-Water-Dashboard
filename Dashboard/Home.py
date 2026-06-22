@@ -1291,9 +1291,27 @@ def _render_majibot_panel() -> None:
                                 from data.database import query as db_query
                                 result_df = db_query(sql)
                                 if not result_df.empty:
-                                    sql_response = "**Query results** (via text-to-SQL):\n\n"
-                                    sql_response += result_df.head(20).to_markdown(index=False)
-                                    sql_response += f"\n\n*{len(result_df)} row(s) returned*"
+                                    # Answer the question in natural language from the
+                                    # query result instead of dumping a raw table.
+                                    preview_csv = result_df.head(30).to_csv(index=False)
+                                    summary_messages = [
+                                        {"role": "system", "content": (
+                                            "You are MajiBot, a water-utility data assistant. An SQL "
+                                            "query was run to answer the user's question and returned the "
+                                            "data below (CSV). Answer the user's question directly and "
+                                            "conversationally, citing the key figures (with units and "
+                                            "rounding sensibly). Be concise. Do not show SQL or a raw "
+                                            "table — write plain sentences."
+                                        )},
+                                        {"role": "user", "content": (
+                                            f"Question: {user_query}\n\n"
+                                            f"Query result ({len(result_df)} row(s), showing up to 30) "
+                                            f"as CSV:\n{preview_csv}"
+                                        )},
+                                    ]
+                                    answer = client.chat_once(summary_messages, inject_context=False)
+                                    if answer and answer.strip():
+                                        sql_response = answer.strip()
                         except Exception:
                             pass
 
