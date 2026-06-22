@@ -1168,8 +1168,17 @@ def _majibot_panel_css() -> str:
         """
 
 
+@st.fragment
 def _render_majibot_panel() -> None:
-    """Render MajiBot as a bottom-right floating chat panel."""
+    """Render MajiBot as a bottom-right floating chat panel.
+
+    Decorated as a fragment so chat interactions (sending a message, clicking a
+    suggestion, opening settings) only re-run this panel via
+    ``st.rerun(scope="fragment")`` — the heavy dashboard scene behind it is left
+    untouched, which makes MajiBot feel far snappier. Opening/closing the panel
+    still does a full app rerun because that swaps the panel for the FAB, which
+    is decided outside this fragment.
+    """
     if not check_feature_access("ai_assistant"):
         with stylable_container("majibot-panel", css_styles=_majibot_panel_css()):
             render_feature_disabled_message("ai_assistant")
@@ -1202,7 +1211,7 @@ def _render_majibot_panel() -> None:
             if st.button("", key="majibot_panel_settings_btn", icon=":material/tune:",
                          help="Model & API settings"):
                 st.session_state["majibot_settings_open"] = not settings_open
-                st.rerun()
+                st.rerun(scope="fragment")
         with hcol3:
             if st.button("", key="majibot_panel_close_btn", icon=":material/close:",
                          help="Close"):
@@ -1217,7 +1226,7 @@ def _render_majibot_panel() -> None:
             if st.button("Back to chat", key="majibot_settings_done_btn",
                          icon=":material/arrow_back:", type="primary", width="stretch"):
                 st.session_state["majibot_settings_open"] = False
-                st.rerun()
+                st.rerun(scope="fragment")
 
         # Suggested questions seed
         insights_cache = st.session_state.get("exec_insights_cache", {})
@@ -1362,7 +1371,7 @@ def _render_majibot_panel() -> None:
                         user_turns = sum(1 for m in messages if m.get("role") == "user")
                         if user_turns < max_turns:
                             messages.append({"role": "user", "content": question})
-                            st.rerun()
+                            st.rerun(scope="fragment")
 
         # Input form (Enter-to-send via st.form). Form has its own top
         # border via the panel CSS, so no explicit <hr> needed.
@@ -1384,7 +1393,7 @@ def _render_majibot_panel() -> None:
                     st.warning("Chat limit reached for this session.")
                 else:
                     messages.append({"role": "user", "content": prompt.strip()})
-                    st.rerun()
+                    st.rerun(scope="fragment")
 
         # Auto-scroll the messages region to the bottom after every rerun.
         # Streamlit reruns the panel on each user/assistant turn; without
