@@ -1183,7 +1183,7 @@ def scene_access():
                     ),
                     hovermode='x unified',
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    height=450,
+                    height=400,
                     margin=dict(l=0, r=0, t=50, b=80),
                     plot_bgcolor='rgba(255,255,255,1)',
                     paper_bgcolor='rgba(255,255,255,1)',

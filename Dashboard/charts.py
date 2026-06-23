@@ -94,6 +94,12 @@ def register_adi_template() -> None:
         paper_bgcolor=SURFACE,
         colorway=DATA_SERIES,
         margin=dict(l=44, r=16, t=44, b=44),
+        # Bar geometry — slimmer, well-spaced, softly rounded bars are the
+        # single biggest readability win for grouped/stacked charts. Set once
+        # here so every figure inherits it instead of chunky full-width bars.
+        bargap=0.34,
+        bargroupgap=0.12,
+        barcornerradius=4,
         hovermode="x unified",
         hoverlabel=dict(
             bgcolor=TEXT_PRIMARY,
@@ -176,6 +182,40 @@ def style_fig(
     if legend_top:
         updates["legend"] = dict(orientation="h", y=1.08, x=0, yanchor="bottom", xanchor="left")
     fig.update_layout(**updates)
+    return fig
+
+
+def style_bar(
+    fig: go.Figure,
+    *,
+    title: Optional[str] = None,
+    height: int = 340,
+    show_legend: Optional[bool] = None,
+    legend_top: bool = False,
+    max_bar_width: Optional[float] = None,
+) -> go.Figure:
+    """Apply ADI defaults tuned for bar charts.
+
+    Wraps :func:`style_fig` and, for charts with only a handful of categories,
+    caps the bar thickness so two or three bars don't balloon to fill the whole
+    container width. ``max_bar_width`` is in data-axis units; when omitted a
+    sensible cap is applied only if the trace has <= 5 categories.
+    """
+    style_fig(fig, title=title, height=height, show_legend=show_legend, legend_top=legend_top)
+    bar_traces = [t for t in fig.data if getattr(t, "type", "") == "bar"]
+    # Only cap explicit bar width for SINGLE-series charts — setting width on
+    # grouped bars fights plotly's offset logic and causes overlap. Grouped
+    # charts rely on the template's bargap/bargroupgap instead.
+    if max_bar_width is not None:
+        fig.update_traces(width=max_bar_width, selector=dict(type="bar"))
+    elif len(bar_traces) == 1:
+        try:
+            n_cat = len(bar_traces[0].x) if bar_traces[0].x is not None else 0
+        except TypeError:
+            n_cat = 0
+        if 0 < n_cat <= 4:
+            # Keep 2-4 standalone bars slim rather than ballooning full-width.
+            fig.update_traces(width=0.55, selector=dict(type="bar"))
     return fig
 
 

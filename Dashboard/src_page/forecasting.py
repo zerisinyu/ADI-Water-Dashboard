@@ -18,6 +18,13 @@ from utils import (
 )
 from data.database import query
 from analytics.forecasting import forecast_metric, get_available_metrics
+from charts import (
+    style_fig,
+    DATA_WATER,
+    STATUS_GOOD,
+    STATUS_CRITICAL,
+    TEXT_PRIMARY,
+)
 from analytics.decomposition import decompose_metric
 from analytics.scenarios import (
     simulate_nrw_reduction,
@@ -38,7 +45,7 @@ def _render_forecast_chart(result: dict) -> None:
     fig.add_trace(go.Scatter(
         x=hist["ds"], y=hist["y"],
         name="Historical", mode="lines+markers",
-        line=dict(color="#0f172a", width=2),
+        line=dict(color=TEXT_PRIMARY, width=2),
         marker=dict(size=4),
     ))
 
@@ -46,7 +53,7 @@ def _render_forecast_chart(result: dict) -> None:
     fig.add_trace(go.Scatter(
         x=fcast["ds"], y=fcast["yhat"],
         name="Forecast", mode="lines+markers",
-        line=dict(color="#3b82f6", width=2, dash="dash"),
+        line=dict(color=DATA_WATER, width=2, dash="dash"),
         marker=dict(size=4),
     ))
 
@@ -54,7 +61,7 @@ def _render_forecast_chart(result: dict) -> None:
     fig.add_trace(go.Scatter(
         x=pd.concat([fcast["ds"], fcast["ds"][::-1]]),
         y=pd.concat([fcast["yhat_upper_95"], fcast["yhat_lower_95"][::-1]]),
-        fill="toself", fillcolor="rgba(59,130,246,0.1)",
+        fill="toself", fillcolor="rgba(0,113,227,0.08)",
         line=dict(color="rgba(0,0,0,0)"),
         name="95% CI", showlegend=True,
     ))
@@ -63,19 +70,18 @@ def _render_forecast_chart(result: dict) -> None:
     fig.add_trace(go.Scatter(
         x=pd.concat([fcast["ds"], fcast["ds"][::-1]]),
         y=pd.concat([fcast["yhat_upper_80"], fcast["yhat_lower_80"][::-1]]),
-        fill="toself", fillcolor="rgba(59,130,246,0.2)",
+        fill="toself", fillcolor="rgba(0,113,227,0.16)",
         line=dict(color="rgba(0,0,0,0)"),
         name="80% CI", showlegend=True,
     ))
 
     fig.update_layout(
-        title=f"{info['label']} — Forecast",
         xaxis_title="Date",
         yaxis_title=info["label"],
-        height=450,
         legend=dict(orientation="h", y=-0.15),
         hovermode="x unified",
     )
+    style_fig(fig, title=f"{info['label']} — Forecast", height=400)
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -91,10 +97,10 @@ def _render_decomposition_chart(result: dict, label: str) -> None:
     )
 
     components = [
-        ("observed", "#0f172a"),
-        ("trend", "#3b82f6"),
-        ("seasonal", "#10b981"),
-        ("residual", "#ef4444"),
+        ("observed", TEXT_PRIMARY),
+        ("trend", DATA_WATER),
+        ("seasonal", STATUS_GOOD),
+        ("residual", STATUS_CRITICAL),
     ]
 
     for i, (key, color) in enumerate(components, 1):
@@ -107,9 +113,10 @@ def _render_decomposition_chart(result: dict, label: str) -> None:
             ), row=i, col=1)
 
     fig.update_layout(
-        height=600,
+        height=500,
         title_text=f"{label} — Seasonal Decomposition (period={result.get('period', '?')})",
     )
+    style_fig(fig, height=500)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 

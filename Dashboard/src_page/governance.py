@@ -20,6 +20,15 @@ from utils import (
     render_empty_state,
     _ensure_pipeline,
 )
+from charts import (
+    style_fig,
+    style_bar,
+    DATA_WATER,
+    DATA_SANITATION,
+    STATUS_GOOD,
+    STATUS_WARNING,
+    STATUS_NEUTRAL,
+)
 from data.database import query
 
 
@@ -102,17 +111,14 @@ def scene_governance():
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=prov_df["year"], y=prov_df["total_service_providers"],
-                name="Total Providers", marker_color="#94a3b8",
+                name="Total Providers", marker_color=STATUS_NEUTRAL,
             ))
             fig.add_trace(go.Bar(
                 x=prov_df["year"], y=prov_df["licensed_service_providers"],
-                name="Licensed Providers", marker_color="#10b981",
+                name="Licensed Providers", marker_color=STATUS_GOOD,
             ))
-            fig.update_layout(
-                title="Total vs Licensed Service Providers",
-                barmode="group", height=400,
-                xaxis_title="Year", yaxis_title="Count",
-            )
+            fig.update_layout(barmode="group", xaxis_title="Year", yaxis_title="Count")
+            style_bar(fig, title="Total vs Licensed Service Providers", height=340, legend_top=True)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
             # WTP Inspections
@@ -122,19 +128,19 @@ def scene_governance():
             wtp_df["inspection_pct"] = (wtp_df["inspected_wtps"] / wtp_df["registered_wtps"].replace(0, 1) * 100)
 
             fig2 = go.Figure()
-            fig2.add_trace(go.Bar(x=wtp_df["year"], y=wtp_df["registered_wtps"], name="Registered", marker_color="#3b82f6"))
-            fig2.add_trace(go.Bar(x=wtp_df["year"], y=wtp_df["inspected_wtps"], name="Inspected", marker_color="#10b981"))
+            fig2.add_trace(go.Bar(x=wtp_df["year"], y=wtp_df["registered_wtps"], name="Registered", marker_color=DATA_WATER))
+            fig2.add_trace(go.Bar(x=wtp_df["year"], y=wtp_df["inspected_wtps"], name="Inspected", marker_color=STATUS_GOOD))
             fig2.add_trace(go.Scatter(
                 x=wtp_df["year"], y=wtp_df["inspection_pct"],
                 name="Inspection Rate %", yaxis="y2",
-                line=dict(color="#ef4444", width=3, dash="dot"),
+                line=dict(color=STATUS_WARNING, width=2.5, dash="dot"),
             ))
             fig2.update_layout(
-                title="Water Treatment Plant Inspections",
-                barmode="group", height=400,
+                barmode="group",
                 yaxis=dict(title="Count"),
-                yaxis2=dict(title="%", overlaying="y", side="right", range=[0, 110]),
+                yaxis2=dict(title="%", overlaying="y", side="right", range=[0, 110], showgrid=False),
             )
+            style_bar(fig2, title="Water Treatment Plant Inspections", height=340, legend_top=True)
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     with tab_assets:
@@ -147,25 +153,20 @@ def scene_governance():
             fig.add_trace(go.Scatter(
                 x=asset_df["year"], y=asset_df["asset_health"],
                 mode="lines+markers", name="Asset Health Index",
-                line=dict(color="#3b82f6", width=3),
-                fill="tozeroy", fillcolor="rgba(59,130,246,0.1)",
+                line=dict(color=DATA_WATER, width=2.5),
+                fill="tozeroy", fillcolor="rgba(0,113,227,0.10)",
             ))
-            fig.add_hline(y=70, line_dash="dash", line_color="#10b981", annotation_text="Good threshold (70)")
-            fig.update_layout(
-                title="Asset Health Index Over Time",
-                yaxis=dict(title="Index (0-100)", range=[0, 100]),
-                height=400,
-            )
+            fig.add_hline(y=70, line_dash="dash", line_color=STATUS_GOOD, annotation_text="Good threshold (70)")
+            fig.update_layout(yaxis=dict(title="Index (0-100)", range=[0, 100]))
+            style_fig(fig, title="Asset Health Index Over Time", height=320)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
             # Complaint resolution trend
             cr_df = trend_df.groupby("year").agg({"complaint_resolution": "mean"}).reset_index()
-            fig2 = px.line(
-                cr_df, x="year", y="complaint_resolution",
-                title="Average Complaint Resolution Time (hours)",
-                markers=True,
-            )
-            fig2.update_layout(height=350, yaxis_title="Hours")
+            fig2 = px.line(cr_df, x="year", y="complaint_resolution", markers=True)
+            fig2.update_traces(line=dict(color=DATA_SANITATION, width=2.5))
+            fig2.update_layout(yaxis_title="Hours")
+            style_fig(fig2, title="Average Complaint Resolution Time (hours)", height=300)
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     with tab_training:
@@ -184,17 +185,16 @@ def scene_governance():
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=train_df["year"], y=train_df["trained_staff"],
-                name="Trained Staff", marker_color="#3b82f6",
+                name="Trained Staff", marker_color=DATA_WATER,
             ))
             fig.add_trace(go.Scatter(
                 x=train_df["year"], y=train_df["training_pct_of_staff_cost"],
                 name="Training Budget (% of Staff Cost)", yaxis="y2",
-                line=dict(color="#f59e0b", width=3),
+                line=dict(color=STATUS_WARNING, width=2.5),
             ))
             fig.update_layout(
-                title="Staff Training Volume & Investment",
                 yaxis=dict(title="Staff Trained"),
-                yaxis2=dict(title="Training Budget %", overlaying="y", side="right"),
-                height=400,
+                yaxis2=dict(title="Training Budget %", overlaying="y", side="right", showgrid=False),
             )
+            style_bar(fig, title="Staff Training Volume & Investment", height=340, legend_top=True)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

@@ -141,7 +141,7 @@ def render_benchmarking_radar(
     fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
         title="Cross-Country Performance Benchmark",
-        height=500,
+        height=440,
         showlegend=True,
     )
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

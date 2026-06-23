@@ -20,6 +20,15 @@ from utils import (
     render_empty_state,
     _ensure_pipeline,
 )
+from charts import (
+    style_fig,
+    style_bar,
+    colorway,
+    DATA_WATER,
+    DATA_SANITATION,
+    STATUS_NEUTRAL,
+    GRID,
+)
 from data.database import query
 
 
@@ -97,15 +106,11 @@ def scene_sector():
             budget_df["other"] = budget_df["other"].clip(lower=0)
 
             fig = go.Figure()
-            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["wat_allocation"] / 1e9, name="Water", marker_color="#3b82f6"))
-            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["san_allocation"] / 1e9, name="Sanitation", marker_color="#10b981"))
-            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["other"] / 1e9, name="Other", marker_color="#e2e8f0"))
-            fig.update_layout(
-                title="National Budget Allocation (Billions)",
-                barmode="stack", height=450,
-                yaxis_title="Budget (Billions)",
-                legend=dict(orientation="h", y=-0.15),
-            )
+            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["wat_allocation"] / 1e9, name="Water", marker_color=DATA_WATER))
+            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["san_allocation"] / 1e9, name="Sanitation", marker_color=DATA_SANITATION))
+            fig.add_trace(go.Bar(x=budget_df["year"], y=budget_df["other"] / 1e9, name="Other", marker_color="#d9dadd"))
+            fig.update_layout(barmode="stack", yaxis_title="Budget (Billions)")
+            style_bar(fig, title="National Budget Allocation (Billions)", height=360, legend_top=True)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
             # WASH percentage trend
@@ -113,12 +118,10 @@ def scene_sector():
                 (budget_df["wat_allocation"] + budget_df["san_allocation"])
                 / budget_df["budget_allocated"].replace(0, 1) * 100
             )
-            fig2 = px.line(
-                budget_df, x="year", y="wash_pct",
-                title="WASH Spending as % of Total Budget",
-                markers=True,
-            )
-            fig2.update_layout(height=350, yaxis=dict(title="%", range=[0, max(20, budget_df["wash_pct"].max() + 5)]))
+            fig2 = px.line(budget_df, x="year", y="wash_pct", markers=True)
+            fig2.update_traces(line=dict(color=DATA_WATER, width=2.5))
+            fig2.update_layout(yaxis=dict(title="%", range=[0, max(20, budget_df["wash_pct"].max() + 5)]))
+            style_fig(fig2, title="WASH Spending as % of Total Budget", height=300)
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     # ----------------------------------------------------------------
@@ -134,25 +137,27 @@ def scene_sector():
             compare_df["wash_total"] = compare_df["wat_allocation"] + compare_df["san_allocation"]
             compare_df["wash_pct"] = (compare_df["wash_total"] / compare_df["budget_allocated"].replace(0, 1) * 100)
 
-            fig = px.bar(
-                compare_df, x="country", y=["wat_allocation", "san_allocation"],
-                title=f"Water vs Sanitation Allocation by Country ({year_val})",
-                barmode="group",
-                labels={"value": "Amount", "variable": "Sector"},
-                color_discrete_map={"wat_allocation": "#3b82f6", "san_allocation": "#10b981"},
-            )
-            fig.update_layout(height=400, yaxis_title="Allocation Amount")
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            # Two related cross-country charts side-by-side — halves each chart's
+            # width so the 4-country bars read tight instead of ballooning.
+            cc1, cc2 = st.columns(2)
+            with cc1:
+                fig = px.bar(
+                    compare_df, x="country", y=["wat_allocation", "san_allocation"],
+                    barmode="group",
+                    labels={"value": "Amount", "variable": "Sector"},
+                    color_discrete_map={"wat_allocation": DATA_WATER, "san_allocation": DATA_SANITATION},
+                )
+                fig.update_layout(yaxis_title="Allocation Amount")
+                style_bar(fig, title=f"Water vs Sanitation by Country ({year_val})", height=360, legend_top=True)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-            # Budget per capita-ish (using total budget)
-            fig2 = px.bar(
-                compare_df, x="country", y="wash_pct",
-                title=f"WASH Budget as % of Total National Budget ({year_val})",
-                color="country",
-                color_discrete_sequence=px.colors.qualitative.Set2,
-            )
-            fig2.update_layout(height=350, yaxis_title="WASH %", showlegend=False)
-            st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
+            with cc2:
+                # Single metric → single color (not a rainbow per country).
+                fig2 = px.bar(compare_df, x="country", y="wash_pct")
+                fig2.update_traces(marker_color=DATA_WATER)
+                fig2.update_layout(yaxis_title="WASH %", showlegend=False)
+                style_bar(fig2, title=f"WASH % of National Budget ({year_val})", height=360)
+                st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})
 
     # ----------------------------------------------------------------
     # Tab 3: Water Resources
@@ -169,10 +174,11 @@ def scene_sector():
 
             fig = px.line(
                 res_df, x="year", y="water_resources", color="country",
-                title="Water Resources Availability Over Time",
-                markers=True,
+                markers=True, color_discrete_sequence=colorway(),
             )
-            fig.update_layout(height=400, yaxis_title="Water Resources (m³)")
+            fig.update_traces(line=dict(width=2.5))
+            fig.update_layout(yaxis_title="Water Resources (m³)")
+            style_fig(fig, title="Water Resources Availability Over Time", height=340, legend_top=True)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
             # Staff cost vs training budget
@@ -185,8 +191,8 @@ def scene_sector():
 
             fig2 = px.bar(
                 staff_df, x="year", y="training_ratio", color="country",
-                title="Training Investment (% of Staff Cost)",
-                barmode="group",
+                barmode="group", color_discrete_sequence=colorway(),
             )
-            fig2.update_layout(height=350, yaxis_title="Training %")
+            fig2.update_layout(yaxis_title="Training %")
+            style_bar(fig2, title="Training Investment (% of Staff Cost)", height=340, legend_top=True)
             st.plotly_chart(fig2, use_container_width=True, config={"displayModeBar": False})

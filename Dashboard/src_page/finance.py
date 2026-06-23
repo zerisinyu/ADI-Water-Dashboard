@@ -23,12 +23,15 @@ from utils import (
 from charts import (
     DATA_SERIES,
     DATA_WATER,
+    DATA_SANITATION,
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
     apply_axis_currency,
     apply_axis_percent,
     style_fig,
+    style_bar,
+    colorway,
     status_color,
 )
 
@@ -461,14 +464,14 @@ def scene_finance():
                     y=billing_trend['sewer_billed'],
                     name='Billed Amount',
                     mode='lines+markers',
-                    line=dict(color='#3b82f6', width=2)
+                    line=dict(color=DATA_WATER, width=2)
                 ))
                 fig_billing.add_trace(go.Scatter(
                     x=billing_trend['date_parsed'],
                     y=billing_trend['sewer_revenue'],
                     name='Revenue Collected',
                     mode='lines+markers',
-                    line=dict(color='#10b981', width=2)
+                    line=dict(color=STATUS_GOOD, width=2)
                 ))
                 fig_billing.update_layout(
                     title='Billing vs Revenue Collection Over Time',
@@ -489,7 +492,7 @@ def scene_finance():
                     name='Outstanding Debt',
                     mode='lines+markers',
                     fill='tozeroy',
-                    line=dict(color='#ef4444', width=2)
+                    line=dict(color=STATUS_CRITICAL, width=2)
                 ))
                 fig_debt.update_layout(
                     title='Debt Accumulation Trend',
@@ -516,21 +519,20 @@ def scene_finance():
                     x=revenue_opex['date_parsed'],
                     y=revenue_opex['sewer_revenue'],
                     name='Revenue',
-                    marker_color='#10b981'
+                    marker_color=STATUS_GOOD
                 ))
                 fig_rev_opex.add_trace(go.Bar(
                     x=revenue_opex['date_parsed'],
                     y=revenue_opex['opex'],
                     name='Operating Expenses',
-                    marker_color='#f59e0b'
+                    marker_color=STATUS_WARNING
                 ))
                 fig_rev_opex.update_layout(
-                    title='Revenue vs Operating Expenses',
                     xaxis_title='Date',
                     yaxis_title='Amount ($)',
                     barmode='group',
-                    height=400
                 )
+                style_bar(fig_rev_opex, title='Revenue vs Operating Expenses', height=340, legend_top=True)
                 st.plotly_chart(fig_rev_opex, use_container_width=True)
 
         with col2:
@@ -545,7 +547,7 @@ def scene_finance():
                 delta={'reference': 100},
                 gauge={
                     'axis': {'range': [None, 150]},
-                    'bar': {'color': "#3b82f6"},
+                    'bar': {'color': DATA_WATER},
                     'steps': [
                         {'range': [0, 70], 'color': "#fee2e2"},
                         {'range': [70, 100], 'color': "#fed7aa"},
@@ -690,9 +692,11 @@ def scene_finance():
                     values='Amount',
                     names='Category',
                     title=f'Budget Allocation Breakdown ({latest_year})',
-                    color_discrete_sequence=px.colors.qualitative.Set3
+                    color_discrete_sequence=colorway(),
+                    hole=0.45,
                 )
-                fig_budget.update_layout(height=400)
+                fig_budget.update_traces(marker=dict(line=dict(color="#ffffff", width=2)))
+                fig_budget.update_layout(height=340)
                 st.plotly_chart(fig_budget, use_container_width=True)
 
         with col2:
@@ -773,7 +777,7 @@ def scene_finance():
                 title={'text': "Complaint Resolution Rate (%)"},
                 gauge={
                     'axis': {'range': [None, 100]},
-                    'bar': {'color': "#10b981"},
+                    'bar': {'color': STATUS_GOOD},
                     'steps': [
                         {'range': [0, 60], 'color': "#fee2e2"},
                         {'range': [60, 80], 'color': "#fed7aa"},
@@ -811,8 +815,10 @@ def scene_finance():
                 values='Staff Count',
                 names='Department',
                 title='Staff Distribution',
-                color_discrete_sequence=['#3b82f6', '#10b981']
+                color_discrete_sequence=[DATA_WATER, DATA_SANITATION],
+                hole=0.45,
             )
+            fig_staff.update_traces(marker=dict(line=dict(color="#ffffff", width=2)))
             st.plotly_chart(fig_staff, use_container_width=True)
 
         with col2:
@@ -829,13 +835,13 @@ def scene_finance():
                     x=staff_cost_trend['date_YY'],
                     y=staff_cost_trend['staff_cost'],
                     name='Staff Cost',
-                    marker_color='#3b82f6'
+                    marker_color=DATA_WATER
                 ))
                 fig_staff_cost.add_trace(go.Bar(
                     x=staff_cost_trend['date_YY'],
                     y=staff_cost_trend['staff_training_budget'],
                     name='Training Budget',
-                    marker_color='#10b981'
+                    marker_color=DATA_SANITATION
                 ))
                 fig_staff_cost.update_layout(
                     title='Staff Cost & Training Budget Trend',

@@ -27,6 +27,7 @@ from charts import (
     STATUS_CRITICAL,
     apply_axis_percent,
     style_fig,
+    colorway,
 )
 from data.metrics import per_capita_consumption
 
@@ -644,13 +645,13 @@ def scene_production():
                 # Switch to line chart for cleaner visualization with many data points
                 fig_mix = px.line(prod_trend, x=x_axis, y='volume_display', color='source',
                                   labels={'volume_display': y_label, x_axis: 'Date'},
-                                  color_discrete_sequence=px.colors.qualitative.Safe)
+                                  color_discrete_sequence=colorway())
                 fig_mix.update_traces(mode='lines')
             else:
                 # Use stacked bar chart for clearer comparison
                 fig_mix = px.bar(prod_trend, x=x_axis, y='volume_display', color='source',
                                  labels={'volume_display': y_label, x_axis: 'Date'},
-                                 color_discrete_sequence=px.colors.qualitative.Safe,
+                                 color_discrete_sequence=colorway(),
                                  barmode='stack')
             
             fig_mix.update_layout(
@@ -903,8 +904,8 @@ def scene_production():
             ),
             hovermode="x unified",
             legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center"),
-            height=550,
-            margin=dict(l=20, r=20, t=60, b=80)
+            height=420,
+            margin=dict(l=20, r=20, t=60, b=70)
         )
         
         st.plotly_chart(fig, use_container_width=True)
