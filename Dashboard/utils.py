@@ -372,7 +372,20 @@ def render_standardized_filters(
             index=default_month_idx,
             key=f"{key_prefix}_month"
         )
-    
+
+    # ------------------------------------------------------------------
+    # Write selections back to the GLOBAL session keys so that the choice
+    # persists across pages and stays consistent with the Executive page
+    # (single source of truth). Without this, each page's prefixed widget
+    # kept its own private state and selections did not propagate.
+    # ------------------------------------------------------------------
+    st.session_state["selected_country"] = result['country']
+    if show_zone:
+        st.session_state["selected_zone"] = result['zone']
+    if show_year and result['year'] is not None:
+        st.session_state["selected_year"] = result['year']
+    st.session_state["selected_month"] = result['month']
+
     return result
 
 

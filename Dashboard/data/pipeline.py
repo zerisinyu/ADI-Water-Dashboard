@@ -193,9 +193,15 @@ class ETLPipeline:
                     CASE WHEN complaints > 0
                          THEN CAST(resolved AS DOUBLE) / complaints * 100
                          ELSE NULL END AS complaint_resolution_rate,
-                    CASE WHEN w_supplied > 0
-                         THEN (w_supplied - total_consumption) / w_supplied * 100
-                         ELSE NULL END AS nrw_rate,
+                    -- NRW is intentionally NULL here: in this dataset
+                    -- total_consumption ("estimated across all sources") is
+                    -- systematically larger than w_supplied (utility supply),
+                    -- so (w_supplied - total_consumption)/w_supplied yields an
+                    -- impossible negative value (~ -125% on average). The valid
+                    -- NRW (produced − billed) lives in v_nrw_monthly and
+                    -- data.metrics.non_revenue_water(). Column kept for
+                    -- backward compatibility with downstream consumers.
+                    CAST(NULL AS DOUBLE) AS nrw_rate,
                     CASE WHEN households > 0
                          THEN CAST(sewer_connections AS DOUBLE) / households * 100
                          ELSE NULL END AS sewer_coverage_rate,

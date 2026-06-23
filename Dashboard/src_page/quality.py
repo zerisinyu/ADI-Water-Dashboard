@@ -35,6 +35,7 @@ from charts import (
     apply_axis_percent,
     style_fig,
 )
+from data.metrics import women_in_decision_making
 
 # Required columns for schema validation
 SERVICE_REQUIRED_COLS = ['country', 'zone', 'year', 'month']
@@ -718,7 +719,23 @@ def scene_quality():
         if service_type in ["Sanitation", "Both"]:
             render_section_header("Sanitation check", icon="shower")
             st.markdown("Wastewater treatment efficiency and sewer health metrics.")
-            
+
+            # AUDC circular-economy indicators (real data: ww_collected/treated/reused)
+            from data.metrics import wastewater_treatment_pct, water_reuse_pct
+            _treat_pct = wastewater_treatment_pct(df_s_filt)
+            _reuse_pct = water_reuse_pct(df_s_filt)
+            sm1, sm2 = st.columns(2)
+            sm1.metric(
+                "Wastewater treated",
+                f"{_treat_pct:.1f}%" if _treat_pct is not None else "—",
+                help="Volume treated ÷ volume collected (AUDC indicator)",
+            )
+            sm2.metric(
+                "Water recycled / reused",
+                f"{_reuse_pct:.1f}%" if _reuse_pct is not None else "—",
+                help="Wastewater reused ÷ total water supplied (SDG 6.3)",
+            )
+
             s_col1, s_col2 = st.columns(2)
         
             with s_col1:
@@ -898,54 +915,59 @@ def scene_quality():
     
     org_tab1, org_tab2, org_tab3 = st.tabs(["Staff metrics", "Training matrix", "Diversity & efficiency"])
 
-    # Alert Box (shown once above all tabs)
-    st.markdown(
-        '<div class="card card--quiet" style="display: flex; gap: 10px; align-items: flex-start;">'
-        '<span class="icon icon-lg icon-muted">warning</span>'
-        '<div>'
-        '<strong>Data unavailable</strong> — detailed gender-disaggregated workforce data and training records are not currently collected. '
-        'The visualizations below are a <strong>demonstration</strong> of the intended dashboard capabilities.'
-        '</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    
-    # TAB 1: Staff Metrics
+    # TAB 1: Staff Metrics — now built from REAL data:
+    #   - w_staff / san_staff (financial services, monthly)
+    #   - workforce / f_workforce (service data: sanitation decision-making)
+    #   - staff per 1000 sewer connections (efficiency)
     with org_tab1:
-        st.markdown("**Staff Composition & Efficiency (Demo)**")
-        
-        # Demo Data
-        staff_cats = ['Water Supply', 'Sanitation']
-        total_staff = [150, 120]
-        trained_staff = [90, 60]
-        male_staff = [110, 100]
-        female_staff = [40, 20]
-        efficiency = [2.5, 4.1] # Staff per 1000 connections
+        st.markdown("**Staff composition & efficiency**")
 
-        fig_staff = go.Figure()
-        
-        # Bars
-        fig_staff.add_trace(go.Bar(x=staff_cats, y=total_staff, name='Total Staff', marker_color='#9ca3af'))
-        fig_staff.add_trace(go.Bar(x=staff_cats, y=trained_staff, name='Trained', marker_color='#60a5fa'))
-        fig_staff.add_trace(go.Bar(x=staff_cats, y=male_staff, name='Male', marker_color='#2563eb')) # Dark Blue
-        fig_staff.add_trace(go.Bar(x=staff_cats, y=female_staff, name='Female', marker_color='#f472b6')) # Pink
-        
-        # Line Overlay (Secondary Y)
-        fig_staff.add_trace(go.Scatter(
-            x=staff_cats, y=efficiency, name='Efficiency (Staff/1000 conn)',
-            mode='lines+markers', yaxis='y2', line=dict(color='#fbbf24', width=3)
-        ))
+        water_staff = float(df_f_filt['w_staff'].mean()) if not df_f_filt.empty and 'w_staff' in df_f_filt.columns else 0.0
+        san_staff = float(df_f_filt['san_staff'].mean()) if not df_f_filt.empty and 'san_staff' in df_f_filt.columns else 0.0
 
-        fig_staff.update_layout(
-            height=350, margin=dict(l=0, r=0, t=20, b=0),
-            barmode='group',
-            legend=dict(orientation="h", y=1.1),
-            yaxis2=dict(title="Staff/1000 Conn", overlaying='y', side='right', showgrid=False)
+        # Women in decision-making (AUDC indicator) from service workforce data
+        women_dm = women_in_decision_making(df_s_filt)
+
+        # Staff per 1000 connections (efficiency) — sanitation staff vs sewer connections
+        sewer_conn = float(df_s_filt['sewer_connections'].mean()) if not df_s_filt.empty and 'sewer_connections' in df_s_filt.columns else 0.0
+        san_eff = (san_staff / sewer_conn * 1000) if sewer_conn > 0 else 0.0
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Water supply staff", f"{water_staff:,.0f}", help="Avg monthly headcount (financial services data)")
+        m2.metric("Sanitation staff", f"{san_staff:,.0f}", help="Avg monthly headcount")
+        m3.metric(
+            "Women in decision-making",
+            f"{women_dm:.1f}%" if women_dm is not None else "—",
+            help="Women ÷ total sanitation decision-making workforce (AUDC indicator)",
         )
 
-        st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-        st.plotly_chart(fig_staff, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        if water_staff > 0 or san_staff > 0:
+            fig_staff = go.Figure()
+            fig_staff.add_trace(go.Bar(
+                x=['Water Supply', 'Sanitation'],
+                y=[water_staff, san_staff],
+                name='Total staff', marker_color=[DATA_WATER, DATA_SANITATION],
+            ))
+            fig_staff.add_trace(go.Scatter(
+                x=['Sanitation'], y=[san_eff], name='Staff / 1000 connections',
+                mode='markers+text', yaxis='y2',
+                marker=dict(color='#fbbf24', size=14),
+                text=[f"{san_eff:.1f}"], textposition='top center',
+            ))
+            fig_staff.update_layout(
+                height=350, margin=dict(l=0, r=0, t=20, b=0),
+                legend=dict(orientation="h", y=1.1),
+                yaxis=dict(title="Headcount"),
+                yaxis2=dict(title="Staff/1000 conn", overlaying='y', side='right', showgrid=False),
+            )
+            st.plotly_chart(fig_staff, use_container_width=True)
+        else:
+            st.info("No workforce data available for the selected filters.")
+
+        st.caption(
+            "Note: gender-disaggregated *training* records (M/F trained) are not "
+            "yet collected — see the Training matrix tab."
+        )
 
     # TAB 2: Training Matrix
     with org_tab2:

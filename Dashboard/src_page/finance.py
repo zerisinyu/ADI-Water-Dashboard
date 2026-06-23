@@ -431,7 +431,7 @@ def scene_finance():
         KPI("Total budget",     budget_display,  delta=f"FY {selected_year}", delta_kind="neutral", icon="account_balance_wallet", footnote="Allocated funding", sparkline=budget_spark),
         KPI("Total billed",     billed_display,  delta="Sewer services",       delta_kind="neutral", icon="receipt_long", footnote="Customer invoices", sparkline=billed_spark),
         KPI("Revenue collected", revenue_display, delta=f"OPEX ${total_opex/1e6:.1f}M", delta_kind="neutral", icon="payments", footnote="Payments received", sparkline=revenue_spark),
-        KPI("Collection rate",  f"{avg_collection_rate:.1f}%", delta=f"{coll_label} · target 85%", delta_kind=coll_kind, icon="trending_up", sparkline=coll_spark),
+        KPI("Sewer collection rate",  f"{avg_collection_rate:.1f}%", delta=f"{coll_label} · target 85%", delta_kind=coll_kind, icon="trending_up", footnote="Sewer revenue ÷ sewer billed. Utility-wide (water+sewer) collection is on the Executive page.", sparkline=coll_spark),
         KPI("Outstanding debt", debt_display,    delta="Unpaid invoices",      delta_kind="negative" if total_debt > 0 else "positive", icon="warning", sparkline=debt_spark),
     ])
 

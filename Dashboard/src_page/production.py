@@ -28,6 +28,7 @@ from charts import (
     apply_axis_percent,
     style_fig,
 )
+from data.metrics import per_capita_consumption
 
 # Required columns for schema validation
 PRODUCTION_REQUIRED_COLS = ['country', 'zone', 'source', 'production_m3']
@@ -85,11 +86,69 @@ def load_production_data():
     Data is automatically filtered based on user access permissions.
     """
     df_prod = _load_raw_production_data()
-    
+
     # Apply access control filtering
     df_prod = filter_df_by_user_access(df_prod.copy(), "country")
-    
+
     return df_prod
+
+
+@st.cache_data
+def _load_billing_consumption():
+    """
+    Real monthly billed consumption (m³) per country/zone, used to compute
+    Non-Revenue Water against production. Replaces the previous synthetic
+    (np.random) consumption series so NRW reflects actual metered volume.
+    """
+    from data.database import query
+    try:
+        df = query(
+            "SELECT date, country, zone, consumption_m3 "
+            "FROM billing WHERE date IS NOT NULL"
+        )
+    except Exception:
+        return pd.DataFrame(columns=["date", "country", "zone", "consumption_m3"])
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["consumption_m3"] = pd.to_numeric(df["consumption_m3"], errors="coerce").fillna(0)
+    df = df.dropna(subset=["date"])
+    df["_month"] = df["date"].dt.to_period("M")
+    return df
+
+
+@st.cache_data
+def _load_population_by_year():
+    """Real population served per country/year from water access data."""
+    from data.database import query
+    try:
+        df = query("SELECT country, year, zone, popn_total FROM w_access")
+    except Exception:
+        return pd.DataFrame(columns=["country", "year", "zone", "popn_total"])
+    if df.empty:
+        return df
+    df["popn_total"] = pd.to_numeric(df["popn_total"], errors="coerce")
+    return df
+
+
+def _population_for_rows(ts_df, selected_country, selected_zones):
+    """
+    Map a real annual population total onto each row of ``ts_df`` by year.
+    Returns a Series aligned to ts_df.index (NaN where population is unknown).
+    """
+    pop = _load_population_by_year()
+    if pop.empty or "year" not in ts_df.columns and "date_dt" not in ts_df.columns:
+        return pd.Series([float("nan")] * len(ts_df), index=ts_df.index)
+    if selected_country and selected_country != "All":
+        pop = pop[pop["country"].str.lower() == selected_country.lower()]
+    if selected_zones and "zone" in pop.columns:
+        _zl = [z.lower() for z in selected_zones]
+        pop = pop[pop["zone"].str.lower().isin(_zl)]
+    if pop.empty:
+        return pd.Series([float("nan")] * len(ts_df), index=ts_df.index)
+    pop_by_year = pop.groupby("year")["popn_total"].sum()
+    years = ts_df["date_dt"].dt.year if "date_dt" in ts_df.columns else ts_df["year"]
+    return years.map(pop_by_year).astype(float)
 
 def scene_production():
     """
@@ -380,6 +439,39 @@ def scene_production():
     except Exception:
         pass
 
+    # ---- Consumption per capita (l/c/d) — AUDC Production indicator ---------
+    # Real billed consumption over the filtered window ÷ population served ÷ days.
+    lcd_value = None
+    try:
+        _bill = _load_billing_consumption()
+        if not _bill.empty:
+            if selected_country and selected_country != "All":
+                _bill = _bill[_bill["country"].str.lower() == selected_country.lower()]
+            if selected_zones and "zone" in _bill.columns:
+                _zl = [z.lower() for z in selected_zones]
+                _bill = _bill[_bill["zone"].str.lower().isin(_zl)]
+        _months_in_scope = df_p_filt["date_dt"].dt.to_period("M").unique()
+        if not _bill.empty and len(_months_in_scope) > 0:
+            _bill = _bill[_bill["_month"].isin(_months_in_scope)]
+        _total_cons_m3 = float(_bill["consumption_m3"].sum()) if not _bill.empty else 0.0
+        _pop = _population_for_rows(df_p_filt, selected_country, selected_zones)
+        _pop_val = float(_pop.dropna().iloc[0]) if _pop.notna().any() else 0.0
+        _span = df_p_filt["date_dt"].max() - df_p_filt["date_dt"].min()
+        _days = max(int(_span.days) + 1, 1)
+        lcd_value = per_capita_consumption(_total_cons_m3, _pop_val, _days)
+    except Exception:
+        lcd_value = None
+    lcd_display = f"{lcd_value:.0f}" if lcd_value is not None else "—"
+    # 50–100 l/c/d is the basic-to-adequate band (JMP); flag extremes.
+    if lcd_value is None:
+        lcd_kind = "neutral"
+    elif lcd_value < 50:
+        lcd_kind = "negative"
+    elif lcd_value <= 150:
+        lcd_kind = "positive"
+    else:
+        lcd_kind = "neutral"
+
     render_kpi_row([
         KPI("Total production", val_display,
             delta=unit_label_card,
@@ -402,6 +494,11 @@ def scene_production():
             delta_kind=util_kind,
             icon="bolt",
             sparkline=util_spark),
+        KPI("Consumption per capita", lcd_display,
+            delta="l/c/d",
+            delta_kind=lcd_kind,
+            icon="local_drink",
+            footnote="Billed volume ÷ population served"),
     ])
 
     # Alerts
@@ -609,19 +706,43 @@ def scene_production():
     ts_df = ts_df.sort_values('date_dt')
     
     if not ts_df.empty:
-        # Mocking missing metrics for demonstration
-        np.random.seed(42)
-        
-        # Consumption is typically 60-80% of production (Efficiency)
-        ts_df['consumption'] = ts_df['volume_display'] * np.random.uniform(0.65, 0.85, len(ts_df))
-        
-        # NRW is the difference
-        ts_df['nrw'] = ts_df['volume_display'] - ts_df['consumption']
-        
-        # Population served (Slow growth)
-        base_pop = 500000 # Example base
-        growth_rate = 0.0001 # Daily growth
-        ts_df['population'] = [base_pop * (1 + growth_rate)**i for i in range(len(ts_df))]
+        # --- Real consumption & NRW (replaces former synthetic np.random series) ---
+        # Pull actual billed consumption and distribute each month's real total
+        # across days in proportion to that day's production. This keeps the
+        # daily chart smooth while NRW aggregates to the true monthly figure.
+        bill = _load_billing_consumption()
+        if not bill.empty:
+            if selected_country and selected_country != "All" and "country" in bill.columns:
+                bill = bill[bill["country"].str.lower() == selected_country.lower()]
+            if selected_zones and "zone" in bill.columns:
+                _zl = [z.lower() for z in selected_zones]
+                bill = bill[bill["zone"].str.lower().isin(_zl)]
+
+        ts_df["_month"] = ts_df["date_dt"].dt.to_period("M")
+        if not bill.empty:
+            cons_monthly = bill.groupby("_month")["consumption_m3"].sum() * conversion_factor
+        else:
+            cons_monthly = pd.Series(dtype=float)
+        has_real_consumption = not cons_monthly.empty
+
+        prod_per_month = ts_df.groupby("_month")["volume_display"].transform("sum")
+        day_share = (ts_df["volume_display"] / prod_per_month).fillna(0)
+        month_cons = ts_df["_month"].map(cons_monthly).astype(float)
+        ts_df["consumption"] = (month_cons * day_share).fillna(0)
+
+        # NRW = produced − consumed; clip at 0 (billing lag can push monthly
+        # consumption above production in individual periods).
+        ts_df["nrw"] = (ts_df["volume_display"] - ts_df["consumption"]).clip(lower=0)
+
+        # Population served — real annual figure from access data (held flat
+        # within a year), left as NaN when unavailable rather than fabricated.
+        ts_df["population"] = _population_for_rows(ts_df, selected_country, selected_zones)
+
+        if not has_real_consumption:
+            st.caption(
+                "⚠️ No billed-consumption data for this selection — "
+                "consumption and NRW are unavailable."
+            )
 
         # --- Control Panel ---
         st.markdown("#### Control Panel")

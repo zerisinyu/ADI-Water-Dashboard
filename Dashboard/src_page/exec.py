@@ -33,6 +33,12 @@ from charts import (
     status_label,
 )
 from data.database import query
+from data.metrics import (
+    non_revenue_water,
+    collection_efficiency,
+    cost_coverage,
+    population_weighted_mean,
+)
 from ai_insights import InsightsEngine, generate_board_brief_text
 
 def format_year_month(year: int, month: int = None) -> str:
@@ -110,17 +116,9 @@ def filter_dataframe(df, country, zone, year, month):
         if "date" in filtered.columns:
             filtered = filtered[filtered["date"].dt.year == int(year)]
         elif "year" in filtered.columns:
+             # national_accounts and access tables both expose a 4-digit `year`
              filtered = filtered[filtered["year"] == int(year)]
-        elif "date_YY" in filtered.columns: # for national data
-             # Handle 2-digit years (e.g., 23 -> 2023)
-             year_val = int(year)
-             if year_val > 1000:
-                 # Filter year is 4-digit, data is 2-digit
-                 filtered = filtered[filtered["date_YY"] == (year_val - 2000)]
-             else:
-                 # Filter year is 2-digit (unlikely but safe fallback)
-                 filtered = filtered[filtered["date_YY"] == year_val]
-        
+
     if month and month != "All":
         # Map month name to number
         month_map = {
@@ -183,27 +181,32 @@ def scene_executive():
     # --- 4. Calculate KPIs for Cards ---
 
     # Card 1: Service Coverage Score
-    # Water Coverage (Municipal Coverage)
-    # Use water_safely_pct as a safer proxy if municipal_coverage is population count
-    w_cov = w_latest["water_safely_pct"].mean() if not w_latest.empty else 0
-    # Sanitation Coverage (Safely Managed Pct as proxy for coverage quality or use sewer connections if available)
-    # Using s_safely_managed_pct from access data
-    s_cov = s_latest["sewer_safely_pct"].mean() if not s_latest.empty else 0
-    
+    # Coverage % must be POPULATION-WEIGHTED across zones — a simple mean lets a
+    # 2-person zone count the same as a 2-million-person zone, which is wrong for
+    # SDG 6 reporting. Fall back to a plain mean only if population is missing.
+    w_cov = population_weighted_mean(w_latest, "water_safely_pct", "popn_total")
+    if w_cov is None:
+        w_cov = w_latest["water_safely_pct"].mean() if not w_latest.empty else 0
+    s_cov = population_weighted_mean(s_latest, "sewer_safely_pct", "popn_total")
+    if s_cov is None:
+        s_cov = s_latest["sewer_safely_pct"].mean() if not s_latest.empty else 0
+
     coverage_score = (w_cov + s_cov) / 2
     pop_served = (w_latest["popn_total"].sum() / 1_000_000) if not w_latest.empty else 0
     
     cov_status = "status-good" if coverage_score > 80 else "status-warning" if coverage_score > 60 else "status-critical"
 
     # Card 2: Financial Health Index
+    # Canonical, utility-wide definitions (water + sewer) from data.metrics so
+    # the Executive and Financial Health pages cannot disagree on these numbers.
     total_billed = f_billing["billed"].sum()
     total_paid = f_billing["paid"].sum()
-    coll_eff = (total_paid / total_billed * 100) if total_billed > 0 else 0
-    
+    coll_eff = collection_efficiency(f_billing, f_fin) or 0.0
+
     total_sewer_rev = f_fin["sewer_revenue"].sum()
     total_revenue = total_paid + total_sewer_rev
     total_opex = f_fin["opex"].sum()
-    opex_cov = (total_revenue / total_opex * 100) if total_opex > 0 else 0
+    opex_cov = cost_coverage(f_billing, f_fin) or 0.0
     
     # Budget Utilization (Annual)
     # If monthly filter is on, we might not have full budget context, but let's try
@@ -220,7 +223,7 @@ def scene_executive():
     # Card 3: Operational Efficiency
     total_prod = f_prod["production_m3"].sum()
     total_cons = f_billing["consumption_m3"].sum()
-    nrw = ((total_prod - total_cons) / total_prod * 100) if total_prod > 0 else 0
+    nrw = non_revenue_water(f_prod, f_billing) or 0.0
     
     # Capacity Utilization (Wastewater)
     ww_cap = svc_df["ww_capacity"].sum()
