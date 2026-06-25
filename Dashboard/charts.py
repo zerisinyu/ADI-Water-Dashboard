@@ -97,9 +97,9 @@ def register_adi_template() -> None:
         # Bar geometry — slimmer, well-spaced, softly rounded bars are the
         # single biggest readability win for grouped/stacked charts. Set once
         # here so every figure inherits it instead of chunky full-width bars.
-        bargap=0.34,
-        bargroupgap=0.12,
-        barcornerradius=4,
+        bargap=0.36,
+        bargroupgap=0.14,
+        barcornerradius=6,
         hovermode="x unified",
         hoverlabel=dict(
             bgcolor=TEXT_PRIMARY,
@@ -176,11 +176,20 @@ def style_fig(
     register_adi_template()
     updates: dict = {"height": height, "template": pio.templates.default}
     if title is not None:
-        updates["title"] = dict(text=title, x=0, xanchor="left")
+        # Title sits on its own line above the plot; give it room so a top
+        # legend never collides with it.
+        updates["title"] = dict(text=title, x=0, xanchor="left", y=0.97, yanchor="top")
     if show_legend is not None:
         updates["showlegend"] = show_legend
     if legend_top:
-        updates["legend"] = dict(orientation="h", y=1.08, x=0, yanchor="bottom", xanchor="left")
+        # Place the legend top-RIGHT, opposite a left-aligned title on the same
+        # band, so the two never overlap. Add top margin to fit the band.
+        updates["legend"] = dict(
+            orientation="h", y=1.02, yanchor="bottom", x=1.0, xanchor="right",
+            font=dict(family=FONT_FAMILY, size=11, color=TEXT_SECONDARY),
+            bgcolor="rgba(0,0,0,0)", bordercolor="rgba(0,0,0,0)",
+        )
+        updates["margin"] = dict(l=48, r=20, t=64 if title else 48, b=44)
     fig.update_layout(**updates)
     return fig
 
