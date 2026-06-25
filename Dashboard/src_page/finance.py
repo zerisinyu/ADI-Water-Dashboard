@@ -28,12 +28,14 @@ from charts import (
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
+    SEQ_WARM,
     apply_axis_currency,
     apply_axis_percent,
     style_fig,
     style_bar,
     colorway,
     status_color,
+    performance_scale,
 )
 
 
@@ -566,7 +568,7 @@ def scene_finance():
                     y='collection_rate',
                     title='Average Collection Rate by City',
                     color='collection_rate',
-                    color_continuous_scale='RdYlGn',
+                    color_continuous_scale=performance_scale(higher_is_better=True),
                     labels={'collection_rate': 'Collection Rate (%)'}
                 )
                 fig_city_col.update_layout(height=400)
@@ -624,7 +626,7 @@ def scene_finance():
                 y='debt',
                 title='Total Debt by Year',
                 color='debt',
-                color_continuous_scale='Reds'
+                color_continuous_scale=SEQ_WARM
             )
             fig_debt_year.update_layout(height=400)
             st.plotly_chart(fig_debt_year, use_container_width=True)
@@ -640,7 +642,7 @@ def scene_finance():
                 orientation='h',
                 title='Top 10 Cities by Outstanding Debt',
                 color='debt',
-                color_continuous_scale='Reds'
+                color_continuous_scale=SEQ_WARM
             )
             fig_top_debt.update_layout(height=400)
             st.plotly_chart(fig_top_debt, use_container_width=True)

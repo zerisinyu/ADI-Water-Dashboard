@@ -122,7 +122,8 @@ def render_benchmarking_radar(
     categories = ["Collection Efficiency", "NRW Score", "Service Continuity",
                    "Water Access", "Sanitation Access", "Cost Recovery"]
 
-    colors = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444"]
+    from charts import colorway
+    colors = colorway()[:4]
 
     fig = go.Figure()
     for i, (country, metrics) in enumerate(sorted(countries_data.items())):

@@ -33,8 +33,14 @@ from charts import (
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
+    STATUS_NEUTRAL,
+    TEXT_PRIMARY,
+    SEQ_BLUE,
     apply_axis_percent,
     style_fig,
+    style_bar,
+    colorway,
+    performance_scale,
 )
 
 # Required columns for schema validation
@@ -100,7 +106,7 @@ def load_financial_data():
         df_fin = filter_df_by_user_access(df_fin, "country")
     return df_fin
 
-def create_sparkline(data, color='#3b82f6'):
+def create_sparkline(data, color=DATA_WATER):
     """Create a simple sparkline chart."""
     # Calculate dynamic range to highlight changes
     y_range = None
@@ -1169,7 +1175,7 @@ def scene_access():
                 
                 # Layout Updates - Improved for quarterly display
                 layout_args = dict(
-                    title=dict(text=f"Coverage Trends by Quarter: {trend_metric}", font=dict(size=16, color="#111827")),
+                    title=dict(text=f"Coverage Trends by Quarter: {trend_metric}", font=dict(size=16, color=TEXT_PRIMARY)),
                     xaxis=dict(
                         title="Quarter",
                         showgrid=True,
@@ -1240,7 +1246,7 @@ def scene_access():
                     labels=['Metered', 'Non-metered'], 
                     values=[metered_pct, non_metered_pct], 
                     hole=.6,
-                    marker_colors=['#3B82F6', '#9CA3AF'],
+                    marker_colors=[DATA_WATER, STATUS_NEUTRAL],
                     textinfo='percent',
                     textposition='outside'
                 )])
@@ -1253,7 +1259,7 @@ def scene_access():
                         text=f"{metered_pct:.1f}%<br>Metered",
                         x=0.5, y=0.5,
                         showarrow=False,
-                        font=dict(size=12, color="#1f2937")
+                        font=dict(size=12, color=TEXT_PRIMARY)
                     )]
                 )
                 st.plotly_chart(meter_fig, use_container_width=True)
@@ -1266,7 +1272,7 @@ def scene_access():
                 labels=['Metered', 'Non-metered'], 
                 values=[65, 35], 
                 hole=.6,
-                marker_colors=['#3B82F6', '#9CA3AF'],
+                marker_colors=[DATA_WATER, STATUS_NEUTRAL],
                 textinfo='none'
             )])
             meter_fig.update_layout(
@@ -1315,7 +1321,7 @@ def scene_access():
                     x='zone', 
                     y='per_100k',
                     color='per_100k',
-                    color_continuous_scale=['#ef4444', '#eab308', '#22c55e'],
+                    color_continuous_scale=performance_scale(higher_is_better=True),
                     labels={'per_100k': 'Toilets/100k', 'zone': 'Zone'}
                 )
                 fig_pt.update_layout(
@@ -1360,7 +1366,7 @@ def scene_access():
             country_cov['Coverage %'] = (country_cov['municipal_coverage'] / country_cov['popn_total'] * 100).fillna(0)
             
             fig_zone = px.bar(country_cov.sort_values('Coverage %'), x='Coverage %', y='country', orientation='h',
-                              color='Coverage %', color_continuous_scale=[[0, '#fed7aa'], [0.5, '#fb923c'], [1, '#3b82f6']],
+                              color='Coverage %', color_continuous_scale=SEQ_BLUE,
                               labels={'country': 'Country', 'Coverage %': 'Coverage (%)'})
             fig_zone.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), xaxis_title="Municipal Coverage (%)")
             st.plotly_chart(fig_zone, use_container_width=True)
@@ -1381,7 +1387,7 @@ def scene_access():
             x_max = max(max_coverage * 1.1, 10)  # At least 10%, with 10% padding
             
             fig_zone = px.bar(zone_cov.sort_values('Coverage %'), x='Coverage %', y='zone', orientation='h',
-                              color='Coverage %', color_continuous_scale=[[0, '#fed7aa'], [0.5, '#fb923c'], [1, '#3b82f6']],
+                              color='Coverage %', color_continuous_scale=SEQ_BLUE,
                               labels={'zone': 'Zone', 'Coverage %': 'Coverage (%)'})
             fig_zone.update_layout(
                 height=350, 
@@ -1407,8 +1413,8 @@ def scene_access():
                 x=zone_trend['year'],
                 y=zone_trend['Coverage %'],
                 mode='lines+markers',
-                line=dict(color='#3b82f6', width=3),
-                marker=dict(size=8, color='#f97316'),
+                line=dict(color=DATA_WATER, width=3),
+                marker=dict(size=8, color=STATUS_WARNING),
                 fill='tozeroy',
                 fillcolor='rgba(59, 130, 246, 0.1)',
                 hovertemplate='<b>Year: %{x}</b><br>Coverage: %{y:.1f}%<extra></extra>'
@@ -1556,7 +1562,7 @@ def scene_access():
                 name='Water (Basic+)',
                 x=categories,
                 y=water_vals,
-                marker_color='#3b82f6',
+                marker_color=DATA_WATER,
                 text=[f"{v:.1f}%" for v in water_vals],
                 textposition='auto'
             ))
@@ -1566,7 +1572,7 @@ def scene_access():
                 name='Sanitation (Basic+)',
                 x=categories,
                 y=san_vals,
-                marker_color='#10b981',
+                marker_color=STATUS_GOOD,
                 text=[f"{v:.1f}%" for v in san_vals],
                 textposition='auto'
             ))
@@ -1582,9 +1588,9 @@ def scene_access():
                     xref="paper", yref="paper",
                     text=f"<b>Gap Analysis:</b> Max disparity is <b>{gap_w:.1f}%</b> in Water Access",
                     showarrow=False,
-                    font=dict(size=12, color="#ef4444"),
-                    bgcolor="#fee2e2",
-                    bordercolor="#ef4444",
+                    font=dict(size=12, color=STATUS_CRITICAL),
+                    bgcolor="rgba(220,38,38,0.10)",
+                    bordercolor=STATUS_CRITICAL,
                     borderwidth=1,
                     borderpad=4
                 )
@@ -1593,13 +1599,10 @@ def scene_access():
 
             fig_grouped.update_layout(
                 barmode='group',
-                height=350,
-                margin=dict(l=0, r=0, t=40, b=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 yaxis=dict(title="Access (%)", range=[0, 100]),
-                plot_bgcolor='rgba(250,250,250,0.5)'
             )
-            
+            style_bar(fig_grouped, height=360, legend_top=True)
+
             st.plotly_chart(fig_grouped, use_container_width=True)
             
             # Methodology Note

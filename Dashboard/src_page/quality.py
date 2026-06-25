@@ -33,8 +33,11 @@ from charts import (
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
+    SEQ_BLUE,
     apply_axis_percent,
     style_fig,
+    style_bar,
+    colorway,
 )
 from data.metrics import women_in_decision_making
 
@@ -525,7 +528,7 @@ def scene_quality():
                 x=chart_data['tests_chlorine'],
                 name='Required',
                 orientation='h',
-                marker_color='#cbd5e1',
+                marker_color='#c3d8fb',
                 text=chart_data['tests_chlorine'].apply(lambda x: f"{x:.0f}"),
                 textposition='auto'
             ))
@@ -536,7 +539,7 @@ def scene_quality():
                 x=chart_data['tests_conducted_chlorine'],
                 name='Conducted',
                 orientation='h',
-                marker_color='#60a5fa',
+                marker_color=DATA_WATER,
                 text=chart_data.apply(lambda row: f"{row['tests_conducted_chlorine']:.0f} (conducted rate {row['conduct_rate']:.1f}%)", axis=1),
                 textposition='auto'
             ))
@@ -547,7 +550,7 @@ def scene_quality():
                 x=chart_data['test_passed_chlorine'],
                 name='Passed',
                 orientation='h',
-                marker_color='#34d399',
+                marker_color=STATUS_GOOD,
                 text=chart_data.apply(lambda row: f"{row['test_passed_chlorine']:.0f} (passed rate {row['pass_rate']:.1f}%)", axis=1),
                 textposition='auto'
             ))
@@ -598,7 +601,7 @@ def scene_quality():
                         x=ts_quality['date'], 
                         y=ts_quality['Chlorine %'], 
                         name='Chlorine', 
-                        line=dict(color='#60a5fa', width=2),
+                        line=dict(color=DATA_WATER, width=2),
                         mode='lines',
                         hovertemplate='<b>Chlorine</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
                     ))
@@ -606,13 +609,13 @@ def scene_quality():
                         x=ts_quality['date'], 
                         y=ts_quality['E. Coli %'], 
                         name='E. Coli', 
-                        line=dict(color='#f87171', width=2),
+                        line=dict(color=STATUS_CRITICAL, width=2),
                         mode='lines',
                         hovertemplate='<b>E. Coli</b><br>Date: %{x|%b %Y}<br>Pass Rate: %{y:.1f}%<extra></extra>'
                     ))
                     
                     # Add WHO Threshold
-                    fig_trend.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+                    fig_trend.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
                     fig_trend.update_layout(
                         height=350,  # Increased height for better visibility
@@ -663,11 +666,11 @@ def scene_quality():
                     bar_data['E. Coli %'] = (bar_data['tests_passed_ecoli'] / bar_data['test_conducted_ecoli'] * 100).fillna(0)
                     
                     fig_bar = go.Figure()
-                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['Chlorine %'], name='Chlorine', marker_color='#60a5fa'))
-                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['E. Coli %'], name='E. Coli', marker_color='#f87171'))
+                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['Chlorine %'], name='Chlorine', marker_color=DATA_WATER))
+                    fig_bar.add_trace(go.Bar(x=bar_data[group_col], y=bar_data['E. Coli %'], name='E. Coli', marker_color=STATUS_CRITICAL))
                     
                     # Add WHO Threshold
-                    fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+                    fig_bar.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
                     fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), barmode='group', legend=dict(orientation="h", y=1.1))
                     st.plotly_chart(fig_bar, use_container_width=True)
@@ -683,10 +686,10 @@ def scene_quality():
                     rate_ec = (t_pass_ec / t_cond_ec * 100) if t_cond_ec > 0 else 0
                     
                     fig_bar = go.Figure()
-                    fig_bar.add_trace(go.Bar(x=['Chlorine', 'E. Coli'], y=[rate_cl, rate_ec], marker_color=['#60a5fa', '#f87171']))
+                    fig_bar.add_trace(go.Bar(x=['Chlorine', 'E. Coli'], y=[rate_cl, rate_ec], marker_color=[DATA_WATER, STATUS_CRITICAL]))
                     
                     # Add WHO Threshold
-                    fig_bar.add_hline(y=95, line_dash="dash", line_color="#4ade80", annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color="#4ade80")
+                    fig_bar.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
                     fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, yaxis_title="Pass Rate (%)")
                     st.plotly_chart(fig_bar, use_container_width=True)
@@ -753,7 +756,7 @@ def scene_quality():
                     y=ww_metrics['Stage'],
                     x=ww_metrics['Volume'],
                     textinfo="value+percent initial",
-                    marker=dict(color=["#60a5fa", "#818cf8", "#a78bfa"])
+                    marker=dict(color=["#1d4ed8", "#3f74ea", "#84acf3"])  # sequential blue funnel
                 ))
                 fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
                 st.plotly_chart(fig_funnel, use_container_width=True)
@@ -768,7 +771,7 @@ def scene_quality():
                 if not df_f_filt.empty:
                     blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
                     fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
-                    fig_blocks.update_traces(line_color='#f87171')
+                    fig_blocks.update_traces(line_color=STATUS_CRITICAL)
                     fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
                     
                     st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
@@ -848,7 +851,7 @@ def scene_quality():
             fig_staff.add_trace(go.Scatter(
                 x=['Sanitation'], y=[san_eff], name='Staff / 1000 connections',
                 mode='markers+text', yaxis='y2',
-                marker=dict(color='#fbbf24', size=14),
+                marker=dict(color=STATUS_WARNING, size=14),
                 text=[f"{san_eff:.1f}"], textposition='top center',
             ))
             fig_staff.update_layout(

@@ -56,11 +56,12 @@ footer, #MainMenu { visibility: hidden; }
 /* ---------- 2. Design tokens -------------------------------------------- */
 
 :root {
-    /* Brand */
-    --brand:           #0071e3;
-    --brand-soft:      rgba(0, 113, 227, 0.08);
-    --brand-strong:    #0058b8;
-    --brand-ring:      rgba(0, 113, 227, 0.18);
+    /* Brand — Modern Cobalt (Tailwind blue-600 family). Single source of truth
+       shared with charts.py; keep these in sync. */
+    --brand:           #2563eb;
+    --brand-soft:      rgba(37, 99, 235, 0.08);
+    --brand-strong:    #1d4ed8;
+    --brand-ring:      rgba(37, 99, 235, 0.18);
 
     /* Surfaces — Stripe-style: cool near-white sunken, pure white surface */
     --surface:         #ffffff;
@@ -79,19 +80,19 @@ footer, #MainMenu { visibility: hidden; }
     --text-tertiary:   #8792a3;
     --text-on-brand:   #ffffff;
 
-    /* Semantic */
-    --success:         #0e7e51;
-    --success-soft:    rgba(14, 126, 81, 0.10);
-    --warning:         #b06000;
-    --warning-soft:    rgba(176, 96, 0, 0.10);
-    --danger:          #b3261e;
-    --danger-soft:     rgba(179, 38, 30, 0.10);
-    --info:            #0058b8;
-    --info-soft:       rgba(0, 88, 184, 0.08);
+    /* Semantic — Modern Cobalt (Tailwind 600 register); mirrored in charts.py */
+    --success:         #059669;
+    --success-soft:    rgba(5, 150, 105, 0.10);
+    --warning:         #d97706;
+    --warning-soft:    rgba(217, 119, 6, 0.10);
+    --danger:          #dc2626;
+    --danger-soft:     rgba(220, 38, 38, 0.10);
+    --info:            #1d4ed8;
+    --info-soft:       rgba(29, 78, 216, 0.08);
 
     /* Chart-only data colors (do not use in chrome) */
-    --data-water:        #0071e3;
-    --data-sanitation:   #00c1d4;
+    --data-water:        #2563eb;
+    --data-sanitation:   #0d9488;
 
     /* Type scale */
     --font-sans:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;

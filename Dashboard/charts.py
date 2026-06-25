@@ -34,33 +34,37 @@ SURFACE = "#ffffff"
 GRID = "#eef1f6"        # --divider  (hairline gridlines, same as chrome dividers)
 AXIS_LINE = "#e4e9f1"   # --border   (axis baselines match card borders)
 
-# Brand — mirrors --brand / --brand-strong
-BRAND = "#0071e3"
-BRAND_STRONG = "#0058b8"
+# Brand — mirrors --brand / --brand-strong. Refreshed to a modern cobalt blue
+# (Tailwind blue-600 family) — cleaner and more contemporary than the old flat
+# Apple blue, and the anchor for the whole categorical ramp.
+BRAND = "#2563eb"
+BRAND_STRONG = "#1d4ed8"
 
-# Categorical colorway — harmonised qualitative ramp anchored on the brand blue
-# and sanitation teal, then tonally-consistent hues. Amber/green now equal the
-# semantic warning/success tokens so a series and a status never clash.
+# Categorical colorway — a fresh, cohesive "business" palette. Deep enough to
+# read as professional (the 600 register), bright enough to feel current.
+# Distinguishable hues, evenly spaced around the wheel, anchored on the brand
+# blue and sanitation teal. Series amber/emerald/red equal the semantic
+# warning/success/danger tokens so a series and a status never clash.
 DATA_SERIES = [
-    "#0071e3",  # brand blue (water)
-    "#00c1d4",  # teal (sanitation)
-    "#b06000",  # amber  (= --warning)
-    "#0e7e51",  # green  (= --success)
-    "#6e3ad6",  # violet
-    "#b3261e",  # red    (= --danger)
-    "#0a6b8a",  # deep teal
-    "#8792a3",  # neutral grey (= --text-tertiary, for "other")
+    "#2563eb",  # blue   (water / brand)
+    "#0d9488",  # teal   (sanitation)
+    "#7c3aed",  # violet
+    "#d97706",  # amber  (= --warning)
+    "#059669",  # emerald(= --success)
+    "#db2777",  # pink
+    "#0891b2",  # cyan
+    "#475569",  # slate  (neutral / "other")
 ]
 
 # Stable named colors for domain semantics. Used selectively, not by default.
-DATA_WATER = "#0071e3"        # --data-water
-DATA_SANITATION = "#00c1d4"   # --data-sanitation
+DATA_WATER = "#2563eb"        # --data-water
+DATA_SANITATION = "#0d9488"   # --data-sanitation
 
 # Status / threshold colors — mirror --success / --warning / --danger.
-STATUS_GOOD = "#0e7e51"
-STATUS_WARNING = "#b06000"
-STATUS_CRITICAL = "#b3261e"
-STATUS_NEUTRAL = "#525f7f"
+STATUS_GOOD = "#059669"
+STATUS_WARNING = "#d97706"
+STATUS_CRITICAL = "#dc2626"
+STATUS_NEUTRAL = "#475569"
 
 # Joint Monitoring Programme (JMP) ladder palette — preserved for the access
 # page. These are reference standards from the JMP framework, not arbitrary.
@@ -71,6 +75,39 @@ JMP_COLORS = {
     "unimproved":     "#ec8a1a",
     "surface_water":  "#b3261e",
 }
+
+# Tokenised continuous scales — replace ad-hoc RdYlGn / Reds / raw-hex scales so
+# every heatmap/choropleth/gradient reads from the same fresh palette.
+# Sequential: light → brand cobalt (intensity, coverage, volume).
+SEQ_BLUE = [
+    [0.0, "#eef4ff"],
+    [0.25, "#c3d8fb"],
+    [0.5, "#84acf3"],
+    [0.75, "#3f74ea"],
+    [1.0, "#1d4ed8"],
+]
+# Sequential warm (debt, losses — "more is worse").
+SEQ_WARM = [
+    [0.0, "#fdf1ec"],
+    [0.5, "#f3a98a"],
+    [1.0, "#dc2626"],
+]
+
+
+def performance_scale(higher_is_better: bool = True) -> list:
+    """Diverging red→amber→green scale built from the status tokens.
+
+    For `higher_is_better` metrics (e.g. collection rate) low=red, high=green.
+    For `lower_is_better` (e.g. NRW) the ramp is reversed.
+    """
+    ramp = [
+        [0.0, STATUS_CRITICAL],
+        [0.5, STATUS_WARNING],
+        [1.0, STATUS_GOOD],
+    ]
+    if higher_is_better:
+        return ramp
+    return [[1.0 - stop, color] for stop, color in reversed(ramp)]
 
 
 # -----------------------------------------------------------------------------
@@ -204,6 +241,60 @@ def style_fig(
     return fig
 
 
+def _is_categorical(values) -> bool:
+    """True when axis values are discrete labels (strings), not numbers/dates."""
+    try:
+        sample = next(v for v in values if v is not None)
+    except (StopIteration, TypeError):
+        return False
+    return isinstance(sample, str)
+
+
+def _autosize_category_bars(fig: go.Figure, *, target_slots: int = 5) -> None:
+    """Auto-size bars to a comfortable width on sparse categorical charts.
+
+    Plotly bars stretch to fill the container, so a couple of categories render
+    as absurdly thick slabs. Rather than capping per-trace ``width`` (which
+    fights grouped-bar offsets), we pad the *category axis range* so a few bars
+    sit centred with whitespace around them.
+
+    The padding is **group-aware**: grouped bars already divide each category
+    slot among the series, so they're padded far more gently (otherwise 4
+    categories × 2 series become spindly). Stacked / single-series charts use the
+    full target. Only categorical (string) axes are touched — numeric/datetime
+    axes (year timelines) are left alone.
+    """
+    bar_traces = [t for t in fig.data if getattr(t, "type", "") == "bar"]
+    if not bar_traces:
+        return
+    horizontal = (getattr(bar_traces[0], "orientation", "v") or "v") == "h"
+    cats = None
+    for t in bar_traces:
+        vals = t.y if horizontal else t.x
+        if vals is not None and len(vals) > 0:
+            cats = list(vals)
+            break
+    if not cats or not _is_categorical(cats):
+        return
+    n = len(dict.fromkeys(cats))  # distinct, order-preserving
+    if n <= 0:
+        return
+
+    barmode = getattr(fig.layout, "barmode", None)
+    is_grouped = len(bar_traces) > 1 and barmode not in ("stack", "relative", "overlay")
+    # Grouped charts divide each slot among series, so only the very smallest
+    # (n<=2) ever balloon; 3+ grouped categories already fill the width well.
+    if is_grouped:
+        effective_target = 4 if n <= 2 else n
+    else:
+        effective_target = target_slots
+    if n >= effective_target:
+        return
+    pad = (effective_target - n) / 2.0
+    rng = [-0.5 - pad, (n - 1) + 0.5 + pad]
+    (fig.update_yaxes if horizontal else fig.update_xaxes)(range=rng)
+
+
 def style_bar(
     fig: go.Figure,
     *,
@@ -211,31 +302,48 @@ def style_bar(
     height: int = 340,
     show_legend: Optional[bool] = None,
     legend_top: bool = False,
-    max_bar_width: Optional[float] = None,
+    autosize: bool = True,
+    target_slots: int = 6,
+    show_values: bool = False,
+    value_fmt: str = "%{value}",
 ) -> go.Figure:
     """Apply ADI defaults tuned for bar charts.
 
-    Wraps :func:`style_fig` and, for charts with only a handful of categories,
-    caps the bar thickness so two or three bars don't balloon to fill the whole
-    container width. ``max_bar_width`` is in data-axis units; when omitted a
-    sensible cap is applied only if the trace has <= 5 categories.
+    Wraps :func:`style_fig` and, by default, auto-sizes sparse categorical bar
+    charts to a comfortable width (see :func:`_autosize_category_bars`).
+
+    - ``autosize`` / ``target_slots``: control the auto-width behaviour.
+    - ``show_values``: draw direct value labels above the bars (best for charts
+      with a handful of categories — lets the reader skip the axis). ``value_fmt``
+      is a Plotly ``texttemplate`` (e.g. ``"%{value:.0f}%"`` or ``"$%{value:,.0f}"``).
     """
     style_fig(fig, title=title, height=height, show_legend=show_legend, legend_top=legend_top)
-    bar_traces = [t for t in fig.data if getattr(t, "type", "") == "bar"]
-    # Only cap explicit bar width for SINGLE-series charts — setting width on
-    # grouped bars fights plotly's offset logic and causes overlap. Grouped
-    # charts rely on the template's bargap/bargroupgap instead.
-    if max_bar_width is not None:
-        fig.update_traces(width=max_bar_width, selector=dict(type="bar"))
-    elif len(bar_traces) == 1:
-        try:
-            n_cat = len(bar_traces[0].x) if bar_traces[0].x is not None else 0
-        except TypeError:
-            n_cat = 0
-        if 0 < n_cat <= 4:
-            # Keep 2-4 standalone bars slim rather than ballooning full-width.
-            fig.update_traces(width=0.55, selector=dict(type="bar"))
+    if autosize:
+        _autosize_category_bars(fig, target_slots=target_slots)
+    if show_values:
+        fig.update_traces(
+            texttemplate=value_fmt, textposition="outside", cliponaxis=False,
+            textfont=dict(family=FONT_FAMILY, size=11, color=TEXT_SECONDARY),
+            selector=dict(type="bar"),
+        )
     return fig
+
+
+def format_compact(value: float, *, prefix: str = "", suffix: str = "") -> str:
+    """Human-readable compact number: 12_700_000_000 -> '$12.7B'.
+
+    Used for value labels and hover strings so large figures stay legible.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    sign = "-" if v < 0 else ""
+    v = abs(v)
+    for threshold, unit in ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if v >= threshold:
+            return f"{sign}{prefix}{v / threshold:.1f}{unit}{suffix}"
+    return f"{sign}{prefix}{v:,.0f}{suffix}"
 
 
 def apply_axis_currency(fig: go.Figure, axis: str = "y", prefix: str = "$") -> go.Figure:

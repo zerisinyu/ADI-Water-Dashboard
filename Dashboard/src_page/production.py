@@ -26,9 +26,12 @@ from charts import (
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
+    STATUS_NEUTRAL,
     apply_axis_percent,
     style_fig,
+    style_bar,
     colorway,
+    performance_scale,
 )
 from data.metrics import per_capita_consumption
 
@@ -539,15 +542,15 @@ def scene_production():
             
             def get_age_cat(x):
                 h = hash(x) % 3
-                if h == 0: return 'New (<5y)', '#3b82f6' # Blue
-                elif h == 1: return 'Mid-life (5-15y)', '#10b981' # Green
-                else: return 'Aging (>15y)', '#f59e0b' # Orange
+                if h == 0: return 'New (<5y)', STATUS_GOOD
+                elif h == 1: return 'Mid-life (5-15y)', STATUS_WARNING
+                else: return 'Aging (>15y)', STATUS_CRITICAL
             
             wtp_data[['age_category', 'color']] = wtp_data['source'].apply(lambda x: pd.Series(get_age_cat(x)))
             
             fig_wtp = px.scatter(wtp_data, x='utilization', y='efficiency',
                                  size='volume_display', color='age_category',
-                                 color_discrete_map={'New (<5y)': '#3b82f6', 'Mid-life (5-15y)': '#10b981', 'Aging (>15y)': '#f59e0b'},
+                                 color_discrete_map={'New (<5y)': STATUS_GOOD, 'Mid-life (5-15y)': STATUS_WARNING, 'Aging (>15y)': STATUS_CRITICAL},
                                  hover_name='source',
                                  labels={'utilization': 'Capacity Util (%)', 'efficiency': 'Efficiency (%)'},
                                  title="Efficiency vs Utilization")
@@ -662,7 +665,7 @@ def scene_production():
                               color='service_hours',
                               title=f"Volume vs Avg Service Hours",
                               labels={x_col: x_label, 'service_hours': 'Avg Hours/Day'},
-                              color_continuous_scale='RdYlGn',
+                              color_continuous_scale=performance_scale(higher_is_better=True),
                               orientation='h')
             fig_perf.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
             st.plotly_chart(fig_perf, use_container_width=True)
@@ -794,13 +797,13 @@ def scene_production():
             fig.add_trace(go.Scatter(
                 x=ts_resampled['date_dt'], y=ts_resampled['volume_display'],
                 mode='lines', name='Production',
-                line=dict(color='#3b82f6', width=2)
+                line=dict(color=DATA_WATER, width=2)
             ))
             if not forecast_df.empty:
                  fig.add_trace(go.Scatter(
                     x=forecast_df['date_dt'], y=forecast_df['volume_display'],
                     mode='lines', name='Production Forecast',
-                    line=dict(color='#3b82f6', width=2, dash='dot'),
+                    line=dict(color=DATA_WATER, width=2, dash='dot'),
                     showlegend=False
                 ))
 
@@ -809,13 +812,13 @@ def scene_production():
             fig.add_trace(go.Scatter(
                 x=ts_resampled['date_dt'], y=ts_resampled['consumption'],
                 mode='lines', name='Consumption',
-                line=dict(color='#10b981', width=2)
+                line=dict(color=STATUS_GOOD, width=2)
             ))
             if not forecast_df.empty:
                  fig.add_trace(go.Scatter(
                     x=forecast_df['date_dt'], y=forecast_df['consumption'],
                     mode='lines', name='Consumption Forecast',
-                    line=dict(color='#10b981', width=2, dash='dot'),
+                    line=dict(color=STATUS_GOOD, width=2, dash='dot'),
                     showlegend=False
                 ))
 
@@ -826,8 +829,8 @@ def scene_production():
                 mode='lines', name='NRW (Losses)',
                 stackgroup=None,
                 fill='tozeroy',
-                line=dict(color='#ef4444', width=0),
-                fillcolor='rgba(239, 68, 68, 0.2)'
+                line=dict(color=STATUS_CRITICAL, width=0),
+                fillcolor='rgba(220, 38, 38, 0.18)'
             ))
 
         # 4. Population (Secondary Axis)
@@ -835,7 +838,7 @@ def scene_production():
             fig.add_trace(go.Scatter(
                 x=ts_resampled['date_dt'], y=ts_resampled['population'],
                 mode='lines', name='Population Served',
-                line=dict(color='#9ca3af', width=2, dash='dot'),
+                line=dict(color=STATUS_NEUTRAL, width=2, dash='dot'),
                 yaxis='y2'
             ))
 
