@@ -14,43 +14,53 @@ import plotly.io as pio
 
 
 # -----------------------------------------------------------------------------
-# Design tokens (mirror styles.css — keep in sync)
+# Design tokens — SINGLE SOURCE OF TRUTH shared with styles.css :root.
 # -----------------------------------------------------------------------------
+# Every value here is an EXACT mirror of a CSS custom property in styles.css so
+# that charts and chrome read as one product. If you change a token here, change
+# the matching --var in styles.css (and vice-versa). The previous palette used a
+# warm Apple-grey set for charts while the chrome used cool Stripe slates, so
+# figures never quite matched the cards around them — these are now reconciled.
 
 FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
-TEXT_PRIMARY = "#1d1d1f"
-TEXT_SECONDARY = "#6e6e73"
-TEXT_TERTIARY = "#86868b"
+# Text — mirrors --text-primary / --text-secondary / --text-tertiary
+TEXT_PRIMARY = "#0f1729"
+TEXT_SECONDARY = "#525f7f"
+TEXT_TERTIARY = "#8792a3"
 
+# Surfaces & hairlines — mirror --surface / --divider / --border
 SURFACE = "#ffffff"
-GRID = "rgba(0, 0, 0, 0.06)"
-AXIS_LINE = "rgba(0, 0, 0, 0.12)"
+GRID = "#eef1f6"        # --divider  (hairline gridlines, same as chrome dividers)
+AXIS_LINE = "#e4e9f1"   # --border   (axis baselines match card borders)
 
+# Brand — mirrors --brand / --brand-strong
 BRAND = "#0071e3"
 BRAND_STRONG = "#0058b8"
 
-# Chart-only data colorway. Used for default categorical encoding.
+# Categorical colorway — harmonised qualitative ramp anchored on the brand blue
+# and sanitation teal, then tonally-consistent hues. Amber/green now equal the
+# semantic warning/success tokens so a series and a status never clash.
 DATA_SERIES = [
-    "#0071e3",  # blue (water default)
-    "#00c1d4",  # teal (sanitation default)
-    "#b25e09",  # amber
-    "#1d8348",  # green
+    "#0071e3",  # brand blue (water)
+    "#00c1d4",  # teal (sanitation)
+    "#b06000",  # amber  (= --warning)
+    "#0e7e51",  # green  (= --success)
     "#6e3ad6",  # violet
-    "#b3261e",  # red
+    "#b3261e",  # red    (= --danger)
     "#0a6b8a",  # deep teal
-    "#7d6608",  # ochre
+    "#8792a3",  # neutral grey (= --text-tertiary, for "other")
 ]
 
 # Stable named colors for domain semantics. Used selectively, not by default.
-DATA_WATER = "#0071e3"
-DATA_SANITATION = "#00c1d4"
+DATA_WATER = "#0071e3"        # --data-water
+DATA_SANITATION = "#00c1d4"   # --data-sanitation
 
-# Status / threshold colors (muted, business-grade).
-STATUS_GOOD = "#1d8348"
-STATUS_WARNING = "#b25e09"
+# Status / threshold colors — mirror --success / --warning / --danger.
+STATUS_GOOD = "#0e7e51"
+STATUS_WARNING = "#b06000"
 STATUS_CRITICAL = "#b3261e"
-STATUS_NEUTRAL = "#6e6e73"
+STATUS_NEUTRAL = "#525f7f"
 
 # Joint Monitoring Programme (JMP) ladder palette — preserved for the access
 # page. These are reference standards from the JMP framework, not arbitrary.

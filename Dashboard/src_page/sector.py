@@ -12,6 +12,8 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from utils import (
+    KPI,
+    render_kpi_row,
     render_page_hero,
     render_section_header,
     render_standardized_filters,
@@ -74,11 +76,17 @@ def scene_sector():
     wash_total = san_alloc + wat_alloc
     wash_pct = (wash_total / budget * 100) if budget > 0 else 0
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total WASH Budget", f"{budget/1e9:.1f}B")
-    c2.metric("Water Allocation", f"{wat_alloc/1e9:.1f}B")
-    c3.metric("Sanitation Allocation", f"{san_alloc/1e9:.1f}B")
-    c4.metric("WASH as % of Budget", f"{wash_pct:.1f}%")
+    render_kpi_row([
+        KPI("Total WASH budget", f"{budget/1e9:.1f}B",
+            delta=f"FY {int(selected_year)}" if str(selected_year).isdigit() else "Latest year",
+            delta_kind="neutral", icon="account_balance_wallet"),
+        KPI("Water allocation", f"{wat_alloc/1e9:.1f}B",
+            delta="National budget", delta_kind="neutral", icon="water_drop"),
+        KPI("Sanitation allocation", f"{san_alloc/1e9:.1f}B",
+            delta="National budget", delta_kind="neutral", icon="cleaning_services"),
+        KPI("WASH share of budget", f"{wash_pct:.1f}%",
+            delta="Of total national budget", delta_kind="neutral", icon="pie_chart"),
+    ])
 
     st.markdown("---")
 

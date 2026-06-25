@@ -737,6 +737,63 @@ hr, .stMarkdown hr {
     line-height: var(--leading-snug);
 }
 
+/* No-data / not-yet-collected panel — the tasteful placeholder affordance used
+   in place of blurred fake charts. A sunken, dashed-border card reads clearly
+   as "intentionally empty" rather than "broken". */
+.empty-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    min-height: 200px;
+    padding: var(--space-8) var(--space-6);
+    background: var(--surface-sunken);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+}
+
+.empty-panel__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 46px;
+    height: 46px;
+    margin-bottom: var(--space-2);
+    border-radius: var(--radius-full);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-tertiary);
+    font-size: 24px;
+}
+
+.empty-panel__title {
+    font-size: var(--text-h2);
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.empty-panel__desc {
+    font-size: var(--text-body);
+    color: var(--text-secondary);
+    max-width: 400px;
+    line-height: var(--leading-snug);
+}
+
+.empty-panel__tag {
+    margin-top: var(--space-3);
+    font-size: var(--text-eyebrow);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-full);
+    padding: 4px 12px;
+}
+
 /* Admin · managed-user row */
 .managed-user__name {
     font-weight: 600;

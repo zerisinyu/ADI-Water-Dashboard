@@ -16,6 +16,7 @@ from utils import (
     render_page_header,
     render_section_header,
     render_empty_state,
+    render_target_bar,
     render_standardized_filters,
     apply_standard_filters,
     get_month_number,
@@ -536,32 +537,16 @@ def scene_finance():
                 st.plotly_chart(fig_rev_opex, use_container_width=True)
 
         with col2:
-            # Cost Recovery Ratio
+            # Cost recovery — a single % against a 100% target. A clean
+            # "actual vs target" bullet bar reads this far better than a big
+            # gauge (no chart-junk for one number).
             avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
-
-            fig_recovery = go.Figure(go.Indicator(
-                mode="gauge+number+delta",
-                value=avg_cost_recovery,
-                domain={'x': [0, 1], 'y': [0, 1]},
-                title={'text': "Cost Recovery Ratio (%)"},
-                delta={'reference': 100},
-                gauge={
-                    'axis': {'range': [None, 150]},
-                    'bar': {'color': DATA_WATER},
-                    'steps': [
-                        {'range': [0, 70], 'color': "#fee2e2"},
-                        {'range': [70, 100], 'color': "#fed7aa"},
-                        {'range': [100, 150], 'color': "#d1fae5"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 100
-                    }
-                }
-            ))
-            fig_recovery.update_layout(height=400)
-            st.plotly_chart(fig_recovery, use_container_width=True)
+            st.markdown("**Cost recovery**")
+            st.caption("Revenue as a share of operating cost — 100% means costs are fully covered.")
+            render_target_bar(
+                "Operating cost coverage", float(avg_cost_recovery or 0), 100.0,
+                unit="%", direction="higher_is_better", icon="account_balance",
+            )
 
     with billing_tab3:
         col1, col2 = st.columns(2)
@@ -740,85 +725,66 @@ def scene_finance():
         col1, col2 = st.columns(2)
 
         with col1:
-            # Revenue per Staff
+            # Revenue per staff — a single number reads best as a stat card, not
+            # a gauge with a fabricated reference delta.
             if 'revenue_per_staff' in fin_service_filtered.columns:
                 avg_rev_per_staff = fin_service_filtered['revenue_per_staff'].mean()
-
-                fig_rev_staff = go.Figure(go.Indicator(
-                    mode="number+delta",
-                    value=avg_rev_per_staff,
-                    title={'text': "Avg Revenue per Staff ($)"},
-                    number={'prefix': "$", 'valueformat': ",.0f"},
-                    delta={'reference': avg_rev_per_staff * 0.9, 'relative': True}
-                ))
-                fig_rev_staff.update_layout(height=300)
-                st.plotly_chart(fig_rev_staff, use_container_width=True)
+                st.markdown("**Workforce productivity**")
+                st.metric("Avg revenue per staff", f"${avg_rev_per_staff:,.0f}",
+                          help="Sewer revenue ÷ total staff, averaged over the period")
 
                 # Revenue per staff trend
                 if 'date_parsed' in fin_service_filtered.columns:
                     rev_staff_trend = fin_service_filtered.groupby('date_parsed')['revenue_per_staff'].mean().reset_index()
-                    fig_rev_staff_trend = px.line(
-                        rev_staff_trend,
-                        x='date_parsed',
-                        y='revenue_per_staff',
-                        title='Revenue per Staff Trend',
-                        markers=True
-                    )
+                    fig_rev_staff_trend = px.line(rev_staff_trend, x='date_parsed', y='revenue_per_staff', markers=True)
+                    fig_rev_staff_trend.update_traces(line=dict(color=DATA_WATER, width=2.5))
+                    fig_rev_staff_trend.update_layout(yaxis_title="$ / staff", xaxis_title="")
+                    style_fig(fig_rev_staff_trend, title='Revenue per staff trend', height=300)
                     st.plotly_chart(fig_rev_staff_trend, use_container_width=True)
 
         with col2:
-            # Complaint Resolution Efficiency
+            # Complaint resolution — single % vs target → clean bullet bar, then
+            # the supporting counts as consistent stat cards.
             avg_resolution = fin_service_filtered['complaint_resolution_rate'].mean()
+            st.markdown("**Complaint resolution**")
+            render_target_bar(
+                "Resolution rate", float(avg_resolution or 0), 90.0,
+                unit="%", direction="higher_is_better", icon="support_agent",
+            )
 
-            fig_complaint = go.Figure(go.Indicator(
-                mode="gauge+number",
-                value=avg_resolution,
-                domain={'x': [0, 1], 'y': [0, 1]},
-                title={'text': "Complaint Resolution Rate (%)"},
-                gauge={
-                    'axis': {'range': [None, 100]},
-                    'bar': {'color': STATUS_GOOD},
-                    'steps': [
-                        {'range': [0, 60], 'color': "#fee2e2"},
-                        {'range': [60, 80], 'color': "#fed7aa"},
-                        {'range': [80, 100], 'color': "#d1fae5"}
-                    ]
-                }
-            ))
-            fig_complaint.update_layout(height=300)
-            st.plotly_chart(fig_complaint, use_container_width=True)
-
-            # Complaint statistics
             total_complaints = fin_service_filtered['complaints'].sum()
             total_resolved = fin_service_filtered['resolved'].sum()
             unresolved = total_complaints - total_resolved
 
-            st.metric("Total Complaints", f"{total_complaints:,.0f}")
-            st.metric("Resolved", f"{total_resolved:,.0f}")
-            st.metric("Unresolved", f"{unresolved:,.0f}", delta_color="inverse")
+            cstat1, cstat2, cstat3 = st.columns(3)
+            cstat1.metric("Received", f"{total_complaints:,.0f}")
+            cstat2.metric("Resolved", f"{total_resolved:,.0f}")
+            cstat3.metric("Unresolved", f"{unresolved:,.0f}")
 
     with health_tab3:
         col1, col2 = st.columns(2)
 
         with col1:
-            # Staff Composition
-            total_san_staff = fin_service_filtered['san_staff'].sum()
-            total_wat_staff = fin_service_filtered['w_staff'].sum()
+            # Staff composition — two categories. A 100% horizontal split bar
+            # plus the two totals reads cleaner than a donut for a simple split.
+            total_san_staff = float(fin_service_filtered['san_staff'].sum())
+            total_wat_staff = float(fin_service_filtered['w_staff'].sum())
+            total_staff_all = total_san_staff + total_wat_staff
 
-            staff_comp = pd.DataFrame({
-                'Department': ['Sanitation', 'Water'],
-                'Staff Count': [total_san_staff, total_wat_staff]
-            })
+            st.markdown("**Staff composition**")
+            sm1, sm2 = st.columns(2)
+            sm1.metric("Water supply", f"{int(total_wat_staff):,}")
+            sm2.metric("Sanitation", f"{int(total_san_staff):,}")
 
-            fig_staff = px.pie(
-                staff_comp,
-                values='Staff Count',
-                names='Department',
-                title='Staff Distribution',
-                color_discrete_sequence=[DATA_WATER, DATA_SANITATION],
-                hole=0.45,
-            )
-            fig_staff.update_traces(marker=dict(line=dict(color="#ffffff", width=2)))
+            fig_staff = go.Figure()
+            fig_staff.add_bar(y=["Staff"], x=[total_wat_staff], name="Water",
+                              orientation="h", marker_color=DATA_WATER)
+            fig_staff.add_bar(y=["Staff"], x=[total_san_staff], name="Sanitation",
+                              orientation="h", marker_color=DATA_SANITATION)
+            fig_staff.update_layout(barmode="stack")
+            style_fig(fig_staff, height=130, legend_top=True)
+            fig_staff.update_xaxes(visible=False)
+            fig_staff.update_yaxes(visible=False)
             st.plotly_chart(fig_staff, use_container_width=True)
 
         with col2:

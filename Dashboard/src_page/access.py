@@ -20,6 +20,7 @@ from utils import (
     render_domain_pill,
     render_granularity_badge,
     render_empty_state,
+    render_no_data_panel,
     render_standardized_filters,
     apply_standard_filters,
     get_month_number,
@@ -1333,45 +1334,12 @@ def scene_access():
 
     with inf_c3:
         st.markdown("**Service Provider Status**")
-        # Simulated Data for Providers
-        prov_fig = go.Figure(data=[go.Pie(
-            labels=['Active', 'Inactive'], 
-            values=[12, 4], 
-            hole=.6,
-            marker_colors=['#22C55E', '#EF4444'],
-            textinfo='none'
-        )])
-        prov_fig.update_layout(
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-            margin=dict(l=20, r=20, t=0, b=20),
-            height=200,
-            annotations=[dict(
-                text="⚠️ No data available<br>for service providers",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=10, color="#854d0e"),
-                bgcolor="#fef9c3",
-                bordercolor="#facc15",
-                borderwidth=1,
-                borderpad=4
-            )]
+        render_no_data_panel(
+            "Provider registry not collected yet",
+            "Active vs inactive service-provider counts will appear here once the "
+            "registry is captured. Licensing rates are tracked on the Governance page.",
+            icon="groups",
         )
-        prov_fig.update_traces(opacity=0.3, hoverinfo='skip')
-        st.plotly_chart(prov_fig, use_container_width=True)
-        
-        st.markdown("""
-        <div style="opacity: 0.4; filter: blur(1px); margin-top: -10px;">
-            <p style="font-size: 11px; margin-bottom: 2px;"><strong>Top 5 Providers (Simulated):</strong></p>
-            <ul style="font-size: 10px; padding-left: 14px; margin: 0; color: #6b7280;">
-                <li>AquaServe Ltd</li>
-                <li>City Water Co</li>
-                <li>EcoSan Services</li>
-                <li>Zone A Utility</li>
-                <li>Global Water</li>
-            </ul>
-        </div>
-        """, unsafe_allow_html=True)
 
     # --- Step 5: The Equity Check (Zonal Disparities) ---
     render_section_header("Equity check", eyebrow="Zonal disparities")

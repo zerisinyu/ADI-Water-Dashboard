@@ -21,6 +21,7 @@ from utils import (
     render_section_header,
     render_domain_pill,
     render_empty_state,
+    render_no_data_panel,
     render_standardized_filters,
     apply_standard_filters,
     get_month_number,
@@ -782,129 +783,25 @@ def scene_quality():
     # ============================================================================
     with quality_tab3:
         render_section_header("Customer service performance", icon="support_agent")
-        st.markdown("Complaints analysis and resolution efficiency.")
-        
-        # Since detailed complaint data is missing, we create a demo section with blurred background
-        
-        # Alert Box
-        st.markdown(
-            '<div class="card card--quiet" style="display: flex; gap: 10px; align-items: flex-start;">'
-            '<span class="icon icon-lg icon-muted">warning</span>'
-            '<div>'
-            '<strong>Data unavailable</strong> — detailed complaint categorization and resolution-stage data is not currently collected. '
-            'The visualizations below are a <strong>demonstration</strong> of the intended dashboard capabilities once data collection improves.'
-            '</div>'
-            '</div>',
-            unsafe_allow_html=True,
+
+        # Headline complaint resolution IS available (complaints / resolved) —
+        # show the real metric, then a clean placeholder for the detailed
+        # breakdowns that aren't collected yet (no blurred fake charts).
+        cs1, cs2, cs3 = st.columns(3)
+        cs1.metric("Complaints received", f"{int(total_complaints):,}", help="Total in selected period")
+        cs2.metric("Resolved", f"{int(total_resolved):,}",
+                   help="Complaints closed in selected period")
+        cs3.metric("Resolution rate", f"{resolution_rate:.1f}%",
+                   help="Resolved ÷ received")
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        render_no_data_panel(
+            "Complaint detail not collected yet",
+            "Category breakdowns (no water, low pressure, billing…), resolution-stage "
+            "funnels, and time-to-resolve distributions will appear here once the "
+            "utility captures complaint-level records. Today only totals are reported.",
+            icon="support_agent",
         )
-
-        # Layout
-        cs_col1, cs_col2, cs_col3 = st.columns([4, 3, 3])
-
-        # --- Left: Complaints Analysis (Demo) ---
-        with cs_col1:
-            st.markdown("**Complaints analysis (demo)**")
-            
-            # Demo Data
-            dates = pd.date_range(start='2024-01-01', periods=12, freq='M')
-            demo_complaints = pd.DataFrame({
-                'Date': dates,
-                'No Water': [120, 135, 110, 140, 160, 155, 130, 125, 145, 150, 135, 120],
-                'Low Pressure': [80, 85, 90, 95, 100, 110, 105, 100, 95, 90, 85, 80],
-                'Quality Issues': [40, 35, 45, 50, 55, 60, 50, 45, 40, 35, 30, 25],
-                'Billing': [60, 65, 70, 65, 60, 55, 60, 65, 70, 75, 80, 85],
-                'Leakage': [30, 25, 30, 35, 40, 45, 40, 35, 30, 25, 20, 15]
-            })
-            
-            # Toggle (Visual only for demo)
-            st.radio("View Mode", ["Volume", "Percentage"], horizontal=True, label_visibility="collapsed", key="cs_demo_toggle", disabled=True)
-            
-            fig_complaints = go.Figure()
-            fig_complaints.add_trace(go.Scatter(x=demo_complaints['Date'], y=demo_complaints['No Water'], mode='lines', stackgroup='one', name='No Water', line=dict(width=0.5, color='#60a5fa')))
-            fig_complaints.add_trace(go.Scatter(x=demo_complaints['Date'], y=demo_complaints['Low Pressure'], mode='lines', stackgroup='one', name='Low Pressure', line=dict(width=0.5, color='#bfdbfe')))
-            fig_complaints.add_trace(go.Scatter(x=demo_complaints['Date'], y=demo_complaints['Quality Issues'], mode='lines', stackgroup='one', name='Quality Issues', line=dict(width=0.5, color='#fdba74')))
-            fig_complaints.add_trace(go.Scatter(x=demo_complaints['Date'], y=demo_complaints['Billing'], mode='lines', stackgroup='one', name='Billing', line=dict(width=0.5, color='#4ade80')))
-            fig_complaints.add_trace(go.Scatter(x=demo_complaints['Date'], y=demo_complaints['Leakage'], mode='lines', stackgroup='one', name='Leakage', line=dict(width=0.5, color='#c084fc')))
-            
-            fig_complaints.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), legend=dict(orientation="h", y=1.1))
-            
-            # Add No Data Annotation
-            fig_complaints.add_annotation(
-                text="NO DATA AVAILABLE",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=20, color="#374151"),
-                bgcolor="rgba(255,255,255,0.7)",
-                borderpad=10
-            )
-            
-            # Apply blur effect via CSS injection on the specific element is hard, so we wrap in a div with style
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_complaints, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- Center: Resolution Efficiency (Demo) ---
-        with cs_col2:
-            st.markdown("**Resolution Efficiency (Demo)**")
-            
-            fig_funnel = go.Figure(go.Funnel(
-                y = ["Received", "Acknowledged", "In Progress", "Resolved", "Satisfied"],
-                x = [1000, 950, 800, 750, 600],
-                textinfo = "value+percent initial",
-                marker = dict(color = ["#60a5fa", "#93c5fd", "#bfdbfe", "#dbeafe", "#eff6ff"])
-            ))
-            
-            fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=20, b=0))
-            
-            # Add No Data Annotation
-            fig_funnel.add_annotation(
-                text="NO DATA AVAILABLE",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=20, color="#374151"),
-                bgcolor="rgba(255,255,255,0.7)",
-                borderpad=10
-            )
-            
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_funnel, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-
-        # --- Right: Service Speed Metrics (Demo) ---
-        with cs_col3:
-            st.markdown("**Service Speed (Demo)**")
-            
-            # Demo Box Plot Data
-            y0 = [2, 3, 4, 4, 5, 6, 7, 8, 9] # No Water
-            y1 = [1, 2, 2, 3, 3, 4, 5] # Leakage
-            y2 = [5, 6, 7, 8, 9, 10, 12] # Billing
-            
-            fig_box = go.Figure()
-            fig_box.add_trace(go.Box(y=y0, name='No Water', marker_color='#60a5fa'))
-            fig_box.add_trace(go.Box(y=y1, name='Leakage', marker_color='#c084fc'))
-            fig_box.add_trace(go.Box(y=y2, name='Billing', marker_color='#4ade80'))
-            
-            # Target Line
-            fig_box.add_hline(y=3, line_dash="dash", line_color="#f87171", annotation_text="SLA Target (3 days)", annotation_position="bottom right")
-            
-            fig_box.update_layout(height=300, margin=dict(l=0, r=0, t=20, b=0), showlegend=False, yaxis_title="Days to Resolve")
-            
-            # Add No Data Annotation
-            fig_box.add_annotation(
-                text="NO DATA AVAILABLE",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5,
-                showarrow=False,
-                font=dict(size=20, color="#374151"),
-                bgcolor="rgba(255,255,255,0.7)",
-                borderpad=10
-            )
-            
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_box, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
     # ============================================================================
     # ORGANIZATIONAL CAPACITY SECTION (with tabs)
@@ -971,107 +868,27 @@ def scene_quality():
 
     # TAB 2: Training Matrix
     with org_tab2:
-        st.markdown("**Training Completion Matrix (Demo)**")
-        
-        # Demo Data
-        header = ['Category', 'Q1', 'Q2', 'Q3', 'Q4']
-        cells = [
-            ['Technical Ops', 'Safety', 'Management', 'Soft Skills'], # Category
-            ['15 (10M/5F)', '20 (15M/5F)', '5 (3M/2F)', '10 (5M/5F)'], # Q1
-            ['12 (8M/4F)', '18 (14M/4F)', '6 (4M/2F)', '12 (6M/6F)'], # Q2
-            ['18 (12M/6F)', '22 (18M/4F)', '4 (2M/2F)', '15 (8M/7F)'], # Q3
-            ['10 (6M/4F)', '15 (12M/3F)', '8 (5M/3F)', '8 (4M/4F)']  # Q4
-        ]
-        
-        # Heatmap coloring simulation (just random colors for demo)
-        fill_colors = [
-            ['#f3f4f6']*4, # Col 1
-            ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe'], # Q1
-            ['#bfdbfe', '#93c5fd', '#bfdbfe', '#93c5fd'], # Q2
-            ['#93c5fd', '#60a5fa', '#93c5fd', '#60a5fa'], # Q3
-            ['#dbeafe', '#bfdbfe', '#dbeafe', '#bfdbfe']  # Q4
-        ]
-
-        fig_table = go.Figure(data=[go.Table(
-            header=dict(values=header, fill_color='#f9fafb', align='left', font=dict(color='black', size=12)),
-            cells=dict(values=cells, fill_color=fill_colors, align='left', font=dict(color='black', size=11), height=40)
-        )])
-        
-        fig_table.update_layout(height=350, margin=dict(l=0, r=0, t=20, b=0))
-
-        # Add No Data Annotation
-        fig_table.add_annotation(
-            text="NO DATA AVAILABLE",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5,
-            showarrow=False,
-            font=dict(size=20, color="#374151"),
-            bgcolor="rgba(255,255,255,0.7)",
-            borderpad=10
+        render_no_data_panel(
+            "Training records not collected yet",
+            "A by-category, by-quarter training-completion matrix with male/female "
+            "splits will render here once the utility logs staff training events. "
+            "Total trained-staff counts are available on the Governance page.",
+            icon="school",
         )
-
-        st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-        st.plotly_chart(fig_table, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
     # TAB 3: Diversity & Efficiency
     with org_tab3:
-        st.markdown("**Diversity & Efficiency (Demo)**")
-        
-        div_col1, div_col2 = st.columns(2)
-        
-        with div_col1:
-            # 1. Women in Decision Making (Ring Chart)
-            current_pct = 18
-            target_pct = 30
-            
-            fig_ring = go.Figure(go.Pie(
-                values=[current_pct, 100-current_pct],
-                labels=['Women', 'Other'],
-                hole=0.7,
-                marker_colors=['#f472b6', '#d1d5db'],
-                textinfo='none',
-                sort=False
-            ))
-            
-            fig_ring.add_annotation(text=f"{current_pct}%", x=0.5, y=0.5, font_size=20, showarrow=False, font_weight='bold', font_color='#f472b6')
-            fig_ring.add_annotation(text=f"Target: {target_pct}%", x=0.5, y=0.35, font_size=10, showarrow=False, font_color='#6b7280')
-            
-            fig_ring.update_layout(height=200, margin=dict(l=0, r=0, t=30, b=0), title=dict(text="Women in Leadership", font=dict(size=12), x=0.5, xanchor='center'))
-            
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_ring, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with div_col2:
-            # 2. Staff Efficiency (Gauge)
-            eff_val = 4.2
-            
-            fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = eff_val,
-                title = {'text': "Staff / 1000 Conn", 'font': {'size': 12}},
-                gauge = {
-                    'axis': {'range': [0, 10], 'tickwidth': 1, 'tickcolor': "darkblue"},
-                    'bar': {'color': "black", 'thickness': 0.0}, # Hide bar, use needle if possible, or just bar
-                    'steps': [
-                        {'range': [0, 3], 'color': "#4ade80"},
-                        {'range': [3, 5], 'color': "#facc15"},
-                        {'range': [5, 10], 'color': "#f87171"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "black", 'width': 4},
-                        'thickness': 0.75,
-                        'value': eff_val
-                    }
-                }
-            ))
-            
-            fig_gauge.update_layout(height=140, margin=dict(l=20, r=20, t=30, b=0))
-            
-            st.markdown('<div style="filter: blur(2px); opacity: 0.6; pointer-events: none;">', unsafe_allow_html=True)
-            st.plotly_chart(fig_gauge, use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        # These are REAL — reuse the figures already computed in Tab 1 rather
+        # than the previous fabricated ring + gauge.
+        de1, de2 = st.columns(2)
+        de1.metric("Women in decision-making", f"{women_dm:.1f}%" if women_dm is not None else "—",
+                   help="Women ÷ total sanitation decision-making workforce")
+        de2.metric("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
+                   help="Sanitation staff per 1,000 connections (lower is leaner)")
+        st.caption(
+            "Targets: ≥30% women in decision-making (SDG 5.5); staffing efficiency "
+            "benchmarked against IBNET peers."
+        )
 
     # ============================================================================
     # DATA EXPORT SECTION

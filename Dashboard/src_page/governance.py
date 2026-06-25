@@ -12,6 +12,8 @@ import plotly.graph_objects as go
 import pandas as pd
 
 from utils import (
+    KPI,
+    render_kpi_row,
     render_page_hero,
     render_section_header,
     render_standardized_filters,
@@ -79,11 +81,18 @@ def scene_governance():
     complaint_res = float(latest.get("complaint_resolution", 0))
     trained_staff = int(latest.get("trained_staff", 0))
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("WTP Inspection Rate", f"{inspection_rate:.0f}%", help=f"{inspected_wtps}/{registered_wtps} inspected")
-    c2.metric("Provider Licensing Rate", f"{license_rate:.0f}%", help=f"{licensed_providers}/{total_providers} licensed")
-    c3.metric("Asset Health Index", f"{asset_health:.1f}", help="Scale 0-100")
-    c4.metric("Complaint Resolution (hrs)", f"{complaint_res:.0f}", help="Avg hours to resolve")
+    render_kpi_row([
+        KPI("WTP inspection rate", f"{inspection_rate:.0f}%",
+            delta=f"{inspected_wtps}/{registered_wtps} inspected", delta_kind="neutral",
+            icon="verified"),
+        KPI("Provider licensing", f"{license_rate:.0f}%",
+            delta=f"{licensed_providers}/{total_providers} licensed", delta_kind="neutral",
+            icon="badge"),
+        KPI("Asset health index", f"{asset_health:.1f}",
+            delta="Scale 0–100", delta_kind="neutral", icon="construction"),
+        KPI("Complaint resolution", f"{complaint_res:.0f} hrs",
+            delta="Avg time to resolve", delta_kind="neutral", icon="schedule"),
+    ])
 
     st.markdown("---")
 

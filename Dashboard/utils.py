@@ -921,6 +921,34 @@ def render_empty_state(icon: str, title: str, description: str) -> None:
     )
 
 
+def render_no_data_panel(
+    title: str,
+    description: str,
+    *,
+    icon: str = "insights",
+    tag: Optional[str] = "Not yet collected",
+) -> None:
+    """Render a tasteful 'data not collected yet' placeholder.
+
+    Use this instead of blurred fake charts. It reads clearly as an intentional
+    empty state (sunken, dashed-border card with a soft icon chip) rather than a
+    broken visualization. `icon` is a Material Symbols name; `tag` is an optional
+    uppercase pill (pass None to hide it).
+    """
+    tag_html = (
+        f'<div class="empty-panel__tag">{_html.escape(tag)}</div>' if tag else ""
+    )
+    st.markdown(
+        '<div class="empty-panel">'
+        f'<span class="icon empty-panel__icon">{_html.escape(icon)}</span>'
+        f'<div class="empty-panel__title">{_html.escape(title)}</div>'
+        f'<div class="empty-panel__desc">{_html.escape(description)}</div>'
+        f'{tag_html}'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+
 # Legacy shim — existing pages call render_page_hero(title, icon, filters, metrics)
 def render_page_hero(
     title: str,

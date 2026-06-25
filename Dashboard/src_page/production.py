@@ -15,6 +15,7 @@ from utils import (
     render_page_header,
     render_section_header,
     render_empty_state,
+    render_no_data_panel,
     render_standardized_filters,
     apply_standard_filters,
     get_month_number,
@@ -568,39 +569,13 @@ def scene_production():
     # Panel 2: FSM
     with infra_c2:
         st.markdown("**Faecal Sludge Management**")
-        
-        # Mock Data
-        fsm_metrics = [
-            {'label': 'Emptied', 'val': 65, 'vol': '12k m³', 'color': '#3b82f6'},
-            {'label': 'Treated', 'val': 45, 'vol': '5.4k m³', 'color': '#10b981'},
-            {'label': 'Reused', 'val': 10, 'vol': '0.5k m³', 'color': '#f59e0b'}
-        ]
-        
-        # 3 Columns for 3 Rings
-        r1, r2, r3 = st.columns(3)
-        
-        for i, col in enumerate([r1, r2, r3]):
-            m = fsm_metrics[i]
-            with col:
-                fig_ring = go.Figure(go.Pie(
-                    values=[m['val'], 100-m['val']],
-                    hole=0.7,
-                    sort=False,
-                    direction='clockwise',
-                    marker={'colors': [m['color'], '#f3f4f6']},
-                    textinfo='none'
-                ))
-                fig_ring.update_layout(
-                    showlegend=False,
-                    height=120, 
-                    margin=dict(l=0, r=0, t=0, b=0),
-                    annotations=[dict(text=f"{m['val']}%", x=0.5, y=0.5, font_size=14, showarrow=False)]
-                )
-                st.plotly_chart(fig_ring, use_container_width=True)
-                st.markdown(f"<div style='text-align:center; font-size:12px; font-weight:600'>{m['label']}</div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='text-align:center; font-size:10px; color:#6b7280'>{m['vol']}</div>", unsafe_allow_html=True)
-
-        st.caption("⚠️ Data gap · FSTP utilisation data unavailable.")
+        render_no_data_panel(
+            "FSTP capacity utilisation not collected yet",
+            "Treatment-plant capacity-utilisation data isn't reported here yet. "
+            "Real faecal-sludge emptied / treated / reused volumes are available "
+            "on the Service & Quality page (Sanitation tab).",
+            icon="recycling",
+        )
 
     # ============================================================================
     # TAB 2: Source Balancing Act (Extraction Analysis)
@@ -922,56 +897,17 @@ def scene_production():
     plan_tab1, plan_tab2 = st.tabs(["Resource Sustainability", "Downtime Logger"])
     
     with plan_tab1:
-        sp1, sp2 = st.columns([1, 1])
-        
-        with sp1:
-            # Resource Extraction Rate
-            # Simulated Resource Limit (e.g., 1.5x total annual production of the max year)
-            # In reality, this comes from 'water_resources' in national accounts.
-            total_annual_prod = df_p_filt['production_m3'].sum()
-            
-            # Placeholder for Total Renewable Resources
-            # Assuming a value for demo purposes if not available
-            estimated_resources = total_annual_prod * 1.45 
-            
-            extraction_rate = (total_annual_prod / estimated_resources * 100) if estimated_resources > 0 else 0
-            
-            fig_gauge = go.Figure(go.Indicator(
-                mode = "gauge+number",
-                value = extraction_rate,
-                title = {'text': "Resource Extraction Rate"},
-                gauge = {
-                    'axis': {'range': [None, 100]},
-                    'bar': {'color': "#3b82f6"},
-                    'steps': [
-                        {'range': [0, 70], 'color': "#d1fae5"},
-                        {'range': [70, 90], 'color': "#fed7aa"},
-                        {'range': [90, 100], 'color': "#fee2e2"}],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 90}}))
-            
-            fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(fig_gauge, use_container_width=True)
-            st.caption("*Note: Resource limit estimated for demonstration.*")
-        
-        with sp2:
-            st.markdown("**Resource Sustainability Insights**")
-            if extraction_rate < 70:
-                st.success(f"Extraction rate is sustainable at {extraction_rate:.1f}%")
-            elif extraction_rate < 90:
-                st.warning(f"Extraction rate at {extraction_rate:.1f}% - monitor closely")
-            else:
-                st.error(f"🔴 Critical extraction rate at {extraction_rate:.1f}% - action required")
-            
-            st.markdown("""
-            **Recommendations:**
-            - Monitor groundwater levels regularly
-            - Consider alternative water sources
-            - Implement demand-side management
-            - Review infrastructure capacity
-            """)
+        # Level of water stress (SDG 6.4.2) needs total freshwater WITHDRAWALS
+        # vs renewable resources. Utility production alone is not national
+        # withdrawal, so a true extraction rate can't be computed here — show an
+        # honest placeholder instead of a gauge built on a fabricated limit.
+        render_no_data_panel(
+            "Water-stress data not available",
+            "The SDG 6.4.2 water-stress ratio needs total freshwater withdrawals "
+            "against renewable resources. Utility production alone can't stand in "
+            "for national withdrawals, so this isn't shown rather than estimated.",
+            icon="water_loss",
+        )
     
     with plan_tab2:
         st.markdown("**Downtime Logger**")
