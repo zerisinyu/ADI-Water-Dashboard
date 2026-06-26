@@ -1239,60 +1239,31 @@ def scene_access():
             total_consumption = df_svc_filt['total_consumption'].sum()
             
             if total_consumption > 0:
+                # Two shares read best as a stat + a 100% split bar, not a donut.
                 metered_pct = (total_metered / total_consumption) * 100
                 non_metered_pct = 100 - metered_pct
-                
-                meter_fig = go.Figure(data=[go.Pie(
-                    labels=['Metered', 'Non-metered'], 
-                    values=[metered_pct, non_metered_pct], 
-                    hole=.6,
-                    marker_colors=[DATA_WATER, STATUS_NEUTRAL],
-                    textinfo='percent',
-                    textposition='outside'
-                )])
-                meter_fig.update_layout(
-                    showlegend=True,
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-                    margin=dict(l=20, r=20, t=0, b=40),
-                    height=200,
-                    annotations=[dict(
-                        text=f"{metered_pct:.1f}%<br>Metered",
-                        x=0.5, y=0.5,
-                        showarrow=False,
-                        font=dict(size=12, color=TEXT_PRIMARY)
-                    )]
-                )
+
+                st.metric("Metered consumption", f"{metered_pct:.1f}%",
+                          help="Metered ÷ total consumption volume")
+                meter_fig = go.Figure()
+                meter_fig.add_bar(y=["Metering"], x=[metered_pct], orientation="h",
+                                  name="Metered", marker_color=DATA_WATER)
+                meter_fig.add_bar(y=["Metering"], x=[non_metered_pct], orientation="h",
+                                  name="Non-metered", marker_color=STATUS_NEUTRAL)
+                meter_fig.update_layout(barmode="stack")
+                style_fig(meter_fig, height=120, legend_top=True)
+                meter_fig.update_xaxes(visible=False, range=[0, 100])
+                meter_fig.update_yaxes(visible=False)
                 st.plotly_chart(meter_fig, use_container_width=True)
             else:
-                # Fallback if no consumption data
                 st.info("No consumption data available for metering analysis")
         else:
-            # No metering data - show placeholder
-            meter_fig = go.Figure(data=[go.Pie(
-                labels=['Metered', 'Non-metered'], 
-                values=[65, 35], 
-                hole=.6,
-                marker_colors=[DATA_WATER, STATUS_NEUTRAL],
-                textinfo='none'
-            )])
-            meter_fig.update_layout(
-                showlegend=True,
-                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
-                margin=dict(l=20, r=20, t=0, b=20),
-                height=200,
-                annotations=[dict(
-                    text="⚠️ No data available<br>for metered connections",
-                    x=0.5, y=0.5,
-                    showarrow=False,
-                    font=dict(size=10, color="#854d0e"),
-                    bgcolor="#fef9c3",
-                    bordercolor="#facc15",
-                    borderwidth=1,
-                    borderpad=4
-                )]
+            render_no_data_panel(
+                "Metering data not collected yet",
+                "Metered-connection coverage will appear here once the utility "
+                "reports metered volume against total consumption.",
+                icon="speed",
             )
-            meter_fig.update_traces(opacity=0.3, hoverinfo='skip')
-            st.plotly_chart(meter_fig, use_container_width=True)
 
     with inf_c2:
         st.markdown("**Public Sanitation**")
@@ -1324,14 +1295,8 @@ def scene_access():
                     color_continuous_scale=performance_scale(higher_is_better=True),
                     labels={'per_100k': 'Toilets/100k', 'zone': 'Zone'}
                 )
-                fig_pt.update_layout(
-                    height=180, 
-                    margin=dict(l=0, r=0, t=0, b=0),
-                    xaxis_title=None,
-                    yaxis_title="Per 100k",
-                    coloraxis_showscale=False,
-                    plot_bgcolor='rgba(0,0,0,0)'
-                )
+                fig_pt.update_layout(xaxis_title=None, yaxis_title="Per 100k", coloraxis_showscale=False)
+                style_bar(fig_pt, height=200)
                 st.plotly_chart(fig_pt, use_container_width=True)
             else:
                 st.info("Population data unavailable")
@@ -1368,9 +1333,10 @@ def scene_access():
             fig_zone = px.bar(country_cov.sort_values('Coverage %'), x='Coverage %', y='country', orientation='h',
                               color='Coverage %', color_continuous_scale=SEQ_BLUE,
                               labels={'country': 'Country', 'Coverage %': 'Coverage (%)'})
-            fig_zone.update_layout(height=350, margin=dict(l=0, r=0, t=0, b=0), xaxis_title="Municipal Coverage (%)")
+            fig_zone.update_layout(xaxis_title="Municipal coverage (%)", coloraxis_showscale=False)
+            style_bar(fig_zone, height=320)
             st.plotly_chart(fig_zone, use_container_width=True)
-            
+
         elif selected_zone == 'All':
             # Show comparison by zone
             st.markdown("**Municipal Coverage by Zone**")
@@ -1390,11 +1356,11 @@ def scene_access():
                               color='Coverage %', color_continuous_scale=SEQ_BLUE,
                               labels={'zone': 'Zone', 'Coverage %': 'Coverage (%)'})
             fig_zone.update_layout(
-                height=350, 
-                margin=dict(l=0, r=0, t=0, b=0), 
-                xaxis_title="Municipal Coverage (%)",
-                xaxis=dict(range=[0, x_max])  # Dynamic x-axis range
+                xaxis_title="Municipal coverage (%)",
+                xaxis=dict(range=[0, x_max]),
+                coloraxis_showscale=False,
             )
+            style_bar(fig_zone, height=360)
             st.plotly_chart(fig_zone, use_container_width=True)
             
         else:
@@ -1416,28 +1382,15 @@ def scene_access():
                 line=dict(color=DATA_WATER, width=3),
                 marker=dict(size=8, color=STATUS_WARNING),
                 fill='tozeroy',
-                fillcolor='rgba(59, 130, 246, 0.1)',
+                fillcolor='rgba(37, 99, 235, 0.10)',
                 hovertemplate='<b>Year: %{x}</b><br>Coverage: %{y:.1f}%<extra></extra>'
             ))
-            
+
             fig_zone.update_layout(
-                height=350,
-                margin=dict(l=0, r=0, t=0, b=0),
-                xaxis=dict(
-                    title="Year",
-                    tickmode='linear',
-                    dtick=1,
-                    showgrid=True,
-                    gridcolor='rgba(128,128,128,0.1)'
-                ),
-                yaxis=dict(
-                    title="Municipal Coverage (%)",
-                    showgrid=True,
-                    gridcolor='rgba(128,128,128,0.1)',
-                    range=[0, 100]
-                ),
-                plot_bgcolor='rgba(250,250,250,0.5)'
+                xaxis=dict(title="Year", tickmode='linear', dtick=1),
+                yaxis=dict(title="Municipal coverage (%)", range=[0, 100]),
             )
+            style_fig(fig_zone, height=320, show_legend=False)
             st.plotly_chart(fig_zone, use_container_width=True)
 
     with e_col2:

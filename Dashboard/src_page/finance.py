@@ -476,13 +476,9 @@ def scene_finance():
                     mode='lines+markers',
                     line=dict(color=STATUS_GOOD, width=2)
                 ))
-                fig_billing.update_layout(
-                    title='Billing vs Revenue Collection Over Time',
-                    xaxis_title='Date',
-                    yaxis_title='Amount ($)',
-                    hovermode='x unified',
-                    height=400
-                )
+                fig_billing.update_layout(xaxis_title='Date', yaxis_title='Amount ($)', hovermode='x unified')
+                style_fig(fig_billing, title='Billing vs revenue collection', height=340, legend_top=True)
+                apply_axis_currency(fig_billing, axis="y")
                 st.plotly_chart(fig_billing, use_container_width=True)
 
         with col2:
@@ -497,13 +493,9 @@ def scene_finance():
                     fill='tozeroy',
                     line=dict(color=STATUS_CRITICAL, width=2)
                 ))
-                fig_debt.update_layout(
-                    title='Debt Accumulation Trend',
-                    xaxis_title='Date',
-                    yaxis_title='Debt ($)',
-                    hovermode='x unified',
-                    height=400
-                )
+                fig_debt.update_layout(xaxis_title='Date', yaxis_title='Debt ($)', hovermode='x unified')
+                style_fig(fig_debt, title='Debt accumulation trend', height=340, show_legend=False)
+                apply_axis_currency(fig_debt, axis="y")
                 st.plotly_chart(fig_debt, use_container_width=True)
 
     with billing_tab2:
@@ -571,7 +563,8 @@ def scene_finance():
                     color_continuous_scale=performance_scale(higher_is_better=True),
                     labels={'collection_rate': 'Collection Rate (%)'}
                 )
-                fig_city_col.update_layout(height=400)
+                fig_city_col.update_layout(coloraxis_showscale=False)
+                style_bar(fig_city_col, height=320)
                 st.plotly_chart(fig_city_col, use_container_width=True)
 
         with col2:
@@ -587,7 +580,8 @@ def scene_finance():
                     markers=True,
                     line_shape='spline'
                 )
-                fig_month.update_layout(height=400)
+                fig_month.update_traces(line=dict(color=DATA_WATER, width=2.5))
+                style_fig(fig_month, height=320, show_legend=False)
                 st.plotly_chart(fig_month, use_container_width=True)
 
     # ============================================================================
@@ -628,7 +622,9 @@ def scene_finance():
                 color='debt',
                 color_continuous_scale=SEQ_WARM
             )
-            fig_debt_year.update_layout(height=400)
+            fig_debt_year.update_layout(coloraxis_showscale=False)
+            style_bar(fig_debt_year, height=320)
+            apply_axis_currency(fig_debt_year, axis='y')
             st.plotly_chart(fig_debt_year, use_container_width=True)
 
     with debt_chart_col2:
@@ -644,7 +640,9 @@ def scene_finance():
                 color='debt',
                 color_continuous_scale=SEQ_WARM
             )
-            fig_top_debt.update_layout(height=400)
+            fig_top_debt.update_layout(coloraxis_showscale=False)
+            style_bar(fig_top_debt, height=360)
+            apply_axis_currency(fig_top_debt, axis='x')
             st.plotly_chart(fig_top_debt, use_container_width=True)
 
     # ============================================================================
@@ -683,7 +681,7 @@ def scene_finance():
                     hole=0.45,
                 )
                 fig_budget.update_traces(marker=dict(line=dict(color="#ffffff", width=2)))
-                fig_budget.update_layout(height=340)
+                style_fig(fig_budget, height=320, show_legend=True)
                 st.plotly_chart(fig_budget, use_container_width=True)
 
         with col2:
@@ -715,12 +713,9 @@ def scene_finance():
                     name='Water',
                     mode='lines+markers'
                 ))
-                fig_budget_trend.update_layout(
-                    title='Budget Allocation Trends',
-                    xaxis_title='Year',
-                    yaxis_title='Amount ($)',
-                    height=400
-                )
+                fig_budget_trend.update_layout(xaxis_title='Year', yaxis_title='Amount ($)')
+                style_fig(fig_budget_trend, title='Budget allocation trends', height=320, legend_top=True)
+                apply_axis_currency(fig_budget_trend, axis="y")
                 st.plotly_chart(fig_budget_trend, use_container_width=True)
 
     with health_tab2:
@@ -811,13 +806,9 @@ def scene_finance():
                     name='Training Budget',
                     marker_color=DATA_SANITATION
                 ))
-                fig_staff_cost.update_layout(
-                    title='Staff Cost & Training Budget Trend',
-                    xaxis_title='Year',
-                    yaxis_title='Amount ($)',
-                    barmode='stack',
-                    height=400
-                )
+                fig_staff_cost.update_layout(xaxis_title='Year', yaxis_title='Amount ($)', barmode='stack')
+                style_bar(fig_staff_cost, title='Staff cost & training budget', height=320, legend_top=True)
+                apply_axis_currency(fig_staff_cost, axis="y")
                 st.plotly_chart(fig_staff_cost, use_container_width=True)
 
     # ============================================================================

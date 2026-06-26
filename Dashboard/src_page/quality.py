@@ -556,14 +556,13 @@ def scene_quality():
             ))
 
             fig_perf.update_layout(
-                height=300 + (len(chart_data) * 20 if len(chart_data) > 5 else 0), # Dynamic height
-                margin=dict(l=0, r=0, t=30, b=0),
                 barmode='group',
                 legend=dict(orientation="v", y=0.5, x=1.02, xanchor="left", yanchor="middle"),
-                title=dict(text=f"{title_suffix}", font=dict(size=14)),
-                xaxis_title="Number of Tests"
+                xaxis_title="Number of tests",
             )
-            
+            style_bar(fig_perf, title=title_suffix,
+                      height=300 + (len(chart_data) * 20 if len(chart_data) > 5 else 0))
+
             st.plotly_chart(fig_perf, use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -618,27 +617,17 @@ def scene_quality():
                     fig_trend.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
                     fig_trend.update_layout(
-                        height=350,  # Increased height for better visibility
-                        margin=dict(l=0, r=0, t=20, b=40), 
-                        legend=dict(orientation="h", y=1.15, x=0.5, xanchor='center'),
                         xaxis=dict(
                             rangeslider=dict(visible=True, thickness=0.08),
                             type="date",
                             range=[f"{selected_year}-01-01", f"{selected_year}-12-31"] if selected_year else None,
                             tickformat='%b %Y',
                             dtick='M2',  # Show tick every 2 months for less clutter
-                            showgrid=True,
-                            gridcolor='rgba(128,128,128,0.1)'
                         ),
-                        yaxis=dict(
-                            title="Pass Rate (%)",
-                            range=[0, 105],
-                            showgrid=True,
-                            gridcolor='rgba(128,128,128,0.1)'
-                        ),
+                        yaxis=dict(title="Pass rate (%)", range=[0, 105]),
                         hovermode='x unified',
-                        plot_bgcolor='rgba(250,250,250,0.3)'
                     )
+                    style_fig(fig_trend, height=350, legend_top=True)
                     st.plotly_chart(fig_trend, use_container_width=True)
                 
             elif selected_month != 'All':
@@ -672,7 +661,8 @@ def scene_quality():
                     # Add WHO Threshold
                     fig_bar.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
-                    fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), barmode='group', legend=dict(orientation="h", y=1.1))
+                    fig_bar.update_layout(barmode='group', yaxis_title="Pass rate (%)")
+                    style_bar(fig_bar, height=320, legend_top=True, show_values=True, value_fmt="%{value:.0f}%")
                     st.plotly_chart(fig_bar, use_container_width=True)
                     
                 else:
@@ -691,7 +681,8 @@ def scene_quality():
                     # Add WHO Threshold
                     fig_bar.add_hline(y=95, line_dash="dash", line_color=STATUS_GOOD, annotation_text="WHO Std (95%)", annotation_position="top right", annotation_font_color=STATUS_GOOD)
 
-                    fig_bar.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0), showlegend=False, yaxis_title="Pass Rate (%)")
+                    fig_bar.update_layout(yaxis_title="Pass rate (%)")
+                    style_bar(fig_bar, height=300, show_legend=False, show_values=True, value_fmt="%{value:.0f}%")
                     st.plotly_chart(fig_bar, use_container_width=True)
             
             # Quality Alert Box
@@ -758,7 +749,7 @@ def scene_quality():
                     textinfo="value+percent initial",
                     marker=dict(color=["#1d4ed8", "#3f74ea", "#84acf3"])  # sequential blue funnel
                 ))
-                fig_funnel.update_layout(height=300, margin=dict(l=0, r=0, t=0, b=0))
+                style_fig(fig_funnel, height=300, show_legend=False)
                 st.plotly_chart(fig_funnel, use_container_width=True)
 
             with s_col2:
@@ -771,8 +762,9 @@ def scene_quality():
                 if not df_f_filt.empty:
                     blocks_trend = df_f_filt.groupby('date')['blocks'].sum().reset_index()
                     fig_blocks = px.line(blocks_trend, x='date', y='blocks', markers=True)
-                    fig_blocks.update_traces(line_color=STATUS_CRITICAL)
-                    fig_blocks.update_layout(height=220, margin=dict(l=0, r=0, t=0, b=0), yaxis_title="Blockages")
+                    fig_blocks.update_traces(line=dict(color=STATUS_CRITICAL, width=2.5))
+                    fig_blocks.update_layout(yaxis_title="Blockages")
+                    style_fig(fig_blocks, height=240)
                     
                     st.metric("Total Blockages (Selected Period)", f"{total_blocks:,.0f}", help="Total sewer blockages reported")
                     st.plotly_chart(fig_blocks, use_container_width=True)
@@ -855,11 +847,10 @@ def scene_quality():
                 text=[f"{san_eff:.1f}"], textposition='top center',
             ))
             fig_staff.update_layout(
-                height=350, margin=dict(l=0, r=0, t=20, b=0),
-                legend=dict(orientation="h", y=1.1),
                 yaxis=dict(title="Headcount"),
                 yaxis2=dict(title="Staff/1000 conn", overlaying='y', side='right', showgrid=False),
             )
+            style_bar(fig_staff, height=320, legend_top=True)
             st.plotly_chart(fig_staff, use_container_width=True)
         else:
             st.info("No workforce data available for the selected filters.")

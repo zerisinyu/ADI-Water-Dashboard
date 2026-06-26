@@ -558,13 +558,12 @@ def scene_production():
             # Optimal Zone (Green Box) - e.g., Util 70-90%, Eff > 90%
             fig_wtp.add_shape(type="rect",
                 x0=70, y0=90, x1=95, y1=100,
-                line=dict(color="Green", width=1, dash="dot"),
-                fillcolor="rgba(0, 255, 0, 0.1)",
+                line=dict(color=STATUS_GOOD, width=1, dash="dot"),
+                fillcolor="rgba(5, 150, 105, 0.08)",
             )
-            
-            fig_wtp.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0), 
-                                  legend=dict(orientation="h", y=-0.2),
-                                  xaxis=dict(range=[40, 120]), yaxis=dict(range=[70, 105]))
+
+            fig_wtp.update_layout(xaxis=dict(range=[40, 120]), yaxis=dict(range=[70, 105]))
+            style_fig(fig_wtp, height=350, legend_top=True)
             st.plotly_chart(fig_wtp, use_container_width=True)
         else:
             st.info("No WTP data available.")
@@ -632,12 +631,8 @@ def scene_production():
                                  color_discrete_sequence=colorway(),
                                  barmode='stack')
             
-            fig_mix.update_layout(
-                height=350, 
-                margin=dict(l=0, r=0, t=10, b=60), 
-                legend=dict(orientation="h", y=-0.2, x=0.5, xanchor="center"),
-                xaxis_tickangle=-45
-            )
+            fig_mix.update_layout(xaxis_tickangle=-45)
+            style_bar(fig_mix, height=340)
             st.plotly_chart(fig_mix, use_container_width=True)
         
     with c2:
@@ -667,7 +662,7 @@ def scene_production():
                               labels={x_col: x_label, 'service_hours': 'Avg Hours/Day'},
                               color_continuous_scale=performance_scale(higher_is_better=True),
                               orientation='h')
-            fig_perf.update_layout(height=350, margin=dict(l=0, r=0, t=30, b=0))
+            style_bar(fig_perf, height=350)
             st.plotly_chart(fig_perf, use_container_width=True)
 
     # ============================================================================
@@ -871,21 +866,13 @@ def scene_production():
 
         # Layout
         fig.update_layout(
-            title="Production & Consumption Trends",
             xaxis_title="Date",
             yaxis_title=f"Volume ({unit_label})",
-            yaxis2=dict(
-                title="Population",
-                overlaying='y',
-                side='right',
-                showgrid=False
-            ),
+            yaxis2=dict(title="Population", overlaying='y', side='right', showgrid=False),
             hovermode="x unified",
-            legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center"),
-            height=420,
-            margin=dict(l=20, r=20, t=60, b=70)
         )
-        
+        style_fig(fig, title="Production & consumption trends", height=400, legend_top=True)
+
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("No data available for trend analysis.")

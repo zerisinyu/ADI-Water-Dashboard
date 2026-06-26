@@ -139,12 +139,12 @@ def render_benchmarking_radar(
             fillcolor=f"rgba({','.join(str(int(c, 16)) for c in [colors[i % len(colors)][1:3], colors[i % len(colors)][3:5], colors[i % len(colors)][5:7]])}, 0.1)" if len(colors[i % len(colors)]) == 7 else None,
         ))
 
+    from charts import style_fig
     fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
-        title="Cross-Country Performance Benchmark",
-        height=440,
         showlegend=True,
     )
+    style_fig(fig, title="Cross-country performance benchmark", height=440, legend_top=True)
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # Ranking table
