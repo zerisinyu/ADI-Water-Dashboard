@@ -216,6 +216,40 @@ def register_adi_template() -> None:
     _REGISTERED = True
 
 
+def apply_chart_theme(dark: bool) -> None:
+    """Flip the registered chart template between light and dark.
+
+    Called once per run before any figure is built, so every chart inherits the
+    current theme. In dark mode the plot/paper backgrounds go transparent (the
+    dark page shows through) and the text/grid/axis colors lighten.
+    """
+    register_adi_template()
+    lay = pio.templates[_TEMPLATE_NAME].layout
+    if dark:
+        text, sub = "#e9eef3", "#aab4be"
+        grid, axis = "#2b3a49", "#3a4c5e"
+        paper = "rgba(0,0,0,0)"
+    else:
+        text, sub = TEXT_PRIMARY, TEXT_SECONDARY
+        grid, axis = GRID, AXIS_LINE
+        paper = SURFACE
+
+    lay.paper_bgcolor = paper
+    lay.plot_bgcolor = paper
+    lay.font.color = text
+    lay.title.font.color = text
+    lay.legend.font.color = sub
+    for ax in (lay.xaxis, lay.yaxis):
+        ax.gridcolor = grid
+        ax.linecolor = axis
+        ax.zerolinecolor = axis
+        ax.tickcolor = axis
+        ax.tickfont.color = sub
+        ax.title.font.color = sub
+    pio.templates.default = (f"plotly_dark+{_TEMPLATE_NAME}" if dark
+                             else f"plotly_white+{_TEMPLATE_NAME}")
+
+
 # -----------------------------------------------------------------------------
 # Chart helpers
 # -----------------------------------------------------------------------------

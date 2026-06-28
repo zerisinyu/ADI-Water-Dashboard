@@ -782,6 +782,11 @@ def render_user_info_sidebar() -> None:
             mins = int(duration.total_seconds() // 60)
             st.caption(f"Session: {mins} min{'s' if mins != 1 else ''}")
 
+        # Night mode — _inject_styles reads the widget key "night_mode" at the
+        # top of each run, so flipping this applies the dark theme immediately.
+        st.toggle("Night mode", key="night_mode",
+                  help="Switch the dashboard to a dark theme.")
+
         # Logout button
         if st.button("Sign out", width="stretch", key="logout_btn", icon=":material/logout:"):
             logout()

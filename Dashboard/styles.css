@@ -70,6 +70,7 @@ footer, #MainMenu { visibility: hidden; }
     --surface-sunken:  #f6f8fb;
     --surface-muted:   #f9fafc;
     --surface-overlay: rgba(15, 23, 42, 0.32);
+    --surface-info:    #eaf1f8;   /* light-blue tint (MajiBot to-do) */
 
     /* Borders & dividers — slightly cool greys, hairline weight */
     --border:          #e4e9f1;
@@ -1328,6 +1329,9 @@ div[data-testid="stHorizontalBlock"] {
     border-bottom: none;
 }
 
+/* Hide the divider line Streamlit draws under the nav list (below Forecasting). */
+[data-testid="stSidebarNavSeparator"] { display: none !important; }
+
 [data-testid="stSidebarNav"]::before {
     content: "Navigation";
     display: block;
@@ -2174,11 +2178,11 @@ div[data-testid="stHorizontalBlock"] {
     flex: 1 1 auto;
 }
 
-/* MajiBot to-do — soft slate-blue companion card beside the risks/wins toggle.
-   Subtler than the navy panel header; white text reads cleanly on it. */
+/* MajiBot to-do — light-blue companion card beside the risks/wins toggle.
+   Consistent with the palette; fills the column so it matches the signals card. */
 .majibot-todo {
-    background: #3c5a78;
-    border: 1px solid #3c5a78;
+    background: var(--surface-info, #eaf1f8);
+    border: 1px solid var(--brand-ring);
     border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
     height: 100%;
@@ -2192,7 +2196,7 @@ div[data-testid="stHorizontalBlock"] {
     gap: 8px;
     font-size: 13.5px;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-primary);
     margin-bottom: var(--space-3);
 }
 .majibot-todo__avatar {
@@ -2202,7 +2206,7 @@ div[data-testid="stHorizontalBlock"] {
     width: 24px;
     height: 24px;
     border-radius: var(--radius-full);
-    background: rgba(255, 255, 255, 0.14);
+    background: var(--brand);
     color: #fff;
 }
 .majibot-todo__list {
@@ -2213,7 +2217,6 @@ div[data-testid="stHorizontalBlock"] {
     flex-direction: column;
     gap: 10px;
     flex: 1 1 auto;
-    max-height: 188px;
     overflow-y: auto;
 }
 .majibot-todo__row {
@@ -2222,14 +2225,24 @@ div[data-testid="stHorizontalBlock"] {
     gap: 8px;
     font-size: 13px;
     line-height: 1.4;
-    color: rgba(255, 255, 255, 0.92);
+    color: var(--text-secondary);
 }
-.majibot-todo__check { color: rgba(255, 255, 255, 0.55); flex-shrink: 0; }
+.majibot-todo__check { color: var(--brand); flex-shrink: 0; }
 .majibot-todo__text { flex: 1 1 auto; }
 .majibot-todo__empty {
     font-size: 12.5px;
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-tertiary);
     font-style: italic;
+}
+
+/* Equal-height: let the to-do card fill its column so it matches the signals
+   card height. The column is already stretched by the flex row; chain height
+   down to the card. */
+[data-testid="stColumn"]:has(.majibot-todo) > [data-testid="stVerticalBlock"],
+[data-testid="stColumn"]:has(.majibot-todo) [data-testid="stElementContainer"]:has(.majibot-todo),
+[data-testid="stColumn"]:has(.majibot-todo) .stMarkdown:has(.majibot-todo),
+[data-testid="stColumn"]:has(.majibot-todo) [data-testid="stMarkdownContainer"]:has(.majibot-todo) {
+    height: 100%;
 }
 
 

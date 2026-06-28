@@ -229,11 +229,21 @@ def _inject_styles() -> None:
     if css_path.exists():
         st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
 
+    # Night mode — the toggle stores its state under the widget key "night_mode",
+    # which Streamlit restores before the script runs, so we can read it here
+    # (ahead of the sidebar toggle being re-rendered) without a one-run lag.
+    dark = bool(st.session_state.get("night_mode", False))
+    if dark:
+        dark_path = Path(__file__).parent / "styles_dark.css"
+        if dark_path.exists():
+            st.markdown(f"<style>{dark_path.read_text()}</style>", unsafe_allow_html=True)
+
     # Register the shared Plotly template so every chart in every page
-    # inherits the same fonts, colors, and gridlines.
+    # inherits the same fonts, colors, and gridlines; then apply the theme.
     try:
-        from charts import register_adi_template
+        from charts import register_adi_template, apply_chart_theme
         register_adi_template()
+        apply_chart_theme(dark)
     except Exception:
         pass
 

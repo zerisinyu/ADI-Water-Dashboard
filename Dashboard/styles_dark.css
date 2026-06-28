@@ -1,0 +1,116 @@
+/* =============================================================================
+   Night mode — loaded only when the sidebar "Night mode" toggle is on.
+   Flips the design tokens to dark, then patches the Streamlit chrome and the
+   native widgets used across the dashboard. Custom components read the tokens,
+   so most of the UI flips automatically; charts are themed in charts.py.
+   ============================================================================= */
+
+:root {
+    /* Surfaces */
+    --surface:         #1e2a37;
+    --surface-sunken:  #151d26;
+    --surface-muted:   #243240;
+    --surface-overlay: rgba(0, 0, 0, 0.55);
+    --surface-info:    #24384d;
+
+    /* Borders & dividers */
+    --border:          #30404f;
+    --border-strong:   #3d4f60;
+    --divider:         #283543;
+
+    /* Text */
+    --text-primary:    #e9eef3;
+    --text-secondary:  #aab4be;
+    --text-tertiary:   #7f8c99;
+
+    /* Soft brand tints read better a touch stronger on dark */
+    --brand-soft:      rgba(91, 155, 196, 0.16);
+    --brand-ring:      rgba(91, 155, 196, 0.32);
+    --success-soft:    rgba(93, 146, 121, 0.20);
+    --warning-soft:    rgba(205, 133, 81, 0.20);
+    --danger-soft:     rgba(194, 95, 84, 0.20);
+
+    /* Shadows deeper on dark */
+    --shadow-card:     0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-elevated: 0 4px 14px rgba(0, 0, 0, 0.55);
+    --shadow-overlay:  0 16px 40px rgba(0, 0, 0, 0.65);
+}
+
+/* ---- App chrome -------------------------------------------------------- */
+html, body, .stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"] {
+    background: var(--surface-sunken) !important;
+    color: var(--text-primary);
+}
+[data-testid="stHeader"] { background: transparent !important; }
+[data-testid="stSidebar"] {
+    background: var(--surface) !important;
+    border-right: 1px solid var(--border);
+}
+[data-testid="stSidebar"] * { color: var(--text-primary); }
+
+hr { border-color: var(--divider) !important; }
+
+/* ---- Native widgets --------------------------------------------------- */
+/* Text / number / select inputs */
+[data-baseweb="select"] > div,
+[data-baseweb="input"],
+[data-baseweb="base-input"],
+.stTextInput input, .stTextArea textarea, .stNumberInput input,
+[data-baseweb="select"] input {
+    background: var(--surface-muted) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+}
+/* Dropdown / popover menus */
+[data-baseweb="popover"] [role="listbox"],
+[data-baseweb="menu"],
+[data-baseweb="popover"] ul {
+    background: var(--surface-muted) !important;
+    color: var(--text-primary) !important;
+}
+[role="option"] { color: var(--text-primary) !important; }
+
+/* Secondary buttons */
+button[kind="secondary"],
+[data-testid="stBaseButton-secondary"] {
+    background: var(--surface-muted) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+}
+
+/* Tabs */
+[data-baseweb="tab-list"] { background: transparent !important; border-color: var(--border) !important; }
+[data-baseweb="tab"] { color: var(--text-secondary) !important; background: transparent !important; }
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { background: var(--brand) !important; }
+
+/* Segmented control */
+[data-testid="stSegmentedControl"] button {
+    background: var(--surface-muted) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--border) !important;
+}
+
+/* Expander */
+[data-testid="stExpander"] {
+    background: var(--surface) !important;
+    border-color: var(--border) !important;
+}
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary * { color: var(--text-primary) !important; }
+
+/* Dataframe / tables */
+[data-testid="stDataFrame"], [data-testid="stTable"] { background: var(--surface) !important; }
+
+/* Dialog */
+[data-testid="stDialog"] > div { background: var(--surface) !important; color: var(--text-primary); }
+
+/* Code */
+code, pre, [data-testid="stCodeBlock"] {
+    background: var(--surface-muted) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Alerts keep their soft tints (tokens already adjusted above) */
+[data-testid="stAlert"] { color: var(--text-primary); }
