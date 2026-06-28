@@ -24,47 +24,50 @@ import plotly.io as pio
 
 FONT_FAMILY = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
-# Text — mirrors --text-primary / --text-secondary / --text-tertiary
-TEXT_PRIMARY = "#0f1729"
-TEXT_SECONDARY = "#525f7f"
-TEXT_TERTIARY = "#8792a3"
+# Text — mirrors --text-primary / --text-secondary / --text-tertiary.
+# Primary is a warm navy (matches the reference design + the MajiBot dark panel).
+TEXT_PRIMARY = "#1f2d3a"
+TEXT_SECONDARY = "#5b6b7b"
+TEXT_TERTIARY = "#9aa6b2"
 
 # Surfaces & hairlines — mirror --surface / --divider / --border
 SURFACE = "#ffffff"
 GRID = "#eef1f6"        # --divider  (hairline gridlines, same as chrome dividers)
 AXIS_LINE = "#e4e9f1"   # --border   (axis baselines match card borders)
 
-# Brand — mirrors --brand / --brand-strong. Refreshed to a modern cobalt blue
-# (Tailwind blue-600 family) — cleaner and more contemporary than the old flat
-# Apple blue, and the anchor for the whole categorical ramp.
-BRAND = "#2563eb"
-BRAND_STRONG = "#1d4ed8"
+# Brand — mirrors --brand / --brand-strong. A softer, milder steel-blue (lower
+# saturation than the old cobalt) — calmer to live with and the anchor for a
+# restrained three-hue system: blue (dominant) · green · orange.
+BRAND = "#3f6fa3"
+BRAND_STRONG = "#2c5582"
 
-# Categorical colorway — a fresh, cohesive "business" palette. Deep enough to
-# read as professional (the 600 register), bright enough to feel current.
-# Distinguishable hues, evenly spaced around the wheel, anchored on the brand
-# blue and sanitation teal. Series amber/emerald/red equal the semantic
-# warning/success/danger tokens so a series and a status never clash.
+# Categorical colorway — restricted to THREE hues per design: muted blue
+# (dominant), sage green, terracotta (5-3-2 emphasis). Ordered blue → green →
+# terracotta so a 2-series chart reads blue+green, a 3-series adds terracotta;
+# remaining slots are lighter/darker variations of the same three hues. Matches
+# the home-page design reference. Series green/terracotta equal the semantic
+# success/warning tokens so a series and a status never clash.
 DATA_SERIES = [
-    "#2563eb",  # blue   (water / brand)
-    "#0d9488",  # teal   (sanitation)
-    "#7c3aed",  # violet
-    "#d97706",  # amber  (= --warning)
-    "#059669",  # emerald(= --success)
-    "#db2777",  # pink
-    "#0891b2",  # cyan
-    "#475569",  # slate  (neutral / "other")
+    "#3f6fa3",  # blue        (water / brand)
+    "#5d9279",  # sage green  (sanitation / = --success)
+    "#cd8551",  # terracotta  (accent / = --warning)
+    "#5b9bc4",  # light blue
+    "#2c5582",  # deep blue
+    "#7da9d4",  # soft blue
+    "#b5713c",  # deep terracotta
+    "#9cc4dd",  # pale blue
 ]
 
 # Stable named colors for domain semantics. Used selectively, not by default.
-DATA_WATER = "#2563eb"        # --data-water
-DATA_SANITATION = "#0d9488"   # --data-sanitation
+DATA_WATER = "#3f6fa3"        # --data-water (muted blue)
+DATA_SANITATION = "#5d9279"   # --data-sanitation (sage green)
 
-# Status / threshold colors — mirror --success / --warning / --danger.
-STATUS_GOOD = "#059669"
-STATUS_WARNING = "#d97706"
-STATUS_CRITICAL = "#dc2626"
-STATUS_NEUTRAL = "#475569"
+# Status / threshold colors — mirror --success / --warning / --danger. Tuned to
+# the reference palette: sage green / terracotta / muted red.
+STATUS_GOOD = "#5d9279"
+STATUS_WARNING = "#cd8551"
+STATUS_CRITICAL = "#c25f54"
+STATUS_NEUTRAL = "#7b8794"
 
 # Joint Monitoring Programme (JMP) ladder palette — preserved for the access
 # page. These are reference standards from the JMP framework, not arbitrary.
@@ -76,21 +79,31 @@ JMP_COLORS = {
     "surface_water":  "#b3261e",
 }
 
+# Access / sanitation ladder bar palettes — the established reference colors from
+# the Access & Coverage page. Kept as a DOCUMENTED EXCEPTION to the three-hue
+# system (water/sanitation ladders read as a familiar five-step green→amber ramp).
+# Single source of truth so the access page and the home-page ladders agree.
+# Order: Safely Managed → Basic → Limited → Unimproved → (Surface water / Open def).
+LADDER_COLORS = {
+    "water":      ["#088BCE", "#48BFE7", "#FDEE79", "#FFD94F", "#FFB02B"],
+    "sanitation": ["#349438", "#49B754", "#FDEE79", "#FFD94F", "#FFB02B"],
+}
+
 # Tokenised continuous scales — replace ad-hoc RdYlGn / Reds / raw-hex scales so
-# every heatmap/choropleth/gradient reads from the same fresh palette.
-# Sequential: light → brand cobalt (intensity, coverage, volume).
+# every heatmap/choropleth/gradient reads from the same palette.
+# Sequential: light → muted brand blue (intensity, coverage, volume).
 SEQ_BLUE = [
-    [0.0, "#eef4ff"],
-    [0.25, "#c3d8fb"],
-    [0.5, "#84acf3"],
-    [0.75, "#3f74ea"],
-    [1.0, "#1d4ed8"],
+    [0.0, "#eef3f8"],
+    [0.25, "#c3cfdb"],
+    [0.5, "#9fbdda"],
+    [0.75, "#5b9bc4"],
+    [1.0, "#2c5582"],
 ]
 # Sequential warm (debt, losses — "more is worse").
 SEQ_WARM = [
-    [0.0, "#fdf1ec"],
-    [0.5, "#f3a98a"],
-    [1.0, "#dc2626"],
+    [0.0, "#fbf6f1"],
+    [0.5, "#e2cf9a"],
+    [1.0, "#cd8551"],
 ]
 
 
@@ -413,6 +426,51 @@ def status_label(value: float, *, good: float, warning: float, higher_is_better:
         if value <= warning:
             return "warning"
         return "critical"
+
+
+def status_heatmap(month_labels: list, rows: list, *, height: int = 240) -> go.Figure:
+    """Build a pillar × month status heatmap.
+
+    Each row is a dict ``{label, values, good, warning, higher_is_better, fmt}``
+    where ``values`` is aligned to ``month_labels``. Cells are colored good /
+    warning / critical by threshold (via :func:`status_label`) and annotated with
+    the actual value. Designed as the at-a-glance object on the executive page —
+    trajectory reads left→right, cross-pillar comparison reads top→bottom.
+    """
+    y_labels = [r["label"] for r in rows]
+    z, text = [], []
+    _rank = {"critical": 0, "warning": 1, "good": 2}
+    for r in rows:
+        zrow, trow = [], []
+        for v in r["values"]:
+            if v is None or v != v:  # None or NaN
+                zrow.append(None)
+                trow.append("")
+            else:
+                lab = status_label(v, good=r["good"], warning=r["warning"],
+                                   higher_is_better=r.get("higher_is_better", True))
+                zrow.append(_rank[lab])
+                trow.append(r.get("fmt", "{:.0f}").format(v))
+        z.append(zrow)
+        text.append(trow)
+
+    # Discrete three-step colorscale: critical → warning → good.
+    colorscale = [
+        [0.0, STATUS_CRITICAL], [0.33, STATUS_CRITICAL],
+        [0.34, STATUS_WARNING], [0.66, STATUS_WARNING],
+        [0.67, STATUS_GOOD], [1.0, STATUS_GOOD],
+    ]
+    fig = go.Figure(go.Heatmap(
+        z=z, x=month_labels, y=y_labels, text=text,
+        texttemplate="%{text}", textfont=dict(color="#ffffff", size=11),
+        colorscale=colorscale, zmin=0, zmax=2, showscale=False,
+        xgap=3, ygap=3, hoverongaps=False,
+        hovertemplate="%{y} · %{x}: %{text}<extra></extra>",
+    ))
+    style_fig(fig, height=height, show_legend=False)
+    fig.update_yaxes(autorange="reversed", showgrid=False, ticksuffix="  ")
+    fig.update_xaxes(showgrid=False, side="top")
+    return fig
 
 
 # -----------------------------------------------------------------------------

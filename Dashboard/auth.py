@@ -896,6 +896,72 @@ def update_user_password(username: str, new_password: str) -> Tuple[bool, str]:
     return True, f"Password updated successfully for {username}"
 
 
+def render_briefing_layout_settings() -> None:
+    """Admin configurator for the home-page daily-briefing cards.
+
+    Lets an admin pick, for each of the four pillar slots, which metric the card
+    shows and how it is visualised (sparkline vs donut). The choice is global and
+    persisted via ``briefing_config`` (keystore preference + session mirror)."""
+    import briefing_config as bc
+    from utils import render_section_header, render_kpi_row, KPI
+
+    render_section_header(
+        "Daily briefing layout",
+        eyebrow="Home page",
+        icon="dashboard_customize",
+        meta="Applies to the home-page briefing cards",
+    )
+    st.caption(
+        "Choose which metric fills each briefing card and how it's shown. "
+        "Changes apply the next time the home page loads."
+    )
+
+    current = bc.load_layout()
+    draft: dict = {}
+    for slot in bc.SLOTS:
+        choices = bc.METRIC_CHOICES[slot]
+        ids = list(choices.keys())
+        labels = {mid: choices[mid][0] for mid in ids}
+        cur = current[slot]
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            sel_metric = st.selectbox(
+                bc.SLOT_LABELS[slot],
+                ids,
+                index=ids.index(cur["metric"]) if cur["metric"] in ids else 0,
+                format_func=lambda m, _l=labels: _l[m],
+                key=f"briefing_metric_{slot}",
+            )
+        with c2:
+            sel_viz = st.segmented_control(
+                "Visualisation",
+                bc.VIZ_OPTIONS,
+                default=cur["viz"] if cur["viz"] in bc.VIZ_OPTIONS else bc.VIZ_OPTIONS[0],
+                format_func=lambda v: v.title(),
+                key=f"briefing_viz_{slot}",
+            ) or cur["viz"]
+        draft[slot] = {"metric": sel_metric, "viz": sel_viz}
+
+    st.markdown("##### Preview")
+    _sample_pct = {"access": 82, "finance": 76, "ops": 64, "quality": 71}
+    preview_cards = []
+    for slot in bc.SLOTS:
+        mid, viz = draft[slot]["metric"], draft[slot]["viz"]
+        label, icon, mkey = bc.METRIC_CHOICES[slot][mid]
+        pct = _sample_pct[slot]
+        preview_cards.append(KPI(
+            label=label, value=f"{pct}", delta="Sample", delta_kind="neutral",
+            icon=icon, metric_key=mkey,
+            sparkline=[pct - 6, pct - 2, pct - 4, pct, pct + 1, pct + 3] if viz == "sparkline" else None,
+            donut=float(pct) if viz == "donut" else None,
+        ))
+    render_kpi_row(preview_cards)
+
+    if st.button("Save briefing layout", type="primary"):
+        bc.save_layout(draft)
+        st.success("Briefing layout saved — open the home page to see it.")
+
+
 def render_admin_settings_page() -> None:
     """
     Render the admin settings page for user management.
@@ -952,13 +1018,18 @@ def render_admin_settings_page() -> None:
         st.warning("No users available for management under your access level.")
         return
 
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "User management",
         "Change passwords",
         "Alert thresholds",
         "Data quality",
         "Data lineage",
+        "Daily briefing",
     ])
+
+    # ----- Tab 6: Daily-briefing layout -----
+    with tab6:
+        render_briefing_layout_settings()
 
     # ----- Tab 1: Managed users -----
     with tab1:

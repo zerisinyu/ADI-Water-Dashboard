@@ -488,6 +488,7 @@ def scene_production():
             delta_kind=svc_kind,
             icon="schedule",
             footnote="hrs / day",
+            metric_key="service_continuity",
             sparkline=svc_spark),
         KPI("Active sources", f"{active_sources} / {total_sources_count}",
             delta="Online yesterday",
@@ -503,7 +504,8 @@ def scene_production():
             delta="l/c/d",
             delta_kind=lcd_kind,
             icon="local_drink",
-            footnote="Billed volume ÷ population served"),
+            footnote="Billed volume ÷ population served",
+            metric_key="per_capita_consumption"),
     ])
 
     # Alerts

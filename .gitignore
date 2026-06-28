@@ -21,3 +21,6 @@ venv/
 # scripts/convert_billing_to_parquet.py). Kept locally for regeneration.
 Data/billing.csv
 
+# Standalone HTML design mockup (local reference only, ~5MB bundle)
+Executive Dashboard (standalone).html
+

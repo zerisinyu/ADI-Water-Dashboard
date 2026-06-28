@@ -551,9 +551,11 @@ def _render_chat_modal_body(input_key_suffix: str = "") -> None:
 
 
 def _render_overview_banner() -> None:
-    """Render the main dashboard header with access-controlled filters."""
-    from utils import render_page_header
+    """Render the main dashboard header with access-controlled filters.
 
+    Title block (left) and the filter controls (right) live in a single
+    horizontal row per the home-page design reference.
+    """
     user = get_current_user()
 
     # Sync state for country - initialize based on user access
@@ -566,22 +568,31 @@ def _render_overview_banner() -> None:
     current_country = validate_country_selection(st.session_state["selected_country"])
     st.session_state["selected_country"] = current_country
 
-    # Build access-level badges for non-master users
-    badges: List[Dict[str, str]] = []
+    # Access-level badge for non-master users (rendered inside the title block)
+    badge_html = ""
     if user and user.role != UserRole.MASTER_USER:
-        badges.append({"label": f"Region: {user.assigned_country}", "kind": "brand"})
+        badge_html = (
+            f'<span class="pill pill--brand" style="margin-top:6px;display:inline-block;">'
+            f'Region: {user.assigned_country}</span>'
+        )
 
-    render_page_header(
-        "Executive Dashboard",
-        eyebrow="Water Utility Performance",
-        subtitle="Real-time view of access, service quality, finance and production.",
-        icon="dashboard",
-        badges=badges,
-        show_clock=True,
-    )
+    # Single horizontal header: title on the left, filters on the right.
+    title_col, filt_col = st.columns([2, 3], vertical_alignment="center")
 
-    # Filter controls — sit in a flat horizontal strip
-    with st.container():
+    with title_col:
+        st.markdown(
+            '<div class="exec-head">'
+            '<div class="page-header__eyebrow">Water Utility Performance</div>'
+            '<h1 class="page-header__title">'
+            '<span class="icon icon-xl icon-muted">dashboard</span>Executive Dashboard</h1>'
+            '<p class="page-header__subtitle">Real-time view of access, service quality, '
+            'finance and production.</p>'
+            f'{badge_html}'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
+    with filt_col:
         c1, c2, c3 = st.columns([1.5, 1.5, 1])
 
         with c1:
@@ -658,7 +669,8 @@ def _render_overview_banner() -> None:
             )
             st.session_state["selected_year"] = selected_year
 
-        st.markdown("<hr/>", unsafe_allow_html=True)
+    # Full-width divider below the header row
+    st.markdown("<hr/>", unsafe_allow_html=True)
 
 
 def _sidebar_filters() -> None:
@@ -1071,18 +1083,31 @@ def _majibot_panel_css() -> str:
                    the rest of the content sits in its own scroll region. */
                 > [data-testid="stLayoutWrapper"]:first-child {
                     flex: 0 0 auto;
-                    padding-bottom: 8px;
-                    margin-bottom: 4px;
-                    border-bottom: 1px solid var(--divider);
+                    background: var(--navy, #1f2d3a);
+                    margin: -12px -16px 8px;          /* bleed to panel edges */
+                    padding: 14px 16px;
+                    border-bottom: none;
+                    border-radius: 16px 16px 0 0;
+                }
+                /* Light text + translucent avatar on the navy header bar */
+                > [data-testid="stLayoutWrapper"]:first-child .majibot-panel__name-main,
+                > [data-testid="stLayoutWrapper"]:first-child .icon {
+                    color: #ffffff !important;
+                }
+                > [data-testid="stLayoutWrapper"]:first-child .majibot-panel__name-sub {
+                    color: rgba(255, 255, 255, 0.68) !important;
+                }
+                > [data-testid="stLayoutWrapper"]:first-child .majibot-panel__avatar {
+                    background: rgba(255, 255, 255, 0.14) !important;
                 }
 
-                /* Header icon-buttons: square, ghost. Scoped to the first
-                   layout wrapper only (the header row). */
+                /* Header icon-buttons: square, ghost, light on navy. Scoped to
+                   the first layout wrapper only (the header row). */
                 > [data-testid="stLayoutWrapper"]:first-child
                     [data-testid="stButton"] button {
                     background: transparent;
                     border: 1px solid transparent;
-                    color: var(--text-secondary);
+                    color: rgba(255, 255, 255, 0.85);
                     padding: 4px;
                     min-height: 32px;
                     height: 32px;
@@ -1090,9 +1115,9 @@ def _majibot_panel_css() -> str:
                 }
                 > [data-testid="stLayoutWrapper"]:first-child
                     [data-testid="stButton"] button:hover {
-                    background: var(--surface-muted);
-                    border-color: var(--border);
-                    color: var(--text-primary);
+                    background: rgba(255, 255, 255, 0.16);
+                    border-color: rgba(255, 255, 255, 0.24);
+                    color: #ffffff;
                 }
 
                 /* Suggested-question buttons: spacing + soft chrome. */

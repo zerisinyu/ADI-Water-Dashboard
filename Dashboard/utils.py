@@ -14,6 +14,7 @@ import streamlit as st
 
 from data.database import DATA_DIR, query, init_database
 from data.pipeline import run_pipeline, get_last_run
+from data.metrics import metric_tooltip
 
 logger = logging.getLogger(__name__)
 
@@ -476,6 +477,9 @@ class KPI:
     footnote: Optional[str] = None
     icon: Optional[str] = None
     sparkline: Optional[List[float]] = None
+    donut: Optional[float] = None    # 0–100 — renders a mini donut instead of a sparkline
+    help: Optional[str] = None       # tooltip text shown on an ⓘ next to the label
+    metric_key: Optional[str] = None  # METRIC_REGISTRY key — auto-fills `help`
 
 
 def _classify_delta(delta: str, kind: str) -> str:
@@ -517,6 +521,33 @@ def _sparkline_svg(values: List[float], width: int = 80, height: int = 22, color
     )
 
 
+def _donut_svg(pct: float, size: int = 40, stroke: int = 6, color: str = "var(--brand)") -> str:
+    """Render a compact donut showing `pct` (0–100) of a ring filled. Used as an
+    alternative mini-viz to the sparkline on a KPI card."""
+    try:
+        p = max(0.0, min(100.0, float(pct)))
+    except (TypeError, ValueError):
+        return ""
+    r = (size - stroke) / 2
+    cx = cy = size / 2
+    import math
+    circ = 2 * math.pi * r
+    dash = circ * p / 100.0
+    return (
+        f'<svg class="kpi-card__donut" viewBox="0 0 {size} {size}" width="{size}" height="{size}" '
+        f'aria-hidden="true">'
+        f'<circle cx="{cx}" cy="{cy}" r="{r:.2f}" fill="none" stroke="var(--divider)" '
+        f'stroke-width="{stroke}"/>'
+        f'<circle cx="{cx}" cy="{cy}" r="{r:.2f}" fill="none" stroke="{color}" '
+        f'stroke-width="{stroke}" stroke-linecap="round" '
+        f'stroke-dasharray="{dash:.2f} {circ - dash:.2f}" '
+        f'transform="rotate(-90 {cx} {cy})"/>'
+        f'<text x="{cx}" y="{cy}" text-anchor="middle" dominant-baseline="central" '
+        f'class="kpi-card__donut-label">{p:.0f}%</text>'
+        '</svg>'
+    )
+
+
 def render_kpi_row(items: Iterable[KPI]) -> None:
     """Render a row of KPI cards in the canonical design-system style.
 
@@ -537,16 +568,29 @@ def render_kpi_row(items: Iterable[KPI]) -> None:
             f'<span class="icon icon-muted kpi-card__icon">{_html.escape(it.icon)}</span>'
             if it.icon else ""
         )
-        spark_html = _sparkline_svg(it.sparkline) if it.sparkline else ""
+        help_text = it.help or (metric_tooltip(it.metric_key) if it.metric_key else None)
+        help_html = (
+            f'<span class="kpi-help" tabindex="0" role="note" aria-label="{_html.escape(help_text)}">'
+            f'<span class="icon kpi-help__icon">info</span>'
+            f'<span class="kpi-help__bubble">{_html.escape(help_text)}</span>'
+            f'</span>'
+            if help_text else ""
+        )
+        if it.donut is not None:
+            viz_html = _donut_svg(it.donut)
+        elif it.sparkline:
+            viz_html = _sparkline_svg(it.sparkline)
+        else:
+            viz_html = ""
 
         parts.append(
             '<div class="kpi-card">'
             f'<div class="kpi-card__head">'
-            f'<div class="kpi-card__label">{_html.escape(it.label)}</div>'
+            f'<div class="kpi-card__label">{_html.escape(it.label)}{help_html}</div>'
             f'{icon_html}'
             f'</div>'
             f'<div class="kpi-card__value">{_html.escape(it.value)}</div>'
-            f'{spark_html}'
+            f'{viz_html}'
             f'{delta_html}'
             f'{footnote_html}'
             '</div>'
@@ -624,11 +668,14 @@ def render_target_bar(label: str, value: float, target: float,
     )
 
 
-def render_risk_card(title: str, items: List[Dict[str, str]], *, tone: str = "warn") -> None:
+def render_risk_card(title: str, items: List[Dict[str, str]], *, tone: str = "warn",
+                     bare: bool = False) -> None:
     """Render a list of risk / win items inside a single card.
 
     Each item is `{"label": str, "detail": str, "action": str (optional)}`.
     `tone` selects the accent: "warn" (amber), "danger" (red), "good" (green).
+    When `bare=True` the outer `.risk-card` wrapper is omitted so the title +
+    list can sit inside an existing container (e.g. below a toggle).
     """
     accent = {
         "good":   "var(--success)",
@@ -654,16 +701,23 @@ def render_risk_card(title: str, items: List[Dict[str, str]], *, tone: str = "wa
             f'</li>'
         )
     body = "".join(rows) if rows else '<li class="risk-card__empty">Nothing flagged.</li>'
-    st.markdown(
-        f'<div class="risk-card" style="--risk-accent:{accent};">'
+    inner = (
         f'<div class="risk-card__title">'
         f'<span class="icon icon-sm" style="color:{accent};">{icon_for_tone}</span>'
         f'<span>{_html.escape(title)}</span>'
         f'</div>'
         f'<ul class="risk-card__list">{body}</ul>'
-        f'</div>',
-        unsafe_allow_html=True,
     )
+    if bare:
+        st.markdown(
+            f'<div class="risk-card risk-card--bare" style="--risk-accent:{accent};">{inner}</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div class="risk-card" style="--risk-accent:{accent};">{inner}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_action_checklist(title: str, items: List[Dict[str, str]]) -> None:
@@ -706,6 +760,28 @@ def render_action_checklist(title: str, items: List[Dict[str, str]]) -> None:
                     )
                 except Exception:
                     pass
+
+
+def render_majibot_todo(title: str, items: List[Dict[str, str]]) -> None:
+    """Render MajiBot's to-do list as a dark navy card (matches the MajiBot
+    panel). Each item is `{"text": str}`. Sits beside the risks/wins toggle."""
+    rows = "".join(
+        f'<li class="majibot-todo__row">'
+        f'<span class="icon icon-sm majibot-todo__check">check_box_outline_blank</span>'
+        f'<span class="majibot-todo__text">{_html.escape(it.get("text", ""))}</span>'
+        f'</li>'
+        for it in items
+    ) or '<li class="majibot-todo__empty">Nothing on the list — all clear.</li>'
+    st.markdown(
+        f'<div class="majibot-todo">'
+        f'<div class="majibot-todo__title">'
+        f'<span class="majibot-todo__avatar"><span class="icon icon-sm">auto_awesome</span></span>'
+        f'<span>{_html.escape(title)}</span>'
+        f'</div>'
+        f'<ul class="majibot-todo__list">{rows}</ul>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_page_header(

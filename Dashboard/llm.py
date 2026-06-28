@@ -56,7 +56,14 @@ def build_data_context_prompt() -> str:
             for z, metrics in list(insights["zones"].items())[:3]:
                 zone_summary.append(f"{z} (Coll: {metrics.get('collection_efficiency', 0):.0f}%)")
             context_parts.append(f"Zone Performance: {', '.join(zone_summary)}")
-    
+
+    # MajiBot's "read on today" — the plain-language daily briefing the exec page
+    # used to show in an expander. Folding it into the chat context lets MajiBot
+    # open with today's read when asked.
+    daily_reading = st.session_state.get("daily_reading")
+    if daily_reading:
+        context_parts.append(f"Today's read (MajiBot's daily briefing): {daily_reading}")
+
     if context_parts:
         return "\n\nCurrent Dashboard Data Context:\n" + "\n".join(context_parts)
     else:
@@ -135,6 +142,24 @@ def resolve_api_key(provider: str) -> Optional[str]:
         if val:
             return str(val)
     return None
+
+
+def active_provider() -> str:
+    """The provider MajiBot/ChatLLM will use (session → secrets → 'gemini')."""
+    try:
+        ss_provider = st.session_state.get("ai_provider")
+    except Exception:
+        ss_provider = None
+    return (ss_provider or _get_secret("LLM_PROVIDER", "gemini") or "gemini").lower()
+
+
+def is_llm_configured() -> bool:
+    """True when an API key is available for the active provider — i.e. AI
+    features can run rather than falling back to a template."""
+    try:
+        return bool(resolve_api_key(active_provider()))
+    except Exception:
+        return False
 
 
 _local_secrets_cache: Optional[Dict[str, Any]] = None  # type: ignore[name-defined]

@@ -977,6 +977,54 @@ This represents **{(total_production - total_consumption)/1e3:.1f}k m³** of unb
     return brief
 
 
+def generate_board_brief_llm(
+    billing_df: pd.DataFrame,
+    prod_df: pd.DataFrame,
+    fin_df: pd.DataFrame,
+    selected_period: str = "This month",
+    custom_request: str = "",
+    report_format: str = "Markdown",
+) -> str:
+    """AI-written board brief (BYOK).
+
+    Uses the deterministic :func:`generate_board_brief_text` output as *grounding
+    facts* and asks the configured LLM to write the executive brief, optionally
+    honouring a free-text user request. Raises on any failure so callers can fall
+    back to the template.
+    """
+    from llm import ChatLLM
+
+    facts = generate_board_brief_text(billing_df, prod_df, fin_df, selected_period)
+
+    system = (
+        "You are an executive analyst writing a board brief for the Managing "
+        "Director of a water utility. Write clear, decision-focused prose. Use "
+        "ONLY the grounding facts provided — never invent numbers. Write currency "
+        "as 'USD 1.2M' (avoid the '$' sign so it does not break formatting)."
+    )
+    if report_format == "Plain Text":
+        system += " Output plain text only — no Markdown symbols."
+    else:
+        system += " Format as clean Markdown with ## headings and short paragraphs."
+
+    user = (
+        f"Reporting period: {selected_period}\n\n"
+        f"Grounding facts (reuse these exact numbers):\n{facts}\n\n"
+    )
+    if (custom_request or "").strip():
+        user += f"Special instructions from the user: {custom_request.strip()}\n\n"
+    user += "Write the board brief now."
+
+    text = ChatLLM().chat_once(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        inject_context=False,
+    )
+    return (text or "").strip()
+
+
 def generate_monthly_report(
     billing_df: pd.DataFrame,
     prod_df: pd.DataFrame,

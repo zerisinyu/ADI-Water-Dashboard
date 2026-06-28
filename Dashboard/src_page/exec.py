@@ -23,7 +23,9 @@ from charts import (
     DATA_SERIES,
     DATA_WATER,
     DATA_SANITATION,
+    BRAND_STRONG,
     JMP_COLORS,
+    LADDER_COLORS,
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
@@ -31,6 +33,7 @@ from charts import (
     apply_axis_percent,
     style_fig,
     status_label,
+    status_heatmap,
 )
 from data.database import query
 from data.metrics import (
@@ -39,7 +42,10 @@ from data.metrics import (
     cost_coverage,
     population_weighted_mean,
 )
-from ai_insights import InsightsEngine, generate_board_brief_text
+from ai_insights import InsightsEngine, generate_board_brief_text, generate_board_brief_llm
+from auth import get_current_user
+from llm import is_llm_configured
+import briefing_config
 
 def format_year_month(year: int, month: int = None) -> str:
     """Format year and month to readable format (e.g., 2020/6 or 2020)"""
@@ -262,6 +268,17 @@ def scene_executive():
         "suggested_questions": suggested_questions
     }
 
+    # MajiBot's "read on today" is no longer shown as a separate expander on the
+    # home page — instead it's stashed here so it can be folded into MajiBot's
+    # chat context (see llm.build_data_context_prompt).
+    try:
+        from ai_insights import generate_quick_insight
+        _daily_reading = generate_quick_insight(f_billing, f_prod, f_fin, selected_country)
+        if _daily_reading:
+            st.session_state["daily_reading"] = _daily_reading
+    except Exception:
+        pass
+
     # --- 6. Layout & Visualization ---
 
     # =======================================================================
@@ -277,11 +294,9 @@ def scene_executive():
     from datetime import datetime as _dt
     from utils import (
         render_status_badge,
-        render_target_bar,
         render_risk_card,
-        render_action_checklist,
+        render_majibot_todo,
     )
-    from ai_insights import TARGETS
 
     # --- A. Status header --------------------------------------------------
     if eff_score >= 80 and qual_score >= 80 and fin_score >= 80:
@@ -294,77 +309,134 @@ def scene_executive():
     today_str = _dt.now().strftime("%A · %B %d, %Y")
     badge_html = render_status_badge(overall_state, badge_label)
     scope_label = selected_country if selected_country and selected_country != "All" else "All countries"
-    st.markdown(
-        f'<div class="briefing-header">'
-        f'<div class="briefing-header__title">'
-        f'<h2>Daily briefing</h2>'
-        f'<span class="briefing-date">{today_str} · {_html_mod.escape(scope_label)}</span>'
-        f'</div>'
-        f'{badge_html}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
 
-    # --- B. Overnight delta band ------------------------------------------
-    # Compare latest 30-day window vs prior 30-day window per pillar.
-    def _window_score(df, value_col, date_col="date", days=30):
-        if df is None or df.empty or date_col not in df.columns or value_col not in df.columns:
-            return None, None
-        try:
-            d = df.copy()
-            d[date_col] = pd.to_datetime(d[date_col], errors="coerce")
-            d = d.dropna(subset=[date_col])
-            if d.empty:
-                return None, None
-            latest = d[date_col].max()
-            cur = d[(d[date_col] > latest - pd.Timedelta(days=days)) & (d[date_col] <= latest)][value_col].mean()
-            prev = d[(d[date_col] > latest - pd.Timedelta(days=2 * days)) & (d[date_col] <= latest - pd.Timedelta(days=days))][value_col].mean()
-            return (float(cur) if pd.notna(cur) else None,
-                    float(prev) if pd.notna(prev) else None)
-        except Exception:
-            return None, None
+    # Only admins may customise the briefing layout.
+    try:
+        _cur_user = get_current_user()
+        _role_v = getattr(getattr(_cur_user, "role", None), "value", "") or ""
+    except Exception:
+        _role_v = ""
+    is_admin = _role_v in {"master_user", "country_admin"}
 
-    cur_paid, prev_paid       = _window_score(f_billing, "paid")
-    cur_billed, prev_billed   = _window_score(f_billing, "billed")
-    cur_prod, prev_prod       = _window_score(f_prod, "production_m3")
-    cur_svc, prev_svc         = _window_score(f_prod, "service_hours")
-
-    def _delta_card(label: str, current: float, prev: float, unit: str = "", fmt: str = "{:.1f}"):
-        if current is None:
-            value_str = "—"
-            change_html = '<span class="delta-card__change delta-card__change--flat">No data</span>'
-        else:
-            value_str = fmt.format(current) + unit
-            if prev is None or prev == 0:
-                change_html = '<span class="delta-card__change delta-card__change--flat">— vs prior</span>'
-            else:
-                pct_change = (current - prev) / abs(prev) * 100
-                cls = "up" if pct_change > 0.5 else "down" if pct_change < -0.5 else "flat"
-                arrow = "▲" if cls == "up" else "▼" if cls == "down" else "•"
-                change_html = (
-                    f'<span class="delta-card__change delta-card__change--{cls}">'
-                    f'{arrow} {pct_change:+.1f}% vs prior 30d'
-                    f'</span>'
-                )
-        return (
-            f'<div class="delta-card">'
-            f'<div class="delta-card__label">{label}</div>'
-            f'<div class="delta-card__value">{value_str}</div>'
-            f'{change_html}'
-            f'</div>'
+    @st.dialog("Customise daily briefing")
+    def _briefing_dialog():
+        st.write(
+            "Choose which metric appears in each briefing card and how it's "
+            "visualised (sparkline or donut). Customisation lives on the "
+            "**Settings** page."
         )
+        gc1, gc2 = st.columns(2)
+        with gc1:
+            if st.button("Go to Settings", type="primary", width="stretch"):
+                st.switch_page("pages/6_Admin_Settings.py")
+        with gc2:
+            if st.button("Stay here", width="stretch"):
+                st.rerun()
 
-    delta_html_parts = [
-        '<div class="delta-band">',
-        _delta_card("Avg daily payments", cur_paid, prev_paid, " $", fmt="{:,.0f}"),
-        _delta_card("Avg daily billings", cur_billed, prev_billed, " $", fmt="{:,.0f}"),
-        _delta_card("Avg daily production", cur_prod, prev_prod, " m³", fmt="{:,.0f}"),
-        _delta_card("Avg service hours", cur_svc, prev_svc, " hrs"),
-        '</div>',
-    ]
-    st.markdown("".join(delta_html_parts), unsafe_allow_html=True)
+    hdr_col, gear_col = st.columns([0.93, 0.07])
+    with hdr_col:
+        st.markdown(
+            f'<div class="briefing-header">'
+            f'<div class="briefing-header__title">'
+            f'<h2>Daily briefing</h2>'
+            f'<span class="briefing-date">{today_str} · {_html_mod.escape(scope_label)}</span>'
+            f'</div>'
+            f'{badge_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    with gear_col:
+        if is_admin:
+            if st.button(":material/settings:", key="briefing_gear",
+                         help="Customise the daily briefing"):
+                _briefing_dialog()
 
-    # --- C. Top risks / wins + today's actions ----------------------------
+    # --- B. Briefing cards — one configurable card per pillar -------------
+    # Merges the old overnight-delta band and the pillar quick-look into a single
+    # admin-configurable four-card row (one card per sector). No fixed targets —
+    # actuals + trend only. Admins pick the metric and viz per slot in Settings.
+    def _last_n(series, n=12):
+        s = series.dropna().tail(n).tolist() if hasattr(series, "dropna") else []
+        return [float(x) for x in s if isinstance(x, (int, float))]
+
+    cov_spark = []
+    if not f_nat.empty and "water_access" in f_nat.columns:
+        cov_spark = _last_n(f_nat.sort_values("year")["water_access"]) if "year" in f_nat.columns else _last_n(f_nat["water_access"])
+    eff_spark = _last_n(f_prod.sort_values("date_dt").groupby(f_prod["date_dt"].dt.to_period("M"))["production_m3"].sum()) if not f_prod.empty and "date_dt" in f_prod.columns else []
+    fin_spark = _last_n(f_billing.sort_values("date_dt").groupby(f_billing["date_dt"].dt.to_period("M"))["paid"].sum()) if not f_billing.empty and "date_dt" in f_billing.columns else []
+    qual_spark = _last_n(svc_df["water_quality_rate"]) if not svc_df.empty and "water_quality_rate" in svc_df.columns else []
+
+    cov_kind = _delta_kind_for_status(cov_status)
+    fin_kind = _delta_kind_for_status(fin_status)
+    eff_status = status_label(eff_score, good=80, warning=60, higher_is_better=True)
+    qual_status = status_label(qual_score, good=80, warning=60, higher_is_better=True)
+
+    # Display props per choosable metric id (value/delta/footnote/series/pct).
+    # Labels, icons and registry-keys come from briefing_config.METRIC_CHOICES.
+    # Composite indices aren't in METRIC_REGISTRY, so they carry their own help
+    # text; registry-backed metrics fall through to the ⓘ tooltip via metric_key.
+    _help = {
+        "service_coverage": "Average of water & sanitation safely-managed coverage (%), population-weighted. Source: annual JMP access data.",
+        "financial_health": "Composite 0–100: 40% collection efficiency + 40% O&M cost coverage + 20% budget utilisation. Monthly.",
+        "operational_efficiency": "Composite 0–100: average of (100 − NRW%), capacity utilisation % and service hours ÷ 24. Monthly.",
+        "service_quality": "Composite 0–100: average of water-quality compliance, complaint resolution and asset health. Monthly.",
+        "capacity_utilisation": "Wastewater treated ÷ design capacity × 100. Monthly.",
+        "complaint_resolution": "Complaints resolved ÷ complaints received × 100. Monthly.",
+        "water_coverage": "Population with safely-managed water ÷ total population × 100. Annual (JMP).",
+        "sanitation_coverage": "Population with safely-managed sanitation ÷ total population × 100. Annual (JMP).",
+    }
+    metric_values = {
+        "service_coverage": dict(value=f"{coverage_score:.0f}%", delta=f"Water {w_cov:.0f}% · San {s_cov:.0f}%", delta_kind=cov_kind, footnote=f"{pop_served:.1f}M people served", pct=coverage_score, series=cov_spark),
+        "water_coverage": dict(value=f"{w_cov:.0f}%", delta="Safely managed", delta_kind="neutral", footnote=f"{pop_served:.1f}M people", pct=w_cov, series=cov_spark),
+        "sanitation_coverage": dict(value=f"{s_cov:.0f}%", delta="Safely managed", delta_kind="neutral", footnote=None, pct=s_cov, series=[]),
+        "financial_health": dict(value=f"{fin_score:.0f}", delta=fin_status, delta_kind=fin_kind, footnote=f"Revenue ${total_revenue / 1e6:.1f}M · Cost recovery {opex_cov:.0f}%", pct=fin_score, series=fin_spark),
+        "collection_efficiency": dict(value=f"{coll_eff:.1f}%", delta="Utility-wide cash", delta_kind="neutral", footnote="Water + sewer collected", pct=min(coll_eff, 100), series=fin_spark),
+        "cost_coverage": dict(value=f"{opex_cov:.0f}%", delta="O&M coverage", delta_kind="neutral", footnote="Revenue ÷ opex", pct=min(opex_cov, 100), series=[]),
+        "operational_efficiency": dict(value=f"{eff_score:.0f}", delta=f"NRW {nrw:.1f}% · Continuity {service_hours:.1f}h", delta_kind=_STATUS_DELTA_KIND[eff_status], footnote=f"Capacity utilisation {cap_util:.0f}%", pct=eff_score, series=eff_spark),
+        "nrw": dict(value=f"{nrw:.1f}%", delta="Distribution losses", delta_kind="neutral", footnote="Lower is better", pct=min(nrw, 100), series=eff_spark),
+        "capacity_utilisation": dict(value=f"{cap_util:.0f}%", delta="of design capacity", delta_kind="neutral", footnote=None, pct=min(cap_util, 100), series=[]),
+        "service_continuity": dict(value=f"{(service_hours or 0):.1f} hrs/day", delta="Target 24h", delta_kind="neutral", footnote=None, pct=min((service_hours or 0) / 24 * 100, 100), series=[]),
+        "service_quality": dict(value=f"{qual_score:.0f}", delta=f"Water qual {wq_compliance:.0f}% · Resolution {cust_res_rate:.0f}%", delta_kind=_STATUS_DELTA_KIND[qual_status], footnote="Index of compliance, resolution & asset health", pct=qual_score, series=qual_spark),
+        "water_quality_compliance": dict(value=f"{wq_compliance:.0f}%", delta="Samples passed", delta_kind="neutral", footnote=None, pct=wq_compliance, series=qual_spark),
+        "complaint_resolution": dict(value=f"{cust_res_rate:.0f}%", delta="Complaints resolved", delta_kind="neutral", footnote=None, pct=cust_res_rate, series=[]),
+    }
+
+    layout = briefing_config.load_layout()
+    briefing_cards = []
+    for slot in briefing_config.SLOTS:
+        sel = layout[slot]
+        metric_id, viz = sel["metric"], sel["viz"]
+        label, icon, mkey = briefing_config.METRIC_CHOICES[slot][metric_id]
+        props = metric_values.get(metric_id, {})
+        briefing_cards.append(KPI(
+            label=label,
+            value=props.get("value", "—"),
+            delta=props.get("delta"),
+            delta_kind=props.get("delta_kind", "neutral"),
+            footnote=props.get("footnote"),
+            icon=icon,
+            metric_key=mkey,
+            help=_help.get(metric_id),
+            sparkline=(props.get("series") or None) if viz == "sparkline" else None,
+            donut=(props.get("pct") if viz == "donut" else None),
+        ))
+    render_kpi_row(briefing_cards)
+
+    # One "Open …" deep-link under each briefing card, in slot order
+    # (access · finance · ops · quality).
+    _slot_pages = {
+        "access":  ("pages/2_Access_&_Coverage.py", "Open Access & Coverage"),
+        "finance": ("pages/4_Financial_Health.py", "Open Financial Health"),
+        "ops":     ("pages/5_Production.py", "Open Production"),
+        "quality": ("pages/3_Service_Quality.py", "Open Service & Quality"),
+    }
+    nav_cols = st.columns(len(briefing_config.SLOTS))
+    for col, slot in zip(nav_cols, briefing_config.SLOTS):
+        page, label = _slot_pages[slot]
+        with col:
+            st.page_link(page, label=label, icon=":material/arrow_forward:", width="stretch")
+
+    # --- C. Signals (risks/wins toggle) + MajiBot to-do -------------------
     risk_items: List[Dict[str, str]] = []
     win_items: List[Dict[str, str]] = []
     try:
@@ -408,136 +480,40 @@ def scene_executive():
     except Exception:
         pass
 
-    rwc1, rwc2 = st.columns(2)
-    with rwc1:
-        render_risk_card("Top risks", risk_items[:3], tone="warn")
-    with rwc2:
-        render_risk_card("Top wins", win_items[:3], tone="good")
-
-    # Today's actions — generated from threshold breaches with page deep-links.
-    action_items: List[Dict[str, str]] = []
+    # MajiBot's to-do list — threshold-driven next actions (replaces the old
+    # "Today's actions" checklist; lives beside the signals toggle).
+    todo_items: List[Dict[str, str]] = []
     if nrw > 30:
-        action_items.append({
-            "text": f"Investigate NRW spike ({nrw:.1f}%) — drill into worst-performing zone.",
-            "page": "pages/2_Access_&_Coverage.py", "label": "Open Access page",
-        })
+        todo_items.append({"text": f"Investigate NRW spike ({nrw:.1f}%) — drill into the worst-performing zone."})
     if coll_eff < 85:
-        action_items.append({
-            "text": f"Collection efficiency below target — {coll_eff:.1f}% vs 85% goal. Review aged debt.",
-            "page": "pages/4_Financial_Health.py", "label": "Open Financial Health",
-        })
+        todo_items.append({"text": f"Collection efficiency below target — {coll_eff:.1f}% vs 85%. Review aged debt."})
     if service_hours and service_hours < 18:
-        action_items.append({
-            "text": f"Service continuity at {service_hours:.1f} hrs/day — below 18-hour target.",
-            "page": "pages/3_Service_Quality.py", "label": "Open Service & Quality",
-        })
-    if not action_items:
-        action_items.append({
-            "text": "No threshold breaches detected — continue routine monitoring.",
-            "page": "pages/7_Forecasting.py", "label": "Check forecasts",
-        })
-    render_action_checklist("Today's actions", action_items[:4])
+        todo_items.append({"text": f"Service continuity at {service_hours:.1f} hrs/day — below the 18-hour target."})
+    if not todo_items:
+        todo_items.append({"text": "No threshold breaches detected — continue routine monitoring."})
 
-    # --- E. Cross-cutting targets bar -------------------------------------
-    render_section_header("Cross-cutting targets", eyebrow="Actuals vs goalposts", icon="adjust")
-    tcol1, tcol2, tcol3, tcol4 = st.columns(4)
-    with tcol1:
-        render_target_bar("Non-revenue water", nrw, TARGETS["nrw"]["value"],
-                          unit="%", direction="lower_is_better", icon=TARGETS["nrw"]["icon"])
-    with tcol2:
-        render_target_bar("Collection efficiency", coll_eff, TARGETS["collection_efficiency"]["value"],
-                          unit="%", direction="higher_is_better", icon=TARGETS["collection_efficiency"]["icon"])
-    with tcol3:
-        render_target_bar("Service continuity", service_hours or 0.0, TARGETS["service_hours"]["value"],
-                          unit="h", direction="higher_is_better", icon=TARGETS["service_hours"]["icon"])
-    with tcol4:
-        render_target_bar("Service coverage", coverage_score, TARGETS["coverage"]["value"],
-                          unit="%", direction="higher_is_better", icon=TARGETS["coverage"]["icon"])
-
-    # --- G. AI summary (collapsed) ----------------------------------------
-    try:
-        from ai_insights import generate_quick_insight
-        quick_insight = generate_quick_insight(f_billing, f_prod, f_fin, selected_country)
-        if quick_insight:
-            with st.expander("MajiBot's read on today", expanded=False):
-                st.markdown(quick_insight)
-    except Exception:
-        pass
-
-    # ---- Pillar quick-look (legacy KPI row preserved) --------------------
-    render_section_header("Pillar quick-look", eyebrow="Snapshot", icon="speed")
-
-    cov_kind = _delta_kind_for_status(cov_status)
-    fin_kind = _delta_kind_for_status(fin_status)
-    eff_status = status_label(eff_score, good=80, warning=60, higher_is_better=True)
-    qual_status = status_label(qual_score, good=80, warning=60, higher_is_better=True)
-
-    # Build short historical sparkline series from filtered billing/production
-    # (best-effort — empty/short series simply render no sparkline)
-    def _last_n(series, n=12):
-        s = series.dropna().tail(n).tolist() if hasattr(series, "dropna") else []
-        return [float(x) for x in s if isinstance(x, (int, float))]
-
-    cov_spark = []
-    if not f_nat.empty and "water_access" in f_nat.columns:
-        cov_spark = _last_n(f_nat.sort_values("year")["water_access"]) if "year" in f_nat.columns else _last_n(f_nat["water_access"])
-    eff_spark = _last_n(f_prod.sort_values("date_dt").groupby(f_prod["date_dt"].dt.to_period("M"))["production_m3"].sum()) if not f_prod.empty and "date_dt" in f_prod.columns else []
-    fin_spark = _last_n(f_billing.sort_values("date_dt").groupby(f_billing["date_dt"].dt.to_period("M"))["paid"].sum()) if not f_billing.empty and "date_dt" in f_billing.columns else []
-    qual_spark = _last_n(svc_df["water_quality_rate"]) if not svc_df.empty and "water_quality_rate" in svc_df.columns else []
-
-    render_kpi_row([
-        KPI(
-            label="Service coverage",
-            value=f"{coverage_score:.0f}%",
-            delta=f"Water {w_cov:.0f}% · San {s_cov:.0f}%",
-            delta_kind=cov_kind,
-            footnote=f"{pop_served:.1f}M people served",
-            icon="diversity_3",
-            sparkline=cov_spark,
-        ),
-        KPI(
-            label="Financial health",
-            value=f"{fin_score:.0f}",
-            delta=fin_status,
-            delta_kind=fin_kind,
-            footnote=f"Revenue ${total_revenue / 1e6:.1f}M · Cost recovery {opex_cov:.0f}%",
-            icon="payments",
-            sparkline=fin_spark,
-        ),
-        KPI(
-            label="Operational efficiency",
-            value=f"{eff_score:.0f}",
-            delta=f"NRW {nrw:.1f}% · Continuity {service_hours:.1f}h",
-            delta_kind=_STATUS_DELTA_KIND[eff_status],
-            footnote=f"Capacity utilisation {cap_util:.0f}%",
-            icon="bolt",
-            sparkline=eff_spark,
-        ),
-        KPI(
-            label="Service quality",
-            value=f"{qual_score:.0f}",
-            delta=f"Water qual {wq_compliance:.0f}% · Resolution {cust_res_rate:.0f}%",
-            delta_kind=_STATUS_DELTA_KIND[qual_status],
-            footnote="Index of compliance, resolution & asset health",
-            icon="verified",
-            sparkline=qual_spark,
-        ),
-    ])
-
-    # Quick deep-link strip
-    nav_c1, nav_c2, nav_c3, nav_c4 = st.columns(4)
-    with nav_c1:
-        st.page_link("pages/2_Access_&_Coverage.py", label="Access & Coverage", icon=":material/arrow_forward:", width="stretch")
-    with nav_c2:
-        st.page_link("pages/4_Financial_Health.py", label="Financial Health", icon=":material/arrow_forward:", width="stretch")
-    with nav_c3:
-        st.page_link("pages/5_Production.py", label="Production", icon=":material/arrow_forward:", width="stretch")
-    with nav_c4:
-        st.page_link("pages/3_Service_Quality.py", label="Service & Quality", icon=":material/arrow_forward:", width="stretch")
+    # Signals (left) toggles between risks & wins as one equal-height card;
+    # MajiBot's to-do sits on the right.
+    sig_col, todo_col = st.columns([1, 1])
+    with sig_col:
+        with st.container(key="signals-card"):
+            signal_view = st.segmented_control(
+                "Signals",
+                ["Top risks", "Top wins"],
+                default="Top risks",
+                key="signals_toggle",
+                label_visibility="collapsed",
+            ) or "Top risks"
+            if signal_view == "Top wins":
+                render_risk_card("Top wins", win_items[:4], tone="good", bare=True)
+            else:
+                render_risk_card("Top risks", risk_items[:4], tone="warn", bare=True)
+    with todo_col:
+        render_majibot_todo("MajiBot's to-do", todo_items[:5])
 
     # --- Performance Trends Dashboard ---
-    render_section_header("Performance trends", eyebrow="Last 12 months", icon="show_chart")
-    
+    render_section_header("Performance trends", eyebrow="At a glance · last 12 months", icon="show_chart")
+
     # Prepare Trend Data (Global for tabs)
     trend_billing = billing_df.copy()
     trend_fin = fin_df.copy()
@@ -560,135 +536,81 @@ def scene_executive():
         if "zone" in trend_svc.columns: trend_svc = trend_svc[trend_svc["zone"].str.lower() == selected_zone.lower()]
         if "zone" in trend_water_acc.columns: trend_water_acc = trend_water_acc[trend_water_acc["zone"].str.lower() == selected_zone.lower()]
 
-    tab_fin, tab_ops, tab_cov, tab_qual, tab_map, tab_bench = st.tabs([
-        "Financial", "Operational", "Coverage", "Quality", "Geographic", "Benchmarking"
-    ])
+    # =======================================================================
+    # A. Pillar health heatmap — the at-a-glance object. 4 pillars × last 12
+    #    months, each cell green/amber/red by threshold. Trajectory reads
+    #    left→right, cross-pillar comparison top→bottom. Deliberately distinct
+    #    from the briefing cards above; detailed per-metric charts stay on their
+    #    own pages.
+    # =======================================================================
+    bill_m = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg(
+        billed=("billed", "sum"), paid=("paid", "sum"),
+        consumption_m3=("consumption_m3", "sum")).reset_index()
+    prod_m = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg(
+        production_m3=("production_m3", "sum"), service_hours=("service_hours", "mean")).reset_index()
+    svc_m = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg(
+        water_quality_rate=("water_quality_rate", "mean")).reset_index()
 
-    # --- Financial Tab ---
-    with tab_fin:
-        # Group by Month
-        fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
-        billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"billed": "sum", "paid": "sum"}).reset_index()
-        
-        merged_fin = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
-        merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
-        
-        # Ensure safe division for collection efficiency
-        merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).fillna(0)
-        
-        # Calculate Cost Recovery Ratio (Revenue / Opex * 100) - more meaningful for utilities
-        # Shows what % of operating costs are covered by revenue
-        merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).fillna(0)
-        
-        # Clamp values to realistic ranges
-        merged_fin["coll_eff"] = merged_fin["coll_eff"].clip(0, 150)  # Allow slight over-collection
-        merged_fin["cost_recovery"] = merged_fin["cost_recovery"].clip(0, 200)  # Cap at 200% cost recovery
-        
-        # Sort and take last 12 months for "rolling view"
-        merged_fin = merged_fin.sort_values("date").tail(12)
-        
-        if len(merged_fin) > 0:
-            fig_fin = go.Figure()
-            fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue", marker_color=STATUS_GOOD, opacity=0.85))
-            fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex", marker_color=STATUS_CRITICAL, opacity=0.85))
-            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection efficiency %", yaxis="y2", line=dict(color=DATA_WATER, width=2.5)))
-            fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["cost_recovery"], name="Cost recovery %", yaxis="y2", line=dict(color=STATUS_WARNING, width=2.5, dash="dot")))
+    heat = (bill_m.merge(prod_m, on="date", how="outer")
+                  .merge(svc_m, on="date", how="outer")
+                  .sort_values("date").tail(12))
+    if not heat.empty:
+        heat["coll"] = heat["paid"] / heat["billed"].replace(0, float("nan")) * 100
+        heat["nrw"] = (heat["production_m3"] - heat["consumption_m3"]) / heat["production_m3"].replace(0, float("nan")) * 100
+        month_labels = [d.strftime("%b %y") for d in heat["date"]]
+        heat_rows = [
+            {"label": "Collection eff.", "values": heat["coll"].tolist(),
+             "good": 90, "warning": 80, "higher_is_better": True, "fmt": "{:.0f}%"},
+            {"label": "Non-revenue water", "values": heat["nrw"].tolist(),
+             "good": 25, "warning": 35, "higher_is_better": False, "fmt": "{:.0f}%"},
+            {"label": "Service hours", "values": heat["service_hours"].tolist(),
+             "good": 20, "warning": 12, "higher_is_better": True, "fmt": "{:.0f}h"},
+            {"label": "Water quality", "values": heat["water_quality_rate"].tolist(),
+             "good": 95, "warning": 85, "higher_is_better": True, "fmt": "{:.0f}%"},
+        ]
+        fig_heat = status_heatmap(month_labels, heat_rows, height=260)
+        with chart_card("Pillar health heatmap",
+                        meta="Green on track · amber watch · red action — last 12 months"):
+            st.plotly_chart(fig_heat, use_container_width=True)
+    else:
+        st.info("Not enough monthly data to build the performance heatmap.")
 
-            style_fig(fig_fin, height=380, legend_top=True)
-            fig_fin.update_layout(
-                yaxis=dict(title="Amount ($)"),
-                yaxis2=dict(title="Percent", overlaying="y", side="right", range=[0, 150], showgrid=False),
-                barmode='group',
-            )
-            apply_axis_currency(fig_fin, axis="y")
-            with chart_card("Financial performance", meta="Revenue · Opex · Collection · Cost recovery"):
-                st.plotly_chart(fig_fin, use_container_width=True)
-        else:
-            st.info("No financial data available for selected period")
+    # =======================================================================
+    # B. Access & sanitation ladders — population by service level, two area
+    #    charts side by side, using the shared access-page palette.
+    # =======================================================================
+    cov_l, cov_r = st.columns(2)
 
-    # --- Operational Tab ---
-    with tab_ops:
-        prod_monthly = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"production_m3": "sum"}).reset_index()
-        billing_monthly_cons = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"consumption_m3": "sum"}).reset_index()
-        
-        merged_ops = pd.merge(prod_monthly, billing_monthly_cons, on="date", how="inner")
-        merged_ops["nrw_pct"] = ((merged_ops["production_m3"] - merged_ops["consumption_m3"]) / merged_ops["production_m3"] * 100).fillna(0)
-        
-        svc_monthly = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg({"ww_treated": "sum", "ww_capacity": "sum"}).reset_index()
-        svc_monthly["cap_util"] = (svc_monthly["ww_treated"] / svc_monthly["ww_capacity"] * 100).fillna(0)
-        
-        merged_ops = pd.merge(merged_ops, svc_monthly[["date", "cap_util"]], on="date", how="left").fillna(0)
-        merged_ops = merged_ops.sort_values("date").tail(12)
-        
-        fig_ops = go.Figure()
-        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["nrw_pct"], name="NRW %", line=dict(color=STATUS_CRITICAL, width=2.5)))
-        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["cap_util"], name="Capacity util %", line=dict(color=DATA_WATER, width=2.5)))
-        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["production_m3"], name="Production m³", yaxis="y2", line=dict(color=STATUS_GOOD, dash="dot")))
-        fig_ops.add_trace(go.Scatter(x=merged_ops["date"], y=merged_ops["consumption_m3"], name="Consumption m³", yaxis="y2", line=dict(color=DATA_SANITATION, dash="dot")))
-
-        style_fig(fig_ops, height=380, legend_top=True)
-        fig_ops.update_layout(
-            yaxis=dict(title="Percent"),
-            yaxis2=dict(title="Volume (m³)", overlaying="y", side="right", showgrid=False),
-        )
-        apply_axis_percent(fig_ops, axis="y")
-
-        if len(merged_ops) > 1:
-            start_nrw = merged_ops["nrw_pct"].iloc[0]
-            end_nrw = merged_ops["nrw_pct"].iloc[-1]
-            if end_nrw < start_nrw:
-                fig_ops.add_annotation(
-                    x=merged_ops["date"].iloc[-1], y=end_nrw,
-                    text="Efficiency improved", showarrow=True, arrowhead=1,
-                    font=dict(color=STATUS_GOOD, size=11),
-                )
-
-        with chart_card("Operational efficiency", meta="NRW, capacity utilisation, volume"):
-            st.plotly_chart(fig_ops, use_container_width=True)
-
-    # --- Coverage Tab ---
-    with tab_cov:
-        # --- Water Access Chart ---
+    with cov_l:
         w_cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
         for c in w_cols:
             if c in trend_water_acc.columns:
                 trend_water_acc[c] = pd.to_numeric(trend_water_acc[c], errors="coerce").fillna(0)
-        
+
         if "popn_total" in trend_water_acc.columns:
-            # Calculate absolute pops per row
             for c in w_cols:
                 if c in trend_water_acc.columns:
                     level_name = c.replace("_pct", "")
                     trend_water_acc[level_name] = trend_water_acc["popn_total"] * (trend_water_acc[c] / 100)
-            
+
             level_cols = [c.replace("_pct", "") for c in w_cols if c in trend_water_acc.columns]
             w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
-            
+
             if len(w_trend) > 0:
                 fig_cov = go.Figure()
-                stack_group = 'one'
-                # Order matches JMP hierarchy: Safe -> Basic -> Limited -> Unimproved -> Surface
                 order = ["w_safely_managed", "w_basic", "w_limited", "w_unimproved", "surface_water"]
-                # JMP color mapping
-                colors = [JMP_COLORS["safely_managed"], JMP_COLORS["basic"], JMP_COLORS["limited"], 
-                         JMP_COLORS["unimproved"], JMP_COLORS["surface_water"]]
+                colors = LADDER_COLORS["water"]
                 labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Surface Water"]
-                
                 for i, level in enumerate(order):
                     if level in w_trend.columns:
                         fig_cov.add_trace(go.Scatter(
-                            x=w_trend["year"].apply(lambda y: format_year_month(int(y))), 
-                            y=w_trend[level], 
-                            name=labels[i], 
-                            stackgroup=stack_group,
-                            mode='lines',
-                            line=dict(width=0.5, color=colors[i]),
-                            fillcolor=colors[i],
-                            hovertemplate='%{customdata}<br>Population: %{y:,.0f}<extra></extra>',
-                            customdata=[labels[i]] * len(w_trend)
+                            x=w_trend["year"].apply(lambda y: format_year_month(int(y))),
+                            y=w_trend[level], name=labels[i], stackgroup="one", mode="lines",
+                            line=dict(width=0.5, color=colors[i]), fillcolor=colors[i],
+                            hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
+                            customdata=[labels[i]] * len(w_trend),
                         ))
-                
-                style_fig(fig_cov, height=340)
+                style_fig(fig_cov, height=320)
                 fig_cov.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
                 with chart_card("Water access ladder", meta="Population by service level"):
                     st.plotly_chart(fig_cov, use_container_width=True)
@@ -696,52 +618,43 @@ def scene_executive():
                 st.warning("No water coverage data available for selected period")
         else:
             st.warning("Population data not available for water coverage trends.")
-        
-        # --- Sanitation Access Chart ---
+
+    with cov_r:
         trend_san_acc = access_data["sewer_full"].copy()
         if selected_country and selected_country != "All":
             trend_san_acc = trend_san_acc[trend_san_acc["country"].str.lower() == selected_country.lower()]
         if selected_zone and selected_zone != "All" and "zone" in trend_san_acc.columns:
             trend_san_acc = trend_san_acc[trend_san_acc["zone"].str.lower() == selected_zone.lower()]
-        
+
         s_cols = ["s_safely_managed_pct", "s_basic_pct", "s_limited_pct", "s_unimproved_pct", "open_def_pct"]
         for c in s_cols:
             if c in trend_san_acc.columns:
                 trend_san_acc[c] = pd.to_numeric(trend_san_acc[c], errors="coerce").fillna(0)
-        
+
         if "popn_total" in trend_san_acc.columns:
-            # Calculate absolute pops per row for sanitation
             for c in s_cols:
                 if c in trend_san_acc.columns:
                     level_name = c.replace("_pct", "")
                     trend_san_acc[level_name] = trend_san_acc["popn_total"] * (trend_san_acc[c] / 100)
-            
+
             s_level_cols = [c.replace("_pct", "") for c in s_cols if c in trend_san_acc.columns]
             s_trend = trend_san_acc.groupby("year")[s_level_cols].sum().reset_index()
-            
+
             if len(s_trend) > 0:
                 fig_san = go.Figure()
-                # Order matches JMP hierarchy: Safely Managed -> Basic -> Limited -> Unimproved -> Open Defecation
                 s_order = ["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def"]
-                # Sanitation color scheme (matching access page)
-                san_colors = ['#349438', '#49B754', '#FDEE79', '#FFD94F', '#FFB02B']
+                san_colors = LADDER_COLORS["sanitation"]
                 s_labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Open Defecation"]
-                
                 for i, level in enumerate(s_order):
                     if level in s_trend.columns:
                         fig_san.add_trace(go.Scatter(
-                            x=s_trend["year"].apply(lambda y: format_year_month(int(y))), 
-                            y=s_trend[level], 
-                            name=s_labels[i], 
-                            stackgroup='san',
-                            mode='lines',
-                            line=dict(width=0.5, color=san_colors[i]),
-                            fillcolor=san_colors[i],
-                            hovertemplate='%{customdata}<br>Population: %{y:,.0f}<extra></extra>',
-                            customdata=[s_labels[i]] * len(s_trend)
+                            x=s_trend["year"].apply(lambda y: format_year_month(int(y))),
+                            y=s_trend[level], name=s_labels[i], stackgroup="san", mode="lines",
+                            line=dict(width=0.5, color=san_colors[i]), fillcolor=san_colors[i],
+                            hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
+                            customdata=[s_labels[i]] * len(s_trend),
                         ))
-                
-                style_fig(fig_san, height=340)
+                style_fig(fig_san, height=320)
                 fig_san.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
                 with chart_card("Sanitation access ladder", meta="Population by service level"):
                     st.plotly_chart(fig_san, use_container_width=True)
@@ -750,51 +663,75 @@ def scene_executive():
         else:
             st.warning("Population data not available for sanitation coverage trends.")
 
-    # --- Quality Tab ---
-    with tab_qual:
-        svc_qual = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg({
-            "water_quality_rate": "mean",
-            "complaint_resolution_rate": "mean"
-        }).reset_index()
-        
-        prod_svc = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg({"service_hours": "mean"}).reset_index()
-        
-        merged_qual = pd.merge(svc_qual, prod_svc, on="date", how="outer").sort_values("date").tail(12)
-        
-        if len(merged_qual) > 0:
-            # Calculate dynamic y-axis range for percentage metrics
-            qual_data = merged_qual[["water_quality_rate", "complaint_resolution_rate"]].dropna()
-            if not qual_data.empty:
-                min_qual = max(0, qual_data.min().min() - 5)  # 5% padding
-                max_qual = min(100, qual_data.max().max() + 5)  # 5% padding
-            else:
-                min_qual, max_qual = 0, 100
-            
-            fig_qual = go.Figure()
-            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["water_quality_rate"], name="Water quality %", line=dict(color=STATUS_GOOD, width=2.5), mode='lines+markers'))
-            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["complaint_resolution_rate"], name="Resolution rate %", line=dict(color=DATA_WATER, width=2.5), mode='lines+markers'))
-            fig_qual.add_trace(go.Scatter(x=merged_qual["date"], y=merged_qual["service_hours"], name="Service hours", yaxis="y2", line=dict(color=STATUS_WARNING, width=2.5, dash="dot"), mode='lines+markers'))
+    # =======================================================================
+    # C. Financial performance — revenue vs opex as comparable bars on the $
+    #    axis; collection efficiency & cost recovery as PERCENT lines on the
+    #    right axis (the % suffix and % hovertemplates fix the old "currency"
+    #    mislabelling).
+    # =======================================================================
+    fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
+    billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"billed": "sum", "paid": "sum"}).reset_index()
+    merged_fin = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
+    merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
+    merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).clip(0, 150)
+    merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).clip(0, 200)
+    merged_fin = merged_fin.sort_values("date").tail(12)
 
-            style_fig(fig_qual, height=380, legend_top=True)
-            fig_qual.update_layout(
-                yaxis=dict(title="Percent", range=[min_qual, max_qual]),
-                yaxis2=dict(title="Hours / day", overlaying="y", side="right", range=[0, 24], showgrid=False),
+    if len(merged_fin) > 0:
+        fig_fin = go.Figure()
+        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue",
+                                 marker_color=STATUS_GOOD, opacity=0.9,
+                                 hovertemplate="Revenue: $%{y:,.0f}<extra></extra>"))
+        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex",
+                                 marker_color=STATUS_WARNING, opacity=0.9,
+                                 hovertemplate="Opex: $%{y:,.0f}<extra></extra>"))
+        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection efficiency",
+                                     yaxis="y2", line=dict(color=DATA_WATER, width=2.5),
+                                     hovertemplate="Collection: %{y:.1f}%<extra></extra>"))
+        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["cost_recovery"], name="Cost recovery",
+                                     yaxis="y2", line=dict(color=BRAND_STRONG, width=2.5, dash="dot"),
+                                     hovertemplate="Cost recovery: %{y:.1f}%<extra></extra>"))
+        style_fig(fig_fin, height=380, legend_top=True)
+        fig_fin.update_layout(
+            barmode="group",
+            yaxis=dict(title="Amount ($)"),
+            yaxis2=dict(title="Percent (%)", overlaying="y", side="right", range=[0, 200],
+                        showgrid=False, ticksuffix="%"),
+        )
+        apply_axis_currency(fig_fin, axis="y")
+        with chart_card("Financial performance", meta="Revenue vs opex ($) · collection & cost recovery (%)"):
+            st.plotly_chart(fig_fin, use_container_width=True)
+    else:
+        st.info("No financial data available for selected period")
+
+    # =======================================================================
+    # D. Cross-country performance benchmark — master users only, with a
+    #    score explainer.
+    # =======================================================================
+    try:
+        _bench_user = get_current_user()
+        _is_master = getattr(getattr(_bench_user, "role", None), "value", "") == "master_user"
+    except Exception:
+        _is_master = False
+
+    if _is_master:
+        render_section_header(
+            "Cross-country performance benchmark",
+            eyebrow="Peer comparison",
+            icon="leaderboard",
+            meta="Composite score (0–100), master users only",
+        )
+        with st.expander("How is the benchmark score calculated?", expanded=False):
+            st.markdown(
+                "Each country is scored 0–100 on four equally-weighted pillars, "
+                "then ranked:\n\n"
+                "- **Collection efficiency** — paid ÷ billed (%).\n"
+                "- **NRW score** — `100 − NRW%`, so lower losses score higher.\n"
+                "- **Service continuity** — average supply hours ÷ 24 × 100.\n"
+                "- **Water access** — population safely-managed (%) in the latest year.\n\n"
+                "The **overall score** is the average of the four. Restricted to "
+                "master users because it exposes cross-country data."
             )
-            with chart_card("Service quality trends", meta="Quality compliance, resolution rate, continuity"):
-                st.plotly_chart(fig_qual, use_container_width=True)
-        else:
-            st.info("No service quality data available for selected period")
-
-    # --- Geographic Map Tab ---
-    with tab_map:
-        try:
-            from components.geo_map import render_map_selector_and_chart
-            render_map_selector_and_chart(country_filter=selected_country)
-        except Exception as e:
-            st.info(f"Geographic visualization unavailable: {e}")
-
-    # --- Benchmarking Tab ---
-    with tab_bench:
         try:
             from components.benchmarking import render_benchmarking_radar
             render_benchmarking_radar()
@@ -809,6 +746,20 @@ def scene_executive():
         meta="AI-assisted summary",
     )
 
+    # BYOK annotation — this is an AI-assisted feature. With a key it writes a
+    # tailored brief; without one it falls back to a standard template.
+    _byok_ready = is_llm_configured()
+    if _byok_ready:
+        st.caption(
+            ":material/check_circle: AI key detected — your request below shapes a tailored, AI-written brief. "
+            "Manage keys in MajiBot settings."
+        )
+    else:
+        st.caption(
+            ":material/info: No AI key configured — you'll get a standard template. Add your own API key (BYOK) "
+            "in MajiBot settings to generate a customised, AI-written brief."
+        )
+
     # Determine period label
     if selected_month and selected_month != "All":
         period = f"{selected_month} {selected_year}"
@@ -817,30 +768,49 @@ def scene_executive():
     else:
         period = "Current Period"
 
-    col_opts1, col_opts2, col_opts3 = st.columns([2, 2, 1])
+    col_opts1, col_opts2 = st.columns([1, 1])
     with col_opts1:
         report_period = st.text_input("Report period", value=period, key="report_period_input")
     with col_opts2:
         report_format = st.selectbox("Format", ["Markdown", "Plain Text"], key="report_format")
-    with col_opts3:
-        st.write("")
-        generate_clicked = st.button("Generate", type="primary", width="stretch")
+    custom_request = st.text_area(
+        "Customise your request (optional)",
+        placeholder="e.g. Focus on NRW and collection efficiency in Zone 4; keep it under 200 words; "
+                    "flag the top 3 risks for the board.",
+        key="brief_custom_request",
+        disabled=not _byok_ready,
+        help=None if _byok_ready else "Add an API key in MajiBot settings to use custom requests.",
+    )
+    generate_clicked = st.button("Generate brief", type="primary")
 
     if generate_clicked:
         with st.spinner("Generating executive brief…"):
-            try:
-                brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, report_period)
+            brief_text = None
+            if _byok_ready:
+                try:
+                    brief_text = generate_board_brief_llm(
+                        f_billing, f_prod, f_fin, report_period, custom_request, report_format
+                    )
+                except Exception as e:
+                    st.warning(f"AI generation failed ({e}). Falling back to the standard template.")
+            if not brief_text:
+                try:
+                    brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, report_period)
+                except Exception as e:
+                    st.error(f"Error generating report: {str(e)}")
+            if brief_text:
                 st.session_state["generated_brief"] = brief_text
                 st.session_state["brief_generated"] = True
-            except Exception as e:
-                st.error(f"Error generating report: {str(e)}")
+            else:
                 st.session_state["brief_generated"] = False
 
     if st.session_state.get("brief_generated", False) and st.session_state.get("generated_brief"):
         brief_text = st.session_state["generated_brief"]
 
         with st.expander("Generated board brief", expanded=True):
-            st.markdown(brief_text)
+            # Escape '$' so Streamlit doesn't render currency pairs as LaTeX math
+            # (the old "currency looks italic" bug). Downloads keep the raw text.
+            st.markdown(brief_text.replace("$", "\\$"))
 
         dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
         with dl_col1:

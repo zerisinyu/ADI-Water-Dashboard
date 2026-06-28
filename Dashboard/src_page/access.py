@@ -30,6 +30,7 @@ from charts import (
     DATA_WATER,
     DATA_SANITATION,
     JMP_COLORS,
+    LADDER_COLORS,
     STATUS_GOOD,
     STATUS_WARNING,
     STATUS_CRITICAL,
@@ -762,11 +763,13 @@ def scene_access():
     else:
         group_by = None  # Single entity
     
-    # Color schemes - Updated based on user requirements
+    # Color schemes — shared reference palette (charts.LADDER_COLORS), a
+    # documented exception to the three-hue system. Same colors are reused by the
+    # home-page access/sanitation ladders so the two pages agree.
     # Water: Safely Managed -> Basic -> Limited -> Unimproved -> Surface Water
-    water_colors = ['#088BCE', '#48BFE7', '#FDEE79', '#FFD94F', '#FFB02B']
+    water_colors = LADDER_COLORS["water"]
     # Sanitation: Safely Managed -> Basic -> Limited -> Unimproved -> Open Defecation
-    sanitation_colors = ['#349438', '#49B754', '#FDEE79', '#FFD94F', '#FFB02B']
+    sanitation_colors = LADDER_COLORS["sanitation"]
     
     # Determine bar width and gap based on what's shown
     both_shown = show_water and show_sanitation

@@ -114,6 +114,23 @@ METRIC_REGISTRY: dict[str, MetricDef] = {
 }
 
 
+def metric_tooltip(key: str) -> Optional[str]:
+    """Build a one-line helper string (formula · frequency · benchmark) for a
+    metric, suitable for an `ⓘ` tooltip on a KPI card. Returns ``None`` when the
+    key is unknown so callers can omit the helper gracefully."""
+    m = METRIC_REGISTRY.get(key)
+    if m is None:
+        return None
+    parts = [f"Formula: {m.formula}"]
+    unit = m.unit if m.unit not in ("", "ratio") else None
+    if unit:
+        parts.append(f"Unit: {unit}")
+    parts.append(f"Raw data: {m.frequency.lower()}")
+    if m.framework:
+        parts.append(f"Benchmark: {m.framework}")
+    return "  •  ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Small numeric helpers
 # ---------------------------------------------------------------------------
