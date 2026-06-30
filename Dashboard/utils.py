@@ -1079,16 +1079,6 @@ def render_page_hero(
         render_kpi_row(kpis)
 
 
-@st.cache_data
-def load_csv_data() -> Dict[str, pd.DataFrame]:
-    """Load water and sanitation access data from DuckDB."""
-    _ensure_pipeline()
-    return {
-        "water": query("SELECT * FROM w_access"),
-        "sewer": query("SELECT * FROM s_access"),
-    }
-
-
 def normalise_access_df(
     df: pd.DataFrame,
     *,
@@ -1343,43 +1333,58 @@ def scene_page_path(scene_key: str) -> Optional[str]:
 
 
 # =============================================================================
-# DATA LOADING HELPERS (For AI Queries)
+# CANONICAL DATA LOADERS
 # =============================================================================
+# One cached read per table, shared by every page (including the Executive
+# scene) so a table is cached exactly once. The `*_raw` loaders return
+# unfiltered data; the public `load_*_data` wrappers apply per-user access
+# control on a copy.
 
 @st.cache_data
-def _load_billing_data_raw() -> pd.DataFrame:
-    """Load billing data from DuckDB (no access control - internal use)."""
+def load_billing_raw() -> pd.DataFrame:
+    """Billing fact table (rows with a valid date), unfiltered. Cached once."""
     _ensure_pipeline()
-    return query("SELECT * FROM billing")
-
-
-def load_billing_data() -> pd.DataFrame:
-    """Load billing data with access control applied per-user."""
-    df = _load_billing_data_raw()
-    return filter_df_by_user_access(df, "country")
+    return query("SELECT * FROM billing WHERE date IS NOT NULL")
 
 
 @st.cache_data
-def _load_production_data_raw() -> pd.DataFrame:
-    """Load production data from DuckDB (no access control - internal use)."""
-    _ensure_pipeline()
-    return query("SELECT * FROM production")
-
-
-def load_production_data() -> pd.DataFrame:
-    """Load production data with access control applied per-user."""
-    df = _load_production_data_raw()
-    return filter_df_by_user_access(df, "country")
-
-
-@st.cache_data
-def _load_financial_data_raw() -> pd.DataFrame:
-    """Load financial data from DuckDB (no access control - internal use)."""
+def load_financial_raw() -> pd.DataFrame:
+    """Sanitation/financial service table, unfiltered. Cached once."""
     _ensure_pipeline()
     return query("SELECT * FROM fin_service")
 
 
+@st.cache_data
+def load_production_raw() -> pd.DataFrame:
+    """Production table enriched with zone/country from the billing source map
+    (production is keyed by source), unfiltered. Cached once."""
+    _ensure_pipeline()
+    prod = query("SELECT * FROM production")
+    billing = load_billing_raw()
+    if not billing.empty:
+        source_map = billing[["source", "zone", "country"]].drop_duplicates().dropna()
+        prod = prod.merge(source_map, on=["source", "country"], how="left")
+        prod["zone"] = prod["zone"].fillna("Unknown")
+    return prod
+
+
+@st.cache_data
+def load_national_raw() -> pd.DataFrame:
+    """National accounts table, unfiltered. Cached once."""
+    _ensure_pipeline()
+    return query("SELECT * FROM national_accounts")
+
+
+def load_billing_data() -> pd.DataFrame:
+    """Billing with per-user access control applied."""
+    return filter_df_by_user_access(load_billing_raw().copy(), "country")
+
+
+def load_production_data() -> pd.DataFrame:
+    """Production with per-user access control applied."""
+    return filter_df_by_user_access(load_production_raw().copy(), "country")
+
+
 def load_financial_data() -> pd.DataFrame:
-    """Load financial data with access control applied per-user."""
-    df = _load_financial_data_raw()
-    return filter_df_by_user_access(df, "country")
+    """Financial/service with per-user access control applied."""
+    return filter_df_by_user_access(load_financial_raw().copy(), "country")
