@@ -184,9 +184,11 @@ def _delta_kind_for_status(status_class: str) -> str:
 
 def scene_executive():
     # --- 1. Load Data (automatically filtered by user access) ---
-    billing_df, fin_df, prod_df, nat_df = load_dashboard_data()
-    access_data = prepare_access_data()
-    service_data_dict = prepare_service_data()
+    # Spinner covers the cold-start build/load; warm reruns are cached and instant.
+    with st.spinner("Loading dashboard data…"):
+        billing_df, fin_df, prod_df, nat_df = load_dashboard_data()
+        access_data = prepare_access_data()
+        service_data_dict = prepare_service_data()
 
     # --- 2. Get Filters from Session State (validated against user access) ---
     selected_country = st.session_state.get("selected_country", "All")
@@ -527,23 +529,28 @@ def scene_executive():
         todo_items.append({"text": "No threshold breaches detected — continue routine monitoring."})
 
     # Signals (left) toggles between risks & wins as one equal-height card;
-    # MajiBot's to-do sits on the right.
-    sig_col, todo_col = st.columns([1, 1])
-    with sig_col:
-        with st.container(key="signals-card"):
-            signal_view = st.segmented_control(
-                "Signals",
-                ["Top risks", "Top wins"],
-                default="Top risks",
-                key="signals_toggle",
-                label_visibility="collapsed",
-            ) or "Top risks"
-            if signal_view == "Top wins":
-                render_risk_card("Top wins", win_items[:4], tone="good", bare=True)
-            else:
-                render_risk_card("Top risks", risk_items[:4], tone="warn", bare=True)
-    with todo_col:
-        render_majibot_todo("MajiBot's to-do", todo_items[:5])
+    # MajiBot's to-do sits on the right. Wrapped in a fragment so toggling
+    # Risks/Wins reruns only this block, not the whole dashboard.
+    @st.fragment
+    def _signals_block():
+        sig_col, todo_col = st.columns([1, 1])
+        with sig_col:
+            with st.container(key="signals-card"):
+                signal_view = st.segmented_control(
+                    "Signals",
+                    ["Top risks", "Top wins"],
+                    default="Top risks",
+                    key="signals_toggle",
+                    label_visibility="collapsed",
+                ) or "Top risks"
+                if signal_view == "Top wins":
+                    render_risk_card("Top wins", win_items[:4], tone="good", bare=True)
+                else:
+                    render_risk_card("Top risks", risk_items[:4], tone="warn", bare=True)
+        with todo_col:
+            render_majibot_todo("MajiBot's to-do", todo_items[:5])
+
+    _signals_block()
 
     # --- Performance Trends Dashboard ---
     render_section_header("Performance trends", eyebrow="At a glance · last 12 months", icon="show_chart")
@@ -753,125 +760,129 @@ def scene_executive():
         except Exception as e:
             st.info(f"Benchmarking unavailable: {e}")
 
-    # --- Board Brief Generation ---
-    render_section_header(
-        "Board brief generator",
-        eyebrow="Executive reporting",
-        icon="auto_stories",
-        meta="AI-assisted summary",
-    )
-
-    # BYOK annotation — this is an AI-assisted feature. With a key it writes a
-    # tailored brief; without one it falls back to a standard template.
-    _byok_ready = is_llm_configured()
-    if _byok_ready:
-        st.caption(
-            ":material/check_circle: AI key detected — your request below shapes a tailored, AI-written brief. "
-            "Manage keys in MajiBot settings."
-        )
-    else:
-        st.caption(
-            ":material/info: No AI key configured — you'll get a standard template. Add your own API key (BYOK) "
-            "in MajiBot settings to generate a customised, AI-written brief."
+    @st.fragment
+    def _board_brief_block():
+        # --- Board Brief Generation ---
+        render_section_header(
+            "Board brief generator",
+            eyebrow="Executive reporting",
+            icon="auto_stories",
+            meta="AI-assisted summary",
         )
 
-    # Determine period label
-    if selected_month and selected_month != "All":
-        period = f"{selected_month} {selected_year}"
-    elif selected_year and selected_year != "All":
-        period = f"Year {selected_year}"
-    else:
-        period = "Current Period"
-
-    col_opts1, col_opts2 = st.columns([1, 1])
-    with col_opts1:
-        report_period = st.text_input("Report period", value=period, key="report_period_input")
-    with col_opts2:
-        report_format = st.selectbox("Format", ["Markdown", "Plain Text"], key="report_format")
-    custom_request = st.text_area(
-        "Customise your request (optional)",
-        placeholder="e.g. Focus on NRW and collection efficiency in Zone 4; keep it under 200 words; "
-                    "flag the top 3 risks for the board.",
-        key="brief_custom_request",
-        disabled=not _byok_ready,
-        help=None if _byok_ready else "Add an API key in MajiBot settings to use custom requests.",
-    )
-    generate_clicked = st.button("Generate brief", type="primary")
-
-    if generate_clicked:
-        with st.spinner("Generating executive brief…"):
-            brief_text = None
-            if _byok_ready:
-                try:
-                    brief_text = generate_board_brief_llm(
-                        f_billing, f_prod, f_fin, report_period, custom_request, report_format
-                    )
-                except Exception as e:
-                    st.warning(f"AI generation failed ({e}). Falling back to the standard template.")
-            if not brief_text:
-                try:
-                    brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, report_period)
-                except Exception as e:
-                    st.error(f"Error generating report: {str(e)}")
-            if brief_text:
-                st.session_state["generated_brief"] = brief_text
-                st.session_state["brief_generated"] = True
-            else:
-                st.session_state["brief_generated"] = False
-
-    if st.session_state.get("brief_generated", False) and st.session_state.get("generated_brief"):
-        brief_text = st.session_state["generated_brief"]
-
-        with st.expander("Generated board brief", expanded=True):
-            # Escape '$' so Streamlit doesn't render currency pairs as LaTeX math
-            # (the old "currency looks italic" bug). Downloads keep the raw text.
-            st.markdown(brief_text.replace("$", "\\$"))
-
-        dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
-        with dl_col1:
-            st.download_button(
-                label="Download · Markdown",
-                data=brief_text,
-                file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.md",
-                mime="text/markdown",
-                width="stretch",
+        # BYOK annotation — this is an AI-assisted feature. With a key it writes a
+        # tailored brief; without one it falls back to a standard template.
+        _byok_ready = is_llm_configured()
+        if _byok_ready:
+            st.caption(
+                ":material/check_circle: AI key detected — your request below shapes a tailored, AI-written brief. "
+                "Manage keys in MajiBot settings."
             )
-        with dl_col2:
-            # PDF export
-            try:
-                from components.pdf_export import generate_pdf_report
-                pdf_kpis = {
-                    "Collection Efficiency": f"{coll_eff:.1f}%",
-                    "NRW": f"{nrw:.1f}%",
-                    "Service Hours": f"{service_hours:.1f} hrs/day",
-                    "Cost Recovery": f"{opex_cov:.1f}%",
-                    "Water Coverage": f"{w_cov:.0f}%",
-                    "Sanitation Coverage": f"{s_cov:.0f}%",
-                }
-                pdf_bytes = generate_pdf_report(
-                    title="Water Utility Performance Report",
-                    period=report_period,
-                    country=selected_country or "All",
-                    markdown_content=brief_text,
-                    kpis=pdf_kpis,
-                )
+        else:
+            st.caption(
+                ":material/info: No AI key configured — you'll get a standard template. Add your own API key (BYOK) "
+                "in MajiBot settings to generate a customised, AI-written brief."
+            )
+
+        # Determine period label
+        if selected_month and selected_month != "All":
+            period = f"{selected_month} {selected_year}"
+        elif selected_year and selected_year != "All":
+            period = f"Year {selected_year}"
+        else:
+            period = "Current Period"
+
+        col_opts1, col_opts2 = st.columns([1, 1])
+        with col_opts1:
+            report_period = st.text_input("Report period", value=period, key="report_period_input")
+        with col_opts2:
+            report_format = st.selectbox("Format", ["Markdown", "Plain Text"], key="report_format")
+        custom_request = st.text_area(
+            "Customise your request (optional)",
+            placeholder="e.g. Focus on NRW and collection efficiency in Zone 4; keep it under 200 words; "
+                        "flag the top 3 risks for the board.",
+            key="brief_custom_request",
+            disabled=not _byok_ready,
+            help=None if _byok_ready else "Add an API key in MajiBot settings to use custom requests.",
+        )
+        generate_clicked = st.button("Generate brief", type="primary")
+
+        if generate_clicked:
+            with st.spinner("Generating executive brief…"):
+                brief_text = None
+                if _byok_ready:
+                    try:
+                        brief_text = generate_board_brief_llm(
+                            f_billing, f_prod, f_fin, report_period, custom_request, report_format
+                        )
+                    except Exception as e:
+                        st.warning(f"AI generation failed ({e}). Falling back to the standard template.")
+                if not brief_text:
+                    try:
+                        brief_text = generate_board_brief_text(f_billing, f_prod, f_fin, report_period)
+                    except Exception as e:
+                        st.error(f"Error generating report: {str(e)}")
+                if brief_text:
+                    st.session_state["generated_brief"] = brief_text
+                    st.session_state["brief_generated"] = True
+                else:
+                    st.session_state["brief_generated"] = False
+
+        if st.session_state.get("brief_generated", False) and st.session_state.get("generated_brief"):
+            brief_text = st.session_state["generated_brief"]
+
+            with st.expander("Generated board brief", expanded=True):
+                # Escape '$' so Streamlit doesn't render currency pairs as LaTeX math
+                # (the old "currency looks italic" bug). Downloads keep the raw text.
+                st.markdown(brief_text.replace("$", "\\$"))
+
+            dl_col1, dl_col2, dl_col3 = st.columns([1, 1, 2])
+            with dl_col1:
                 st.download_button(
-                    label="📕 Download as PDF",
-                    data=pdf_bytes,
-                    file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
-                    mime="application/pdf",
+                    label="Download · Markdown",
+                    data=brief_text,
+                    file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.md",
+                    mime="text/markdown",
                     width="stretch",
                 )
-            except Exception:
-                plain_text = brief_text.replace("**", "").replace("# ", "").replace("## ", "").replace("### ", "")
-                st.download_button(
-                    label="📄 Download as Text",
-                    data=plain_text,
-                    file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
-                    mime="text/plain",
-                    width="stretch",
-                )
-        with dl_col3:
-            if st.button("Regenerate", width="stretch"):
-                st.session_state["brief_generated"] = False
-                st.rerun()
+            with dl_col2:
+                # PDF export
+                try:
+                    from components.pdf_export import generate_pdf_report
+                    pdf_kpis = {
+                        "Collection Efficiency": f"{coll_eff:.1f}%",
+                        "NRW": f"{nrw:.1f}%",
+                        "Service Hours": f"{service_hours:.1f} hrs/day",
+                        "Cost Recovery": f"{opex_cov:.1f}%",
+                        "Water Coverage": f"{w_cov:.0f}%",
+                        "Sanitation Coverage": f"{s_cov:.0f}%",
+                    }
+                    pdf_bytes = generate_pdf_report(
+                        title="Water Utility Performance Report",
+                        period=report_period,
+                        country=selected_country or "All",
+                        markdown_content=brief_text,
+                        kpis=pdf_kpis,
+                    )
+                    st.download_button(
+                        label="📕 Download as PDF",
+                        data=pdf_bytes,
+                        file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        width="stretch",
+                    )
+                except Exception:
+                    plain_text = brief_text.replace("**", "").replace("# ", "").replace("## ", "").replace("### ", "")
+                    st.download_button(
+                        label="📄 Download as Text",
+                        data=plain_text,
+                        file_name=f"board_brief_{pd.Timestamp.now().strftime('%Y%m%d')}.txt",
+                        mime="text/plain",
+                        width="stretch",
+                    )
+            with dl_col3:
+                if st.button("Regenerate", width="stretch"):
+                    st.session_state["brief_generated"] = False
+                    st.rerun()
+
+    _board_brief_block()
