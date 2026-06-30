@@ -98,6 +98,59 @@ def load_dashboard_data():
 
     return billing_df, fin_df, prod_df, nat_df
 
+
+@st.cache_data
+def _load_monthly_trends(country: str, zone: str) -> dict:
+    """Monthly trend frames pulled from the pre-aggregated DuckDB views
+    (v_billing_monthly / v_nrw_monthly / v_service_quality / v_financial_monthly)
+    instead of re-grouping the full billing table in pandas on every rerun.
+
+    Filtered by country (and zone where the view carries it). Access control is
+    enforced because `country` is the already-validated selection — non-master
+    users are pinned to their assigned country upstream. Returns month-keyed
+    frames (month = first-of-month DATE).
+    """
+    def _where(has_zone: bool):
+        clauses, params = [], []
+        if country and country != "All":
+            clauses.append("LOWER(country) = ?")
+            params.append(country.lower())
+        if has_zone and zone and zone != "All":
+            clauses.append("LOWER(zone) = ?")
+            params.append(zone.lower())
+        return ((" WHERE " + " AND ".join(clauses)) if clauses else ""), params
+
+    w, p = _where(True)
+    billing = query(
+        f"SELECT month, SUM(total_billed) AS billed, SUM(total_paid) AS paid, "
+        f"SUM(total_consumption_m3) AS consumption FROM v_billing_monthly{w} "
+        f"GROUP BY month ORDER BY month", p)
+
+    w, p = _where(False)
+    nrw = query(
+        f"SELECT month, SUM(total_production_m3) AS production, "
+        f"SUM(total_consumption_m3) AS consumption, "
+        f"CASE WHEN SUM(total_production_m3) > 0 THEN "
+        f"(SUM(total_production_m3) - SUM(total_consumption_m3)) / SUM(total_production_m3) * 100 "
+        f"ELSE NULL END AS nrw_pct, AVG(avg_service_hours) AS service_hours "
+        f"FROM v_nrw_monthly{w} GROUP BY month ORDER BY month", p)
+
+    w, p = _where(True)
+    quality = query(
+        f"SELECT date_trunc('month', date)::DATE AS month, "
+        f"AVG(water_quality_rate) AS water_quality_rate FROM v_service_quality{w}"
+        f"{' AND' if w else ' WHERE'} water_quality_rate IS NOT NULL "
+        f"GROUP BY 1 ORDER BY 1", p)
+
+    w, p = _where(False)
+    financial = query(
+        f"SELECT date_trunc('month', date)::DATE AS month, SUM(opex) AS opex, "
+        f"SUM(sewer_revenue) AS sewer_revenue FROM v_financial_monthly{w} "
+        f"GROUP BY 1 ORDER BY 1", p)
+
+    return {"billing": billing, "nrw": nrw, "quality": quality, "financial": financial}
+
+
 def filter_dataframe(df, country, zone, year, month):
     """
     Filter dataframe based on selected criteria.
@@ -514,54 +567,37 @@ def scene_executive():
     # --- Performance Trends Dashboard ---
     render_section_header("Performance trends", eyebrow="At a glance · last 12 months", icon="show_chart")
 
-    # Prepare Trend Data (Global for tabs)
-    trend_billing = billing_df.copy()
-    trend_fin = fin_df.copy()
-    trend_prod = prod_df.copy()
-    trend_svc = service_data_dict["full_data"].copy()
-    trend_water_acc = access_data["water_full"].copy()
+    # Monthly trends come from the pre-aggregated DuckDB views (cheap) rather than
+    # re-grouping the full billing table in pandas on every rerun.
+    trends = _load_monthly_trends(selected_country, selected_zone)
 
+    # The access ladders below read the (small, annual) access tables directly.
+    trend_water_acc = access_data["water_full"].copy()
     if selected_country and selected_country != "All":
-        # Case-insensitive country filtering
-        trend_billing = trend_billing[trend_billing["country"].str.lower() == selected_country.lower()]
-        trend_fin = trend_fin[trend_fin["country"].str.lower() == selected_country.lower()]
-        trend_prod = trend_prod[trend_prod["country"].str.lower() == selected_country.lower()]
-        trend_svc = trend_svc[trend_svc["country"].str.lower() == selected_country.lower()]
         trend_water_acc = trend_water_acc[trend_water_acc["country"].str.lower() == selected_country.lower()]
-        
-    if selected_zone and selected_zone != "All":
-        # Case-insensitive zone filtering
-        if "zone" in trend_billing.columns: trend_billing = trend_billing[trend_billing["zone"].str.lower() == selected_zone.lower()]
-        if "zone" in trend_prod.columns: trend_prod = trend_prod[trend_prod["zone"].str.lower() == selected_zone.lower()]
-        if "zone" in trend_svc.columns: trend_svc = trend_svc[trend_svc["zone"].str.lower() == selected_zone.lower()]
-        if "zone" in trend_water_acc.columns: trend_water_acc = trend_water_acc[trend_water_acc["zone"].str.lower() == selected_zone.lower()]
+    if selected_zone and selected_zone != "All" and "zone" in trend_water_acc.columns:
+        trend_water_acc = trend_water_acc[trend_water_acc["zone"].str.lower() == selected_zone.lower()]
 
     # =======================================================================
     # A. Pillar health heatmap — the at-a-glance object. 4 pillars × last 12
     #    months, each cell green/amber/red by threshold. Trajectory reads
     #    left→right, cross-pillar comparison top→bottom. Deliberately distinct
     #    from the briefing cards above; detailed per-metric charts stay on their
-    #    own pages.
+    #    own pages. Built from the monthly views.
     # =======================================================================
-    bill_m = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg(
-        billed=("billed", "sum"), paid=("paid", "sum"),
-        consumption_m3=("consumption_m3", "sum")).reset_index()
-    prod_m = trend_prod.groupby(pd.Grouper(key="date", freq="ME")).agg(
-        production_m3=("production_m3", "sum"), service_hours=("service_hours", "mean")).reset_index()
-    svc_m = trend_svc.groupby(pd.Grouper(key="date", freq="ME")).agg(
-        water_quality_rate=("water_quality_rate", "mean")).reset_index()
-
-    heat = (bill_m.merge(prod_m, on="date", how="outer")
-                  .merge(svc_m, on="date", how="outer")
-                  .sort_values("date").tail(12))
+    heat = (
+        trends["billing"]
+        .merge(trends["nrw"][["month", "nrw_pct", "service_hours"]], on="month", how="outer")
+        .merge(trends["quality"], on="month", how="outer")
+        .sort_values("month").tail(12)
+    )
     if not heat.empty:
         heat["coll"] = heat["paid"] / heat["billed"].replace(0, float("nan")) * 100
-        heat["nrw"] = (heat["production_m3"] - heat["consumption_m3"]) / heat["production_m3"].replace(0, float("nan")) * 100
-        month_labels = [d.strftime("%b %y") for d in heat["date"]]
+        month_labels = [pd.Timestamp(m).strftime("%b %y") for m in heat["month"]]
         heat_rows = [
             {"label": "Collection eff.", "values": heat["coll"].tolist(),
              "good": 90, "warning": 80, "higher_is_better": True, "fmt": "{:.0f}%"},
-            {"label": "Non-revenue water", "values": heat["nrw"].tolist(),
+            {"label": "Non-revenue water", "values": heat["nrw_pct"].tolist(),
              "good": 25, "warning": 35, "higher_is_better": False, "fmt": "{:.0f}%"},
             {"label": "Service hours", "values": heat["service_hours"].tolist(),
              "good": 20, "warning": 12, "higher_is_better": True, "fmt": "{:.0f}h"},
@@ -669,26 +705,24 @@ def scene_executive():
     #    right axis (the % suffix and % hovertemplates fix the old "currency"
     #    mislabelling).
     # =======================================================================
-    fin_monthly = trend_fin.groupby(pd.Grouper(key="date", freq="ME")).agg({"opex": "sum", "sewer_revenue": "sum"}).reset_index()
-    billing_monthly = trend_billing.groupby(pd.Grouper(key="date", freq="ME")).agg({"billed": "sum", "paid": "sum"}).reset_index()
-    merged_fin = pd.merge(fin_monthly, billing_monthly, on="date", how="outer").fillna(0)
+    merged_fin = pd.merge(trends["billing"], trends["financial"], on="month", how="outer").fillna(0)
     merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
     merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).clip(0, 150)
     merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).clip(0, 200)
-    merged_fin = merged_fin.sort_values("date").tail(12)
+    merged_fin = merged_fin.sort_values("month").tail(12)
 
     if len(merged_fin) > 0:
         fig_fin = go.Figure()
-        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["total_revenue"], name="Revenue",
+        fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["total_revenue"], name="Revenue",
                                  marker_color=STATUS_GOOD, opacity=0.9,
                                  hovertemplate="Revenue: $%{y:,.0f}<extra></extra>"))
-        fig_fin.add_trace(go.Bar(x=merged_fin["date"], y=merged_fin["opex"], name="Opex",
+        fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["opex"], name="Opex",
                                  marker_color=STATUS_WARNING, opacity=0.9,
                                  hovertemplate="Opex: $%{y:,.0f}<extra></extra>"))
-        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["coll_eff"], name="Collection efficiency",
+        fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["coll_eff"], name="Collection efficiency",
                                      yaxis="y2", line=dict(color=DATA_WATER, width=2.5),
                                      hovertemplate="Collection: %{y:.1f}%<extra></extra>"))
-        fig_fin.add_trace(go.Scatter(x=merged_fin["date"], y=merged_fin["cost_recovery"], name="Cost recovery",
+        fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["cost_recovery"], name="Cost recovery",
                                      yaxis="y2", line=dict(color=BRAND_STRONG, width=2.5, dash="dot"),
                                      hovertemplate="Cost recovery: %{y:.1f}%<extra></extra>"))
         style_fig(fig_fin, height=380, legend_top=True)
