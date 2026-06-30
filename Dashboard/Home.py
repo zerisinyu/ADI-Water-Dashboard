@@ -224,10 +224,19 @@ def _render_llm_error(exc: Exception) -> None:
             """)
 
 
+@st.cache_data
+def _read_stylesheet(path_str: str, _mtime: float) -> str:
+    """Read a CSS file once and cache it. `_mtime` is part of the cache key so
+    edits during development invalidate the cache; otherwise the file isn't
+    re-read from disk on every rerun (it's injected on every interaction)."""
+    return Path(path_str).read_text()
+
+
 def _inject_styles() -> None:
     css_path = Path(__file__).parent / "styles.css"
     if css_path.exists():
-        st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
+        css = _read_stylesheet(str(css_path), css_path.stat().st_mtime)
+        st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
     # Night mode — the toggle stores its state under the widget key "night_mode",
     # which Streamlit restores before the script runs, so we can read it here
@@ -236,7 +245,8 @@ def _inject_styles() -> None:
     if dark:
         dark_path = Path(__file__).parent / "styles_dark.css"
         if dark_path.exists():
-            st.markdown(f"<style>{dark_path.read_text()}</style>", unsafe_allow_html=True)
+            dcss = _read_stylesheet(str(dark_path), dark_path.stat().st_mtime)
+            st.markdown(f"<style>{dcss}</style>", unsafe_allow_html=True)
 
     # Register the shared Plotly template so every chart in every page
     # inherits the same fonts, colors, and gridlines; then apply the theme.

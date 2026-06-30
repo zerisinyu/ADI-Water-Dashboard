@@ -18,7 +18,35 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "Data"
 
-_DB_PATH = os.environ.get("DUCKDB_PATH", ":memory:")
+
+def _default_db_path() -> str:
+    """Persist the DuckDB to a gitignored on-disk file by default so the tables
+    and derived views survive process restarts / Streamlit's `runOnSave` module
+    reloads — turning cold rebuilds into a fast warm open. Falls back to
+    in-memory if the cache directory can't be created. Override with DUCKDB_PATH.
+    """
+    env = os.environ.get("DUCKDB_PATH")
+    if env:
+        return env
+    try:
+        cache_dir = DATA_DIR / ".cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        return str(cache_dir / "dashboard.duckdb")
+    except Exception:
+        return ":memory:"
+
+
+_DB_PATH = _default_db_path()
+
+# Views the ETL pipeline (data/pipeline.py) materialises. Used to detect a warm
+# persistent DB so the pipeline can be skipped.
+EXPECTED_VIEWS = (
+    "v_billing_monthly",
+    "v_production_monthly",
+    "v_nrw_monthly",
+    "v_service_quality",
+    "v_financial_monthly",
+)
 
 _conn: Optional[duckdb.DuckDBPyConnection] = None
 _initialized: bool = False
@@ -330,12 +358,62 @@ _file_mtimes: dict[str, float] = {}
 
 
 def get_connection() -> duckdb.DuckDBPyConnection:
-    """Return the singleton DuckDB connection, creating it on first call."""
-    global _conn
+    """Return the singleton DuckDB connection, creating it on first call.
+
+    If the on-disk path can't be opened (read-only FS, lock, corrupt file) we
+    fall back to an in-memory DB so the app still works.
+    """
+    global _conn, _DB_PATH
     if _conn is None:
-        _conn = duckdb.connect(_DB_PATH)
-        logger.info("DuckDB connection opened (%s)", _DB_PATH)
+        try:
+            _conn = duckdb.connect(_DB_PATH)
+            logger.info("DuckDB connection opened (%s)", _DB_PATH)
+        except Exception:
+            logger.warning("Could not open DuckDB at %s — using in-memory", _DB_PATH)
+            _DB_PATH = ":memory:"
+            _conn = duckdb.connect(_DB_PATH)
     return _conn
+
+
+def _db_build_time() -> float:
+    """mtime of the persisted DB file (0 for in-memory / missing)."""
+    if _DB_PATH == ":memory:":
+        return 0.0
+    p = Path(_DB_PATH)
+    return p.stat().st_mtime if p.exists() else 0.0
+
+
+def _relation_exists(conn: duckdb.DuckDBPyConnection, name: str) -> bool:
+    """True if a table or view by this name exists and is queryable."""
+    try:
+        conn.execute(f"SELECT 1 FROM {name} LIMIT 1")
+        return True
+    except Exception:
+        return False
+
+
+def is_warm_and_fresh() -> bool:
+    """True when a persistent DB already holds every source table AND every
+    derived view, and no source file is newer than the DB — i.e. the ETL
+    pipeline (extract + validate + transform) can be skipped entirely.
+    Always False for in-memory so cold starts behave exactly as before.
+    """
+    if _DB_PATH == ":memory:":
+        return False
+    try:
+        conn = get_connection()
+        db_time = _db_build_time()
+        if db_time == 0.0:
+            return False
+        for table_name, cfg in TABLE_DEFINITIONS.items():
+            if not _relation_exists(conn, table_name):
+                return False
+            src = DATA_DIR / cfg["file"]
+            if src.exists() and src.stat().st_mtime > db_time:
+                return False  # source changed since the DB was built
+        return all(_relation_exists(conn, v) for v in EXPECTED_VIEWS)
+    except Exception:
+        return False
 
 
 def _file_changed(table_name: str) -> bool:
@@ -382,17 +460,24 @@ def init_database(force: bool = False) -> dict[str, int]:
     global _initialized
     conn = get_connection()
     counts: dict[str, int] = {}
+    db_time = _db_build_time()
 
-    for table_name in TABLE_DEFINITIONS:
-        if force or not _initialized or _file_changed(table_name):
+    for table_name, cfg in TABLE_DEFINITIONS.items():
+        src = DATA_DIR / cfg["file"]
+        src_mtime = src.stat().st_mtime if src.exists() else 0.0
+        # Reload only when forced, the table is absent (cold / in-memory), or the
+        # source file is newer than both the persisted DB and this process's last
+        # load — so a warm on-disk DB reuses its tables instead of re-ingesting.
+        stale = src_mtime > max(db_time, _file_mtimes.get(table_name, 0.0))
+        if force or not _relation_exists(conn, table_name) or stale:
             try:
                 counts[table_name] = _load_table(conn, table_name)
             except Exception:
                 logger.exception("Failed to load table %s", table_name)
                 counts[table_name] = 0
         else:
-            row_count = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
-            counts[table_name] = row_count
+            counts[table_name] = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+            _file_mtimes[table_name] = src_mtime
 
     _initialized = True
     return counts

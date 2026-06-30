@@ -20,24 +20,34 @@ logger = logging.getLogger(__name__)
 
 
 def _ensure_pipeline() -> None:
-    """Run the ETL pipeline when the DuckDB session needs it.
+    """Run the ETL pipeline only when the DuckDB session actually needs it.
 
-    `DUCKDB_PATH` defaults to `:memory:`, so when Streamlit's `runOnSave`
-    reloads `data.database`, the in-memory DB and its derived views are
-    wiped — but the `_pipeline_initialised` session flag survives. Probe
-    DuckDB for a view we expect the pipeline to produce; if it's missing,
-    re-run regardless of the session flag.
+    Three cases:
+    - Already initialised this session: cheap probe for a derived view; if it's
+      gone (an in-memory DB wiped by Streamlit's `runOnSave` module reload while
+      the session flag survived), rebuild.
+    - New session, warm on-disk DB: if every table + derived view is present and
+      no source file is newer than the DB, skip the whole pipeline (the big
+      cold-start win — no re-extract, no Pandera validation, no view rebuild).
+    - Otherwise: run the full pipeline.
     """
-    needs_run = not st.session_state.get("_pipeline_initialised")
-    if not needs_run:
+    if st.session_state.get("_pipeline_initialised"):
         try:
             from data.database import query as _q
             _q("SELECT 1 FROM v_billing_monthly LIMIT 1")
+            return
         except Exception:
-            needs_run = True
-    if needs_run:
-        run_pipeline()
-        st.session_state["_pipeline_initialised"] = True
+            pass  # views wiped — fall through and rebuild
+    else:
+        try:
+            from data.database import is_warm_and_fresh
+            if is_warm_and_fresh():
+                st.session_state["_pipeline_initialised"] = True
+                return
+        except Exception:
+            pass
+    run_pipeline()
+    st.session_state["_pipeline_initialised"] = True
 
 
 # =============================================================================
