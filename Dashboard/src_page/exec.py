@@ -18,6 +18,10 @@ from utils import (
     render_kpi_row,
     render_section_header,
     _ensure_pipeline,
+    load_billing_raw,
+    load_financial_raw,
+    load_production_raw,
+    load_national_raw,
 )
 from charts import (
     DATA_SERIES,
@@ -61,40 +65,17 @@ def format_date_label(date_obj) -> str:
         return date_obj.strftime("%Y/%m")
     return str(date_obj)
 
-@st.cache_data
-def _load_raw_dashboard_data():
-    """
-    Load raw dashboard data from DuckDB (internal, cached).
-    This loads all data without access filtering.
-    """
-    _ensure_pipeline()
-
-    billing_df = query("SELECT * FROM billing WHERE date IS NOT NULL")
-
-    fin_df = query("SELECT * FROM fin_service")
-
-    prod_df = query("SELECT * FROM production")
-    if not billing_df.empty:
-        source_map = billing_df[["source", "zone", "country"]].drop_duplicates().dropna()
-        prod_df = prod_df.merge(source_map, on=["source", "country"], how="left")
-        prod_df["zone"] = prod_df["zone"].fillna("Unknown")
-
-    nat_df = query("SELECT * FROM national_accounts")
-
-    return billing_df, fin_df, prod_df, nat_df
-
-
 def load_dashboard_data():
     """
     Load and prepare data for the executive dashboard.
-    Data is automatically filtered based on user access permissions.
-    """
-    billing_df, fin_df, prod_df, nat_df = _load_raw_dashboard_data()
 
-    billing_df = filter_df_by_user_access(billing_df.copy(), "country")
-    fin_df = filter_df_by_user_access(fin_df.copy(), "country")
-    prod_df = filter_df_by_user_access(prod_df.copy(), "country")
-    nat_df = filter_df_by_user_access(nat_df.copy(), "country")
+    Reads the canonical cached raw loaders (shared with the rest of the app so
+    each table is cached exactly once) and applies per-user access control.
+    """
+    billing_df = filter_df_by_user_access(load_billing_raw().copy(), "country")
+    fin_df = filter_df_by_user_access(load_financial_raw().copy(), "country")
+    prod_df = filter_df_by_user_access(load_production_raw().copy(), "country")
+    nat_df = filter_df_by_user_access(load_national_raw().copy(), "country")
 
     return billing_df, fin_df, prod_df, nat_df
 
