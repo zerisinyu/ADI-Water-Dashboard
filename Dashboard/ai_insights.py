@@ -992,7 +992,7 @@ def generate_board_brief_llm(
     honouring a free-text user request. Raises on any failure so callers can fall
     back to the template.
     """
-    from llm import ChatLLM
+    from llm import ChatLLM, LLMConfig, configured_provider, active_provider, default_model
 
     facts = generate_board_brief_text(billing_df, prod_df, fin_df, selected_period)
 
@@ -1015,7 +1015,15 @@ def generate_board_brief_llm(
         user += f"Special instructions from the user: {custom_request.strip()}\n\n"
     user += "Write the board brief now."
 
-    text = ChatLLM().chat_once(
+    # Use whichever provider actually has a key (e.g. GLM), not just the default.
+    prov = configured_provider()
+    if prov and prov != active_provider():
+        # Key belongs to a non-active provider — force it with a matching model
+        # (a session model set for a different provider would be wrong).
+        llm = ChatLLM(LLMConfig(provider=prov, model=default_model(prov)))
+    else:
+        llm = ChatLLM()  # normal path: session provider + model
+    text = llm.chat_once(
         [
             {"role": "system", "content": system},
             {"role": "user", "content": user},

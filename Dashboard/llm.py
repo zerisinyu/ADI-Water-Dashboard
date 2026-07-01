@@ -94,6 +94,23 @@ KNOWN_BASE_URLS: Dict[str, str] = {
     "together": "https://api.together.xyz/v1",
 }
 
+# Sensible default model per provider, used when we must pick one for a provider
+# the user configured a key for but didn't set an explicit model.
+DEFAULT_MODELS: Dict[str, str] = {
+    "gemini": "gemini-2.5-flash",
+    "glm": "glm-4-flash",
+    "grok": "grok-2-latest",
+    "openai": "gpt-4o-mini",
+    "deepseek": "deepseek-chat",
+    "openrouter": "openai/gpt-4o-mini",
+    "mistral": "mistral-small-latest",
+    "together": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+}
+
+
+def default_model(provider: str) -> str:
+    return DEFAULT_MODELS.get((provider or "").lower(), "gemini-2.5-flash")
+
 # Alternative env/secret names accepted for a provider's API key, in addition
 # to the canonical "<PROVIDER>_API_KEY".
 _KEY_ALIASES: Dict[str, list] = {
@@ -153,11 +170,28 @@ def active_provider() -> str:
     return (ss_provider or _get_secret("LLM_PROVIDER", "gemini") or "gemini").lower()
 
 
+def configured_provider() -> Optional[str]:
+    """Return a provider that actually has a resolvable API key.
+
+    Prefers the active provider; otherwise falls back to the first known provider
+    with a key. This makes AI features work when a user entered, say, a GLM key in
+    settings but didn't switch the active provider away from the gemini default.
+    Returns None when no provider has a key.
+    """
+    active = active_provider()
+    if resolve_api_key(active):
+        return active
+    for prov in ("glm", "grok", "openai", "deepseek", "openrouter", "gemini"):
+        if resolve_api_key(prov):
+            return prov
+    return None
+
+
 def is_llm_configured() -> bool:
-    """True when an API key is available for the active provider — i.e. AI
-    features can run rather than falling back to a template."""
+    """True when *some* provider has a usable API key — i.e. AI features can run
+    rather than falling back to a template."""
     try:
-        return bool(resolve_api_key(active_provider()))
+        return configured_provider() is not None
     except Exception:
         return False
 

@@ -374,7 +374,7 @@ def scene_executive():
             if st.button("Stay here", width="stretch"):
                 st.rerun()
 
-    hdr_col, gear_col = st.columns([0.93, 0.07])
+    hdr_col, gear_col = st.columns([0.93, 0.07], vertical_alignment="center")
     with hdr_col:
         st.markdown(
             f'<div class="briefing-header">'
@@ -541,13 +541,16 @@ def scene_executive():
         sig_col, todo_col = st.columns([1, 1])
         with sig_col:
             with st.container(key="signals-card"):
-                signal_view = st.segmented_control(
-                    "Signals",
-                    ["Top risks", "Top wins"],
-                    default="Top risks",
-                    key="signals_toggle",
-                    label_visibility="collapsed",
-                ) or "Top risks"
+                # Toggle sits at the top-right of the card; the list renders below.
+                _sp, _ctrl = st.columns([0.42, 0.58], vertical_alignment="center")
+                with _ctrl:
+                    signal_view = st.segmented_control(
+                        "Signals",
+                        ["Top risks", "Top wins"],
+                        default="Top risks",
+                        key="signals_toggle",
+                        label_visibility="collapsed",
+                    ) or "Top risks"
                 if signal_view == "Top wins":
                     render_risk_card("Top wins", win_items[:4], tone="good", bare=True)
                 else:
@@ -571,165 +574,189 @@ def scene_executive():
     if selected_zone and selected_zone != "All" and "zone" in trend_water_acc.columns:
         trend_water_acc = trend_water_acc[trend_water_acc["zone"].str.lower() == selected_zone.lower()]
 
-    # =======================================================================
-    # A. Pillar health heatmap — the at-a-glance object. 4 pillars × last 12
-    #    months, each cell green/amber/red by threshold. Trajectory reads
-    #    left→right, cross-pillar comparison top→bottom. Deliberately distinct
-    #    from the briefing cards above; detailed per-metric charts stay on their
-    #    own pages. Built from the monthly views.
-    # =======================================================================
-    heat = (
-        trends["billing"]
-        .merge(trends["nrw"][["month", "nrw_pct", "service_hours"]], on="month", how="outer")
-        .merge(trends["quality"], on="month", how="outer")
-        .sort_values("month").tail(12)
-    )
-    if not heat.empty:
-        heat["coll"] = heat["paid"] / heat["billed"].replace(0, float("nan")) * 100
-        month_labels = [pd.Timestamp(m).strftime("%b %y") for m in heat["month"]]
-        heat_rows = [
-            {"label": "Collection eff.", "values": heat["coll"].tolist(),
-             "good": 90, "warning": 80, "higher_is_better": True, "fmt": "{:.0f}%"},
-            {"label": "Non-revenue water", "values": heat["nrw_pct"].tolist(),
-             "good": 25, "warning": 35, "higher_is_better": False, "fmt": "{:.0f}%"},
-            {"label": "Service hours", "values": heat["service_hours"].tolist(),
-             "good": 20, "warning": 12, "higher_is_better": True, "fmt": "{:.0f}h"},
-            {"label": "Water quality", "values": heat["water_quality_rate"].tolist(),
-             "good": 95, "warning": 85, "higher_is_better": True, "fmt": "{:.0f}%"},
-        ]
-        fig_heat = status_heatmap(month_labels, heat_rows, height=260)
-        with chart_card("Pillar health heatmap",
-                        meta="Green on track · amber watch · red action — last 12 months"):
-            st.plotly_chart(fig_heat, use_container_width=True)
-    else:
-        st.info("Not enough monthly data to build the performance heatmap.")
+    tab_health, tab_access, tab_fin = st.tabs(["Pillar health", "Access & sanitation", "Financial"])
 
-    # =======================================================================
-    # B. Access & sanitation ladders — population by service level, two area
-    #    charts side by side, using the shared access-page palette.
-    # =======================================================================
-    cov_l, cov_r = st.columns(2)
+    with tab_health:
+        # =======================================================================
+        # A. Pillar health heatmap — the at-a-glance object. 4 pillars × last 12
+        #    months, each cell green/amber/red by threshold. Trajectory reads
+        #    left→right, cross-pillar comparison top→bottom. Deliberately distinct
+        #    from the briefing cards above; detailed per-metric charts stay on their
+        #    own pages. Built from the monthly views.
+        # =======================================================================
+        heat = (
+            trends["billing"]
+            .merge(trends["nrw"][["month", "nrw_pct", "service_hours"]], on="month", how="outer")
+            .merge(trends["quality"], on="month", how="outer")
+            .merge(trends["financial"][["month", "opex", "sewer_revenue"]], on="month", how="outer")
+            .sort_values("month").tail(12)
+        )
+        if not heat.empty:
+            heat["coll"] = heat["paid"] / heat["billed"].replace(0, float("nan")) * 100
+            heat["cost_recovery"] = (heat["paid"] + heat["sewer_revenue"]) / heat["opex"].replace(0, float("nan")) * 100
+            month_labels = [pd.Timestamp(m).strftime("%b %Y") for m in heat["month"]]
 
-    with cov_l:
-        w_cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
-        for c in w_cols:
-            if c in trend_water_acc.columns:
-                trend_water_acc[c] = pd.to_numeric(trend_water_acc[c], errors="coerce").fillna(0)
+            # Catalogue of monthly metrics the heatmap can show; users pick which rows.
+            _HM = {
+                "Collection eff.":    dict(col="coll", good=90, warning=80, hib=True, fmt="{:.0f}%"),
+                "Non-revenue water":  dict(col="nrw_pct", good=25, warning=35, hib=False, fmt="{:.0f}%"),
+                "Service hours":      dict(col="service_hours", good=20, warning=12, hib=True, fmt="{:.0f}h"),
+                "Water quality":      dict(col="water_quality_rate", good=95, warning=85, hib=True, fmt="{:.0f}%"),
+                "Cost recovery":      dict(col="cost_recovery", good=100, warning=80, hib=True, fmt="{:.0f}%"),
+            }
+            _default = ["Collection eff.", "Non-revenue water", "Service hours", "Water quality"]
 
-        if "popn_total" in trend_water_acc.columns:
+            hc1, hc2 = st.columns([0.8, 0.2], vertical_alignment="center")
+            with hc2:
+                with st.popover(":material/tune: Metrics", use_container_width=True):
+                    picked = st.multiselect(
+                        "Rows to show", list(_HM), default=_default, key="heatmap_metrics",
+                    )
+            picked = picked or _default
+            heat_rows = [
+                {"label": lbl, "values": heat[_HM[lbl]["col"]].tolist(),
+                 "good": _HM[lbl]["good"], "warning": _HM[lbl]["warning"],
+                 "higher_is_better": _HM[lbl]["hib"], "fmt": _HM[lbl]["fmt"]}
+                for lbl in picked if lbl in _HM
+            ]
+            fig_heat = status_heatmap(month_labels, heat_rows, height=54 + 46 * len(heat_rows))
+            with chart_card("Pillar health heatmap",
+                            meta="Green on track · amber watch · red action — last 12 months"):
+                st.plotly_chart(fig_heat, use_container_width=True)
+        else:
+            st.info("Not enough monthly data to build the performance heatmap.")
+
+
+    with tab_access:
+        # =======================================================================
+        # B. Access & sanitation ladders — population by service level, two area
+        #    charts side by side, using the shared access-page palette.
+        # =======================================================================
+        cov_l, cov_r = st.columns(2)
+
+        with cov_l:
+            w_cols = ["w_safely_managed_pct", "w_basic_pct", "w_limited_pct", "w_unimproved_pct", "surface_water_pct"]
             for c in w_cols:
                 if c in trend_water_acc.columns:
-                    level_name = c.replace("_pct", "")
-                    trend_water_acc[level_name] = trend_water_acc["popn_total"] * (trend_water_acc[c] / 100)
+                    trend_water_acc[c] = pd.to_numeric(trend_water_acc[c], errors="coerce").fillna(0)
 
-            level_cols = [c.replace("_pct", "") for c in w_cols if c in trend_water_acc.columns]
-            w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
+            if "popn_total" in trend_water_acc.columns:
+                for c in w_cols:
+                    if c in trend_water_acc.columns:
+                        level_name = c.replace("_pct", "")
+                        trend_water_acc[level_name] = trend_water_acc["popn_total"] * (trend_water_acc[c] / 100)
 
-            if len(w_trend) > 0:
-                fig_cov = go.Figure()
-                order = ["w_safely_managed", "w_basic", "w_limited", "w_unimproved", "surface_water"]
-                colors = LADDER_COLORS["water"]
-                labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Surface Water"]
-                for i, level in enumerate(order):
-                    if level in w_trend.columns:
-                        fig_cov.add_trace(go.Scatter(
-                            x=w_trend["year"].apply(lambda y: format_year_month(int(y))),
-                            y=w_trend[level], name=labels[i], stackgroup="one", mode="lines",
-                            line=dict(width=0.5, color=colors[i]), fillcolor=colors[i],
-                            hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
-                            customdata=[labels[i]] * len(w_trend),
-                        ))
-                style_fig(fig_cov, height=320)
-                fig_cov.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
-                with chart_card("Water access ladder", meta="Population by service level"):
-                    st.plotly_chart(fig_cov, use_container_width=True)
+                level_cols = [c.replace("_pct", "") for c in w_cols if c in trend_water_acc.columns]
+                w_trend = trend_water_acc.groupby("year")[level_cols].sum().reset_index()
+
+                if len(w_trend) > 0:
+                    fig_cov = go.Figure()
+                    order = ["w_safely_managed", "w_basic", "w_limited", "w_unimproved", "surface_water"]
+                    colors = LADDER_COLORS["water"]
+                    labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Surface Water"]
+                    for i, level in enumerate(order):
+                        if level in w_trend.columns:
+                            fig_cov.add_trace(go.Scatter(
+                                x=w_trend["year"].apply(lambda y: format_year_month(int(y))),
+                                y=w_trend[level], name=labels[i], stackgroup="one", mode="lines",
+                                line=dict(width=0.5, color=colors[i]), fillcolor=colors[i],
+                                hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
+                                customdata=[labels[i]] * len(w_trend),
+                            ))
+                    style_fig(fig_cov, height=320)
+                    fig_cov.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
+                    with chart_card("Water access ladder", meta="Population by service level"):
+                        st.plotly_chart(fig_cov, use_container_width=True)
+                else:
+                    st.warning("No water coverage data available for selected period")
             else:
-                st.warning("No water coverage data available for selected period")
-        else:
-            st.warning("Population data not available for water coverage trends.")
+                st.warning("Population data not available for water coverage trends.")
 
-    with cov_r:
-        trend_san_acc = access_data["sewer_full"].copy()
-        if selected_country and selected_country != "All":
-            trend_san_acc = trend_san_acc[trend_san_acc["country"].str.lower() == selected_country.lower()]
-        if selected_zone and selected_zone != "All" and "zone" in trend_san_acc.columns:
-            trend_san_acc = trend_san_acc[trend_san_acc["zone"].str.lower() == selected_zone.lower()]
+        with cov_r:
+            trend_san_acc = access_data["sewer_full"].copy()
+            if selected_country and selected_country != "All":
+                trend_san_acc = trend_san_acc[trend_san_acc["country"].str.lower() == selected_country.lower()]
+            if selected_zone and selected_zone != "All" and "zone" in trend_san_acc.columns:
+                trend_san_acc = trend_san_acc[trend_san_acc["zone"].str.lower() == selected_zone.lower()]
 
-        s_cols = ["s_safely_managed_pct", "s_basic_pct", "s_limited_pct", "s_unimproved_pct", "open_def_pct"]
-        for c in s_cols:
-            if c in trend_san_acc.columns:
-                trend_san_acc[c] = pd.to_numeric(trend_san_acc[c], errors="coerce").fillna(0)
-
-        if "popn_total" in trend_san_acc.columns:
+            s_cols = ["s_safely_managed_pct", "s_basic_pct", "s_limited_pct", "s_unimproved_pct", "open_def_pct"]
             for c in s_cols:
                 if c in trend_san_acc.columns:
-                    level_name = c.replace("_pct", "")
-                    trend_san_acc[level_name] = trend_san_acc["popn_total"] * (trend_san_acc[c] / 100)
+                    trend_san_acc[c] = pd.to_numeric(trend_san_acc[c], errors="coerce").fillna(0)
 
-            s_level_cols = [c.replace("_pct", "") for c in s_cols if c in trend_san_acc.columns]
-            s_trend = trend_san_acc.groupby("year")[s_level_cols].sum().reset_index()
+            if "popn_total" in trend_san_acc.columns:
+                for c in s_cols:
+                    if c in trend_san_acc.columns:
+                        level_name = c.replace("_pct", "")
+                        trend_san_acc[level_name] = trend_san_acc["popn_total"] * (trend_san_acc[c] / 100)
 
-            if len(s_trend) > 0:
-                fig_san = go.Figure()
-                s_order = ["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def"]
-                san_colors = LADDER_COLORS["sanitation"]
-                s_labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Open Defecation"]
-                for i, level in enumerate(s_order):
-                    if level in s_trend.columns:
-                        fig_san.add_trace(go.Scatter(
-                            x=s_trend["year"].apply(lambda y: format_year_month(int(y))),
-                            y=s_trend[level], name=s_labels[i], stackgroup="san", mode="lines",
-                            line=dict(width=0.5, color=san_colors[i]), fillcolor=san_colors[i],
-                            hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
-                            customdata=[s_labels[i]] * len(s_trend),
-                        ))
-                style_fig(fig_san, height=320)
-                fig_san.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
-                with chart_card("Sanitation access ladder", meta="Population by service level"):
-                    st.plotly_chart(fig_san, use_container_width=True)
+                s_level_cols = [c.replace("_pct", "") for c in s_cols if c in trend_san_acc.columns]
+                s_trend = trend_san_acc.groupby("year")[s_level_cols].sum().reset_index()
+
+                if len(s_trend) > 0:
+                    fig_san = go.Figure()
+                    s_order = ["s_safely_managed", "s_basic", "s_limited", "s_unimproved", "open_def"]
+                    san_colors = LADDER_COLORS["sanitation"]
+                    s_labels = ["Safely Managed", "Basic", "Limited", "Unimproved", "Open Defecation"]
+                    for i, level in enumerate(s_order):
+                        if level in s_trend.columns:
+                            fig_san.add_trace(go.Scatter(
+                                x=s_trend["year"].apply(lambda y: format_year_month(int(y))),
+                                y=s_trend[level], name=s_labels[i], stackgroup="san", mode="lines",
+                                line=dict(width=0.5, color=san_colors[i]), fillcolor=san_colors[i],
+                                hovertemplate="%{customdata}<br>Population: %{y:,.0f}<extra></extra>",
+                                customdata=[s_labels[i]] * len(s_trend),
+                            ))
+                    style_fig(fig_san, height=320)
+                    fig_san.update_layout(yaxis=dict(title="Population"), xaxis=dict(title="Year"))
+                    with chart_card("Sanitation access ladder", meta="Population by service level"):
+                        st.plotly_chart(fig_san, use_container_width=True)
+                else:
+                    st.warning("No sanitation coverage data available for selected period")
             else:
-                st.warning("No sanitation coverage data available for selected period")
+                st.warning("Population data not available for sanitation coverage trends.")
+
+
+    with tab_fin:
+        # =======================================================================
+        # C. Financial performance — revenue vs opex as comparable bars on the $
+        #    axis; collection efficiency & cost recovery as PERCENT lines on the
+        #    right axis (the % suffix and % hovertemplates fix the old "currency"
+        #    mislabelling).
+        # =======================================================================
+        merged_fin = pd.merge(trends["billing"], trends["financial"], on="month", how="outer").fillna(0)
+        merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
+        merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).clip(0, 150)
+        merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).clip(0, 200)
+        merged_fin = merged_fin.sort_values("month").tail(12)
+
+        if len(merged_fin) > 0:
+            fig_fin = go.Figure()
+            fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["total_revenue"], name="Revenue",
+                                     marker_color=STATUS_GOOD, opacity=0.9,
+                                     hovertemplate="Revenue: $%{y:,.0f}<extra></extra>"))
+            fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["opex"], name="Opex",
+                                     marker_color=STATUS_WARNING, opacity=0.9,
+                                     hovertemplate="Opex: $%{y:,.0f}<extra></extra>"))
+            fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["coll_eff"], name="Collection efficiency",
+                                         yaxis="y2", line=dict(color=DATA_WATER, width=2.5),
+                                         hovertemplate="Collection: %{y:.1f}%<extra></extra>"))
+            fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["cost_recovery"], name="Cost recovery",
+                                         yaxis="y2", line=dict(color=BRAND_STRONG, width=2.5, dash="dot"),
+                                         hovertemplate="Cost recovery: %{y:.1f}%<extra></extra>"))
+            style_fig(fig_fin, height=380, legend_top=True)
+            fig_fin.update_layout(
+                barmode="group",
+                yaxis=dict(title="Amount ($)"),
+                yaxis2=dict(title="Percent (%)", overlaying="y", side="right", range=[0, 200],
+                            showgrid=False, ticksuffix="%"),
+            )
+            apply_axis_currency(fig_fin, axis="y")
+            with chart_card("Financial performance", meta="Revenue vs opex ($) · collection & cost recovery (%)"):
+                st.plotly_chart(fig_fin, use_container_width=True)
         else:
-            st.warning("Population data not available for sanitation coverage trends.")
+            st.info("No financial data available for selected period")
 
-    # =======================================================================
-    # C. Financial performance — revenue vs opex as comparable bars on the $
-    #    axis; collection efficiency & cost recovery as PERCENT lines on the
-    #    right axis (the % suffix and % hovertemplates fix the old "currency"
-    #    mislabelling).
-    # =======================================================================
-    merged_fin = pd.merge(trends["billing"], trends["financial"], on="month", how="outer").fillna(0)
-    merged_fin["total_revenue"] = merged_fin["paid"] + merged_fin["sewer_revenue"]
-    merged_fin["coll_eff"] = (merged_fin["paid"] / merged_fin["billed"].replace(0, 1) * 100).clip(0, 150)
-    merged_fin["cost_recovery"] = (merged_fin["total_revenue"] / merged_fin["opex"].replace(0, 1) * 100).clip(0, 200)
-    merged_fin = merged_fin.sort_values("month").tail(12)
-
-    if len(merged_fin) > 0:
-        fig_fin = go.Figure()
-        fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["total_revenue"], name="Revenue",
-                                 marker_color=STATUS_GOOD, opacity=0.9,
-                                 hovertemplate="Revenue: $%{y:,.0f}<extra></extra>"))
-        fig_fin.add_trace(go.Bar(x=merged_fin["month"], y=merged_fin["opex"], name="Opex",
-                                 marker_color=STATUS_WARNING, opacity=0.9,
-                                 hovertemplate="Opex: $%{y:,.0f}<extra></extra>"))
-        fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["coll_eff"], name="Collection efficiency",
-                                     yaxis="y2", line=dict(color=DATA_WATER, width=2.5),
-                                     hovertemplate="Collection: %{y:.1f}%<extra></extra>"))
-        fig_fin.add_trace(go.Scatter(x=merged_fin["month"], y=merged_fin["cost_recovery"], name="Cost recovery",
-                                     yaxis="y2", line=dict(color=BRAND_STRONG, width=2.5, dash="dot"),
-                                     hovertemplate="Cost recovery: %{y:.1f}%<extra></extra>"))
-        style_fig(fig_fin, height=380, legend_top=True)
-        fig_fin.update_layout(
-            barmode="group",
-            yaxis=dict(title="Amount ($)"),
-            yaxis2=dict(title="Percent (%)", overlaying="y", side="right", range=[0, 200],
-                        showgrid=False, ticksuffix="%"),
-        )
-        apply_axis_currency(fig_fin, axis="y")
-        with chart_card("Financial performance", meta="Revenue vs opex ($) · collection & cost recovery (%)"):
-            st.plotly_chart(fig_fin, use_container_width=True)
-    else:
-        st.info("No financial data available for selected period")
 
     # =======================================================================
     # D. Cross-country performance benchmark — master users only, with a
