@@ -91,6 +91,11 @@ def _load_monthly_trends(country: str, zone: str) -> dict:
     users are pinned to their assigned country upstream. Returns month-keyed
     frames (month = first-of-month DATE).
     """
+    # These are DuckDB *views* built by the ETL pipeline — ensure it has run
+    # (the cached raw loaders can skip _ensure_pipeline on a cache hit, and
+    # query()'s auto-init only creates base tables, not views).
+    _ensure_pipeline()
+
     def _where(has_zone: bool):
         clauses, params = [], []
         if country and country != "All":
