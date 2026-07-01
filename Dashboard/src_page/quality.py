@@ -271,8 +271,16 @@ def scene_quality():
     if selected_month is None:
         selected_month = 'All'
     
-    # Service Type Toggle (Quality-specific)
-    service_type = st.radio("Service Type", ["Water", "Sanitation", "Both"], horizontal=True, key="service_type_toggle_quality")
+    # Service Type Toggle (Quality-specific) — prominent so users notice they can
+    # switch between water and sanitation metrics.
+    st.markdown("**View metrics for**")
+    service_type = st.segmented_control(
+        "Service type",
+        ["Water", "Sanitation", "Both"],
+        default="Water",
+        key="service_type_toggle_quality",
+        label_visibility="collapsed",
+    ) or "Water"
 
     # --- Apply Filters using standardized helper ---
     df_s_filt = apply_standard_filters(df_service, filters, year_col='year', month_col='month')
@@ -826,34 +834,32 @@ def scene_quality():
         sewer_conn = float(df_s_filt['sewer_connections'].mean()) if not df_s_filt.empty and 'sewer_connections' in df_s_filt.columns else 0.0
         san_eff = (san_staff / sewer_conn * 1000) if sewer_conn > 0 else 0.0
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Water supply staff", f"{water_staff:,.0f}", help="Avg monthly headcount (financial services data)")
-        m2.metric("Sanitation staff", f"{san_staff:,.0f}", help="Avg monthly headcount")
-        m3.metric(
-            "Women in decision-making",
-            f"{women_dm:.1f}%" if women_dm is not None else "—",
-            help="Women ÷ total sanitation decision-making workforce (AUDC indicator)",
-        )
+        render_kpi_row([
+            KPI("Water supply staff", f"{water_staff:,.0f}", icon="engineering",
+                footnote="Avg monthly headcount"),
+            KPI("Sanitation staff", f"{san_staff:,.0f}", icon="cleaning_services",
+                footnote="Avg monthly headcount"),
+            KPI("Women in decision-making", f"{women_dm:.1f}%" if women_dm is not None else "—",
+                icon="diversity_3", metric_key="women_decision_making"),
+            KPI("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
+                icon="speed", footnote="Sanitation staff / 1,000 connections"),
+        ])
 
         if water_staff > 0 or san_staff > 0:
-            fig_staff = go.Figure()
-            fig_staff.add_trace(go.Bar(
-                x=['Water Supply', 'Sanitation'],
+            # Clean single-axis composition bar — the old dual-axis version mixed
+            # headcount (bars) with a lone per-connection ratio point and read as
+            # nonsense. Efficiency now lives in the KPI row above.
+            fig_staff = go.Figure(go.Bar(
+                x=['Water supply', 'Sanitation'],
                 y=[water_staff, san_staff],
-                name='Total staff', marker_color=[DATA_WATER, DATA_SANITATION],
+                marker_color=[DATA_WATER, DATA_SANITATION],
+                text=[f"{water_staff:,.0f}", f"{san_staff:,.0f}"],
+                textposition='outside',
             ))
-            fig_staff.add_trace(go.Scatter(
-                x=['Sanitation'], y=[san_eff], name='Staff / 1000 connections',
-                mode='markers+text', yaxis='y2',
-                marker=dict(color=STATUS_WARNING, size=14),
-                text=[f"{san_eff:.1f}"], textposition='top center',
-            ))
-            fig_staff.update_layout(
-                yaxis=dict(title="Headcount"),
-                yaxis2=dict(title="Staff/1000 conn", overlaying='y', side='right', showgrid=False),
-            )
-            style_bar(fig_staff, height=320, legend_top=True)
-            st.plotly_chart(fig_staff, use_container_width=True)
+            fig_staff.update_layout(yaxis=dict(title="Headcount"), showlegend=False)
+            style_bar(fig_staff, height=300)
+            with chart_card("Staff headcount by domain", meta="Average monthly workforce"):
+                st.plotly_chart(fig_staff, use_container_width=True)
         else:
             st.info("No workforce data available for the selected filters.")
 
@@ -876,11 +882,13 @@ def scene_quality():
     with org_tab3:
         # These are REAL — reuse the figures already computed in Tab 1 rather
         # than the previous fabricated ring + gauge.
-        de1, de2 = st.columns(2)
-        de1.metric("Women in decision-making", f"{women_dm:.1f}%" if women_dm is not None else "—",
-                   help="Women ÷ total sanitation decision-making workforce")
-        de2.metric("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
-                   help="Sanitation staff per 1,000 connections (lower is leaner)")
+        render_kpi_row([
+            KPI("Women in decision-making", f"{women_dm:.1f}%" if women_dm is not None else "—",
+                icon="diversity_3", metric_key="women_decision_making",
+                footnote="Women ÷ total decision-making workforce"),
+            KPI("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
+                icon="speed", footnote="Sanitation staff / 1,000 connections (lower is leaner)"),
+        ])
         st.caption(
             "Targets: ≥30% women in decision-making (SDG 5.5); staffing efficiency "
             "benchmarked against IBNET peers."
