@@ -703,7 +703,7 @@ def scene_access():
         with ctrl_row1_col1:
             chart_type = st.selectbox(
                 "Visualization Type:",
-                ["Stacked Bar Chart", "Trend Analysis"],
+                ["Stacked Bar Chart", "Trend Analysis", "Access transition"],
                 key="chart_type_selector"
             )
         
@@ -778,9 +778,51 @@ def scene_access():
     
     # Create the chart based on selected type
     fig_ladder = go.Figure()
-    
+
+    # ACCESS TRANSITION — population change per service level (start → end year).
+    # Merged in from the old standalone "Access transition report" (was text).
+    if chart_type == "Access transition":
+        _fy = sorted(df_water['year'].unique())
+        if len(_fy) >= 2:
+            _sy, _ey = int(_fy[0]), int(_fy[-1])
+
+            def _tf(df):
+                d = df.copy()
+                if selected_country != 'All':
+                    d = d[d['country'].str.lower() == selected_country.lower()]
+                if selected_zone != 'All':
+                    d = d[d['zone'].str.lower() == selected_zone.lower()]
+                return d
+
+            _dw, _ds = _tf(df_water), _tf(df_sewer)
+            if show_water:
+                _ws = _dw[_dw['year'] == _sy][w_ladder_cols].sum()
+                _we = _dw[_dw['year'] == _ey][w_ladder_cols].sum()
+                fig_ladder.add_trace(go.Bar(
+                    y=w_ladder_labels, x=[float(_we[c] - _ws[c]) for c in w_ladder_cols],
+                    orientation='h', name='Water', marker_color=water_colors,
+                    hovertemplate='Water · %{y}<br>Change: %{x:,.0f} people<extra></extra>',
+                ))
+            if show_sanitation:
+                _ss = _ds[_ds['year'] == _sy][s_ladder_cols].sum()
+                _se = _ds[_ds['year'] == _ey][s_ladder_cols].sum()
+                fig_ladder.add_trace(go.Bar(
+                    y=s_ladder_labels, x=[float(_se[c] - _ss[c]) for c in s_ladder_cols],
+                    orientation='h', name='Sanitation', marker_color=sanitation_colors,
+                    hovertemplate='Sanitation · %{y}<br>Change: %{x:,.0f} people<extra></extra>',
+                ))
+            fig_ladder.update_layout(
+                barmode='group', height=380,
+                title=f'Population change by service level ({_sy} → {_ey})',
+                xaxis_title='Change in people (safely managed at top)', yaxis_title=None,
+            )
+            fig_ladder.add_vline(x=0, line_width=1, line_color='#c3cfdb')
+            style_fig(fig_ladder, height=380)
+        else:
+            st.info("Need at least 2 years of data for the transition view.")
+
     # TREND ANALYSIS CHART
-    if chart_type == "Trend Analysis":
+    elif chart_type == "Trend Analysis":
         # Use all available years for trend
         df_w_trend = df_water.copy()
         df_s_trend = df_sewer.copy()
@@ -1272,19 +1314,25 @@ def scene_access():
         st.markdown("**Public Sanitation**")
         # Real Data Calculation
         if not df_svc_filt.empty and 'public_toilets' in df_svc_filt.columns:
-            # Get latest public toilets count per zone
+            # Public toilets: peak count per zone (a stock, not a monthly flow).
             pt_by_zone = df_svc_filt.groupby('zone')['public_toilets'].max().reset_index()
             total_toilets = pt_by_zone['public_toilets'].sum()
-            
-            # Population from water data (annual)
-            pop_by_zone = df_w_filt.groupby('zone')['popn_total'].sum().reset_index()
+
+            # Population: the LATEST year per zone. popn_total is annual and repeats
+            # each year, so summing every row multiplies the population and deflates
+            # the ratio (the old bug behind the implausibly low "9.6 per 100k").
+            if 'year' in df_w_filt.columns and not df_w_filt.empty:
+                latest_pop = df_w_filt.sort_values('year').groupby('zone', as_index=False).tail(1)
+            else:
+                latest_pop = df_w_filt
+            pop_by_zone = latest_pop.groupby('zone')['popn_total'].sum().reset_index()
             total_pop = pop_by_zone['popn_total'].sum()
-            
+
             if total_pop > 0:
-                # Toilets per 100,000 people
+                # Toilets per 100,000 people (AUDC: public toilets ÷ population).
                 toilets_per_capita = (total_toilets / total_pop) * 100000
-                
-                st.metric("Safely Managed Public Toilets", f"{toilets_per_capita:.1f}", "per 100k people")
+
+                st.metric("Public toilets", f"{toilets_per_capita:.1f}", "per 100k people")
                 
                 # Comparison Chart
                 pt_merged = pd.merge(pt_by_zone, pop_by_zone, on='zone')
@@ -1317,8 +1365,8 @@ def scene_access():
 
     # --- Step 5: The Equity Check (Zonal Disparities) ---
     render_section_header("Equity check", eyebrow="Zonal disparities")
-    
-    e_col1, e_col2 = st.columns(2)
+
+    e_col1, e_col2 = st.columns(2, gap="large")
     
     with e_col1:
         # Dynamic chart based on filter selection
@@ -1339,6 +1387,7 @@ def scene_access():
             fig_zone.update_layout(xaxis_title="Municipal coverage (%)", coloraxis_showscale=False)
             style_bar(fig_zone, height=320)
             st.plotly_chart(fig_zone, use_container_width=True)
+            st.caption("Darker bars = higher municipal coverage")
 
         elif selected_zone == 'All':
             # Show comparison by zone
@@ -1365,7 +1414,8 @@ def scene_access():
             )
             style_bar(fig_zone, height=360)
             st.plotly_chart(fig_zone, use_container_width=True)
-            
+            st.caption("Darker bars = higher municipal coverage")
+
         else:
             # Show line chart for specific zone over time (2020-2024)
             st.markdown(f"**Municipal Coverage Trend - {selected_zone}**")
@@ -1540,7 +1590,7 @@ def scene_access():
                 gap_w = best_w - worst_w
                 
                 fig_grouped.add_annotation(
-                    x=0.5, y=1.15,
+                    x=0.5, y=1.16,
                     xref="paper", yref="paper",
                     text=f"<b>Gap Analysis:</b> Max disparity is <b>{gap_w:.1f}%</b> in Water Access",
                     showarrow=False,
@@ -1556,8 +1606,13 @@ def scene_access():
             fig_grouped.update_layout(
                 barmode='group',
                 yaxis=dict(title="Access (%)", range=[0, 100]),
+                margin=dict(t=52),   # headroom for the gap-analysis banner
             )
-            style_bar(fig_grouped, height=360, legend_top=True)
+            # Legend at the BOTTOM so it no longer collides with the top banner.
+            style_bar(fig_grouped, height=380)
+            fig_grouped.update_layout(
+                legend=dict(orientation="h", yanchor="top", y=-0.18, x=0),
+            )
 
             st.plotly_chart(fig_grouped, use_container_width=True)
             
@@ -1574,90 +1629,6 @@ def scene_access():
         else:
             st.info("No data available for Equity Analysis.")
 
-    # --- Step 6: Access Transition Report (Population Flow Summary) ---
-    render_section_header("Access transition report", eyebrow="Population movement")
-    
-    # Calculate population flow for water and sanitation
-    # Get 2020 and 2024 data (or earliest and latest available years)
-    flow_years = sorted(df_water['year'].unique())
-    if len(flow_years) >= 2:
-        start_year = flow_years[0]
-        end_year = flow_years[-1]
-        
-        # Filter for start and end years
-        df_w_start = df_water.copy()
-        df_w_end = df_water.copy()
-        df_s_start = df_sewer.copy()
-        df_s_end = df_sewer.copy()
-        
-        # Apply country and zone filters (case-insensitive)
-        if selected_country != 'All':
-            df_w_start = df_w_start[df_w_start['country'].str.lower() == selected_country.lower()]
-            df_w_end = df_w_end[df_w_end['country'].str.lower() == selected_country.lower()]
-            df_s_start = df_s_start[df_s_start['country'].str.lower() == selected_country.lower()]
-            df_s_end = df_s_end[df_s_end['country'].str.lower() == selected_country.lower()]
-        if selected_zone != 'All':
-            df_w_start = df_w_start[df_w_start['zone'].str.lower() == selected_zone.lower()]
-            df_w_end = df_w_end[df_w_end['zone'].str.lower() == selected_zone.lower()]
-            df_s_start = df_s_start[df_s_start['zone'].str.lower() == selected_zone.lower()]
-            df_s_end = df_s_end[df_s_end['zone'].str.lower() == selected_zone.lower()]
-        
-        # Filter by year
-        df_w_start = df_w_start[df_w_start['year'] == start_year]
-        df_w_end = df_w_end[df_w_end['year'] == end_year]
-        df_s_start = df_s_start[df_s_start['year'] == start_year]
-        df_s_end = df_s_end[df_s_end['year'] == end_year]
-        
-        # Generate two-column flow report
-        flow_col1, flow_col2 = st.columns(2)
-        
-        # WATER ACCESS COLUMN
-        with flow_col1:
-            if not df_w_start.empty and not df_w_end.empty:
-                w_start_totals = df_w_start[w_ladder_cols].sum()
-                w_end_totals = df_w_end[w_ladder_cols].sum()
-                w_start_pop = df_w_start['popn_total'].sum()
-                w_end_pop = df_w_end['popn_total'].sum()
-                
-                st.markdown(f"**Water access flow ({start_year} → {end_year}):**")
-                
-                for col, label in zip(w_ladder_cols, w_ladder_labels):
-                    start_pct = (w_start_totals[col] / w_start_pop * 100) if w_start_pop > 0 else 0
-                    end_pct = (w_end_totals[col] / w_end_pop * 100) if w_end_pop > 0 else 0
-                    pop_change = w_end_totals[col] - w_start_totals[col]
-                    
-                    # Format the change with color
-                    if pop_change >= 0:
-                        change_text = f":green[+{pop_change:,.0f} people]"
-                    else:
-                        change_text = f":red[{pop_change:,.0f} people]"
-                    
-                    st.markdown(f"**{label}** ({start_pct:.1f}% → {end_pct:.1f}%): {change_text}")
-        
-        # SANITATION ACCESS COLUMN
-        with flow_col2:
-            if not df_s_start.empty and not df_s_end.empty:
-                s_start_totals = df_s_start[s_ladder_cols].sum()
-                s_end_totals = df_s_end[s_ladder_cols].sum()
-                s_start_pop = df_s_start['popn_total'].sum()
-                s_end_pop = df_s_end['popn_total'].sum()
-                
-                st.markdown(f"**🚽 Sanitation Access Flow ({start_year} → {end_year}):**")
-                
-                for col, label in zip(s_ladder_cols, s_ladder_labels):
-                    start_pct = (s_start_totals[col] / s_start_pop * 100) if s_start_pop > 0 else 0
-                    end_pct = (s_end_totals[col] / s_end_pop * 100) if s_end_pop > 0 else 0
-                    pop_change = s_end_totals[col] - s_start_totals[col]
-                    
-                    # Format the change with color
-                    if pop_change >= 0:
-                        change_text = f":green[+{pop_change:,.0f} people]"
-                    else:
-                        change_text = f":red[{pop_change:,.0f} people]"
-                    
-                    st.markdown(f"**{label}** ({start_pct:.1f}% → {end_pct:.1f}%): {change_text}")
-    else:
-        st.info("Need at least 2 years of data for population flow analysis")
 
     # ============================================================================
     # DATA EXPORT SECTION
