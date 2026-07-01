@@ -20,6 +20,8 @@ from utils import (
     render_standardized_filters,
     apply_standard_filters,
     get_month_number,
+    render_risk_card,
+    render_no_data_panel,
 )
 from charts import (
     DATA_SERIES,
@@ -364,6 +366,12 @@ def scene_finance():
         national_filtered = national_filtered[national_filtered['city'].str.lower() == selected_city.lower()]
         fin_service_filtered = fin_service_filtered[fin_service_filtered['city'].str.lower() == selected_city.lower()]
 
+    # Geography-only copies (all years) — over-years trend charts (debt by year,
+    # staff cost by year) use these so the single-year filter doesn't collapse
+    # them to one bar.
+    fin_service_geo = fin_service_filtered.copy()
+    national_geo = national_filtered.copy()
+
     # Year filter
     if selected_year:
         # Filter using the standardized 4-digit 'year' column we created
@@ -434,11 +442,16 @@ def scene_finance():
     debt_spark     = _fin_series(fin_service_filtered, "debt", "sum")
 
     render_kpi_row([
-        KPI("Total budget",     budget_display,  delta=f"FY {selected_year}", delta_kind="neutral", icon="account_balance_wallet", footnote="Allocated funding", sparkline=budget_spark),
-        KPI("Total billed",     billed_display,  delta="Sewer services",       delta_kind="neutral", icon="receipt_long", footnote="Customer invoices", sparkline=billed_spark),
-        KPI("Revenue collected", revenue_display, delta=f"OPEX ${total_opex/1e6:.1f}M", delta_kind="neutral", icon="payments", footnote="Payments received", sparkline=revenue_spark),
-        KPI("Sewer collection rate",  f"{avg_collection_rate:.1f}%", delta=f"{coll_label} · target 85%", delta_kind=coll_kind, icon="trending_up", footnote="Sewer revenue ÷ sewer billed. Utility-wide (water+sewer) collection is on the Executive page.", sparkline=coll_spark),
-        KPI("Outstanding debt", debt_display,    delta="Unpaid invoices",      delta_kind="negative" if total_debt > 0 else "positive", icon="warning", sparkline=debt_spark),
+        KPI("Total budget",     budget_display,  delta=f"FY {selected_year}", delta_kind="neutral", icon="account_balance_wallet", footnote="Allocated funding", sparkline=budget_spark,
+            help="Total WASH budget allocated for the fiscal year. Source: national accounts (annual)."),
+        KPI("Total billed",     billed_display,  delta="Sewer services",       delta_kind="neutral", icon="receipt_long", footnote="Customer invoices", sparkline=billed_spark,
+            help="Total amount invoiced to customers for sewer services. Monthly."),
+        KPI("Revenue collected", revenue_display, delta=f"OPEX ${total_opex/1e6:.1f}M", delta_kind="neutral", icon="payments", footnote="Payments received", sparkline=revenue_spark,
+            help="Total sewer-service payments received. Monthly."),
+        KPI("Sewer collection rate",  f"{avg_collection_rate:.1f}%", delta=f"{coll_label} · target 85%", delta_kind=coll_kind, icon="trending_up", footnote="Sewer revenue ÷ sewer billed", sparkline=coll_spark,
+            help="Sewer revenue ÷ sewer billed × 100. Monthly. Utility-wide (water+sewer) collection is on the Executive page."),
+        KPI("Outstanding debt", debt_display,    delta="Unpaid invoices",      delta_kind="negative" if total_debt > 0 else "positive", icon="warning", sparkline=debt_spark,
+            help="Cumulative unpaid invoices (billed − paid) for the period."),
     ])
 
     # ============================================================================
@@ -611,9 +624,10 @@ def scene_finance():
     debt_chart_col1, debt_chart_col2 = st.columns(2)
 
     with debt_chart_col1:
-        # Debt Aging Analysis
-        if 'year' in fin_service_filtered.columns:
-            debt_by_year = fin_service_filtered.groupby('year')['debt'].sum().reset_index()
+        # Debt over the years — uses the all-years geo copy so a single-year
+        # filter doesn't collapse this into one bar.
+        if 'year' in fin_service_geo.columns and not fin_service_geo.empty:
+            debt_by_year = fin_service_geo.groupby('year')['debt'].sum().reset_index()
             fig_debt_year = px.bar(
                 debt_by_year,
                 x='year',
@@ -622,6 +636,7 @@ def scene_finance():
                 color='debt',
                 color_continuous_scale=SEQ_WARM
             )
+            fig_debt_year.update_xaxes(dtick=1)
             fig_debt_year.update_layout(coloraxis_showscale=False)
             style_bar(fig_debt_year, height=320)
             apply_axis_currency(fig_debt_year, axis='y')
@@ -785,9 +800,10 @@ def scene_finance():
             st.plotly_chart(fig_staff, use_container_width=True)
 
         with col2:
-            # Staff Cost Analysis
-            if len(national_filtered) > 0:
-                staff_cost_trend = national_filtered.groupby('date_YY').agg({
+            # Staff cost over the years — all-years geo copy so the single-year
+            # filter doesn't collapse it to one stacked bar.
+            if len(national_geo) > 0:
+                staff_cost_trend = national_geo.groupby('date_YY').agg({
                     'staff_cost': 'sum',
                     'trained_staff': 'sum',
                     'staff_training_budget': 'sum'
@@ -1052,40 +1068,44 @@ def scene_finance():
 
     render_section_header("Key insights & recommendations", eyebrow="Analyst notes")
 
-    # Generate automated insights
-    insights = []
-
-    # Collection rate insight
-    if avg_collection_rate < 70:
-        insights.append(("🔴 Critical", f"Collection rate is low at {avg_collection_rate:.1f}%. Consider implementing stricter collection policies and incentive programs."))
-    elif avg_collection_rate < 85:
-        insights.append(("🟡 Warning", f"Collection rate at {avg_collection_rate:.1f}% needs improvement. Review billing processes and customer engagement strategies."))
+    if fin_service_filtered.empty or 'cost_recovery_ratio' not in fin_service_filtered.columns:
+        render_no_data_panel(
+            "No financial data for this selection",
+            "Adjust the filters (or load finance data) to see insights and recommendations.",
+            icon="query_stats",
+            tag=None,
+        )
     else:
-        insights.append(("🟢 Good", f"Collection rate is healthy at {avg_collection_rate:.1f}%. Maintain current practices."))
-
-    # Debt insight
-    if debt_to_billed_ratio > 20:
-        insights.append(("🔴 Critical", f"Debt-to-billed ratio is {debt_to_billed_ratio:.1f}%, indicating significant arrears. Implement aggressive debt recovery measures."))
-    elif debt_to_billed_ratio > 10:
-        insights.append(("🟡 Warning", f"Debt-to-billed ratio at {debt_to_billed_ratio:.1f}% requires attention. Consider debt restructuring options."))
-
-    # Cost recovery insight
-    avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
-    if avg_cost_recovery < 80:
-        insights.append(("🔴 Critical", f"Cost recovery ratio is only {avg_cost_recovery:.1f}%. Revenue doesn't cover operational costs. Review tariff structure."))
-    elif avg_cost_recovery < 100:
-        insights.append(("🟡 Warning", f"Cost recovery ratio at {avg_cost_recovery:.1f}% needs improvement to achieve financial sustainability."))
-    else:
-        insights.append(("🟢 Good", f"Cost recovery ratio is {avg_cost_recovery:.1f}%, indicating financial sustainability."))
-
-    # Display insights
-    for status, insight in insights:
-        if "Critical" in status:
-            st.error(f"{status}: {insight}")
-        elif "Warning" in status:
-            st.warning(f"{status}: {insight}")
+        # (severity, label, action) — severity in {critical, warning, good}
+        insights = []
+        if avg_collection_rate < 70:
+            insights.append(("critical", f"Collection rate low at {avg_collection_rate:.1f}%", "Tighten collection policy + incentives."))
+        elif avg_collection_rate < 85:
+            insights.append(("warning", f"Collection rate at {avg_collection_rate:.1f}%", "Review billing & customer engagement."))
         else:
-            st.success(f"{status}: {insight}")
+            insights.append(("good", f"Collection rate healthy at {avg_collection_rate:.1f}%", "Maintain current practices."))
+
+        if debt_to_billed_ratio > 20:
+            insights.append(("critical", f"Debt-to-billed ratio {debt_to_billed_ratio:.1f}%", "Launch aggressive debt recovery."))
+        elif debt_to_billed_ratio > 10:
+            insights.append(("warning", f"Debt-to-billed ratio {debt_to_billed_ratio:.1f}%", "Consider debt restructuring."))
+
+        avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
+        if avg_cost_recovery < 80:
+            insights.append(("critical", f"Cost recovery only {avg_cost_recovery:.1f}%", "Revenue below O&M cost — review tariffs."))
+        elif avg_cost_recovery < 100:
+            insights.append(("warning", f"Cost recovery {avg_cost_recovery:.1f}%", "Push toward 100% for sustainability."))
+        else:
+            insights.append(("good", f"Cost recovery {avg_cost_recovery:.1f}%", "Financially sustainable."))
+
+        # Render as the app's risk/win cards (consistent with the Home page).
+        watch = [{"label": lbl, "action": act} for sev, lbl, act in insights if sev != "good"]
+        good = [{"label": lbl, "action": act} for sev, lbl, act in insights if sev == "good"]
+        ins_c1, ins_c2 = st.columns(2, gap="large")
+        with ins_c1:
+            render_risk_card("Watch-outs", watch, tone="warn")
+        with ins_c2:
+            render_risk_card("Strengths", good, tone="good")
 
     # Footer
     st.markdown("---")
