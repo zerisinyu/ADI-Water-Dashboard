@@ -602,7 +602,6 @@ def _render_overview_banner() -> None:
     with title_col:
         st.markdown(
             '<div class="exec-head">'
-            '<div class="page-header__eyebrow">Water Utility Performance</div>'
             '<h1 class="page-header__title">'
             '<span class="icon icon-xl icon-muted">dashboard</span>Executive Dashboard</h1>'
             '<p class="page-header__subtitle">Real-time view of access, service quality, '

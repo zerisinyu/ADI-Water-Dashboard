@@ -818,10 +818,8 @@ def render_page_header(
     """
     from datetime import datetime
 
-    eyebrow_html = (
-        f'<div class="page-header__eyebrow">{_html.escape(eyebrow)}</div>'
-        if eyebrow else ""
-    )
+    # Page-header eyebrow removed globally by design (kept param for back-compat).
+    eyebrow_html = ""
     subtitle_html = (
         f'<p class="page-header__subtitle">{_html.escape(subtitle)}</p>'
         if subtitle else ""

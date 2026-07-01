@@ -45,8 +45,14 @@ html, body {
     max-width: 1440px;
     padding-top: 1rem;
     padding-bottom: 3rem;
-    padding-left: 2.25rem;
-    padding-right: 2.25rem;
+    padding-left: 2.5rem;
+    padding-right: 3.5rem;   /* extra breathing room on the right */
+}
+
+/* A touch more air between columns in multi-column rows (charts, metrics).
+   KPI rows use their own CSS grid and are unaffected. */
+.stApp [data-testid="stHorizontalBlock"] {
+    gap: 1.5rem;
 }
 
 /* Hide the default Streamlit "Made with Streamlit" footer & menu */
@@ -1037,14 +1043,17 @@ hr, .stMarkdown hr {
 }
 
 /* Alerts — Stripe-style: tinted background + matching border + colored icon */
+/* The outer stAlert is just a wrapper — the tinted, rounded card is the inner
+   baseweb notification. Strip the outer white frame + padding so alerts read as
+   a compact single banner (fixes the "huge white padding" around st.info). */
 [data-testid="stAlert"],
 [data-testid="stNotification"] {
     border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    padding: var(--space-3) var(--space-4);
+    border: none;
+    padding: 0;
     font-size: var(--text-body);
     box-shadow: none;
-    background: var(--surface);
+    background: transparent;
 }
 
 [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
@@ -1052,7 +1061,12 @@ hr, .stMarkdown hr {
     color: var(--text-primary);
 }
 
-/* Streamlit emits alerts with [data-baseweb="notification"] kind variants */
+/* Streamlit emits alerts with [data-baseweb="notification"] kind variants.
+   Tighten padding; info reads as a small light-blue banner. */
+[data-baseweb="notification"] {
+    padding: var(--space-2) var(--space-3) !important;
+    border-radius: var(--radius-md) !important;
+}
 [data-baseweb="notification"][kind="info"]    { background: var(--info-soft)    !important; border-color: rgba(0, 88, 184, 0.18)   !important; }
 [data-baseweb="notification"][kind="positive"]{ background: var(--success-soft) !important; border-color: rgba(14, 126, 81, 0.18)  !important; }
 [data-baseweb="notification"][kind="warning"] { background: var(--warning-soft) !important; border-color: rgba(176, 96, 0, 0.20)   !important; }
@@ -1292,12 +1306,27 @@ div[data-testid="stHorizontalBlock"] {
 [data-testid="stSidebar"] {
     background: var(--surface);
     border-right: 1px solid var(--border);
-    min-width: 264px !important;
-    max-width: 264px !important;
+    min-width: 216px !important;
+    max-width: 216px !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stSidebarContent"] {
     padding: var(--space-3) var(--space-3) var(--space-5);
+}
+
+/* Pin the night-mode toggle to the bottom-left corner of the sidebar. Fixed
+   positioning (same pattern as the MajiBot FAB) is robust against Streamlit's
+   nested, position:relative block wrappers. */
+[data-testid="stSidebar"] [data-testid="stSidebarContent"] {
+    padding-bottom: 56px;   /* reserve space so content never hides under the toggle */
+}
+.st-key-night-toggle-host {
+    position: fixed;
+    left: 12px;
+    bottom: 12px;
+    width: 192px;
+    z-index: 100;
+    margin: 0;
 }
 
 [data-testid="stSidebar"] h1,
