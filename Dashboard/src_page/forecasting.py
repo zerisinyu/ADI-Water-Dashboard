@@ -193,7 +193,7 @@ def scene_forecasting():
     selected_zone = st.session_state.get("selected_zone", "All")
 
     render_page_hero(
-        title="Forecasting & scenarios",
+        title="Insights & forecasting",
         icon="insights",
         filters={"Country": selected_country, "Zone": selected_zone},
     )

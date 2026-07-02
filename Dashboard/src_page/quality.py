@@ -452,16 +452,19 @@ def scene_quality():
             delta_kind="neutral",
             icon="support_agent",
             footnote="Of complaints resolved",
+            help="Complaints resolved ÷ complaints received × 100. Monthly.",
             sparkline=res_spark),
         KPI("Network performance", f"{blocks_per_100km:.1f}",
             delta=f"{total_blocks:,.0f} blocks total",
             delta_kind=net_kind,
             icon="hub",
             footnote="Blockages / 100 km · lower is better",
+            help="Sewer blockages per 100 km of network. Lower is better. Monthly.",
             sparkline=net_spark),
         KPI("Asset health", ah_value, delta=ah_delta, delta_kind=ah_kind,
             icon="construction",
-            footnote="Annual assessment"),
+            footnote="Annual assessment",
+            help="Composite asset-condition index (0–100). Annual assessment."),
     ])
 
     # ============================================================================
@@ -836,13 +839,16 @@ def scene_quality():
 
         render_kpi_row([
             KPI("Water supply staff", f"{water_staff:,.0f}", icon="engineering",
-                footnote="Avg monthly headcount"),
+                footnote="Avg monthly headcount",
+                help="Average monthly water-supply staff headcount (financial services data)."),
             KPI("Sanitation staff", f"{san_staff:,.0f}", icon="cleaning_services",
-                footnote="Avg monthly headcount"),
+                footnote="Avg monthly headcount",
+                help="Average monthly sanitation staff headcount (financial services data)."),
             KPI("Women in decision-making", f"{women_dm:.1f}%" if women_dm is not None else "—",
                 icon="diversity_3", metric_key="women_decision_making"),
             KPI("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
-                icon="speed", footnote="Sanitation staff / 1,000 connections"),
+                icon="speed", footnote="Sanitation staff / 1,000 connections",
+                help="Sanitation staff per 1,000 sewer connections. Lower is leaner."),
         ])
 
         if water_staff > 0 or san_staff > 0:
@@ -887,7 +893,8 @@ def scene_quality():
                 icon="diversity_3", metric_key="women_decision_making",
                 footnote="Women ÷ total decision-making workforce"),
             KPI("Staff efficiency", f"{san_eff:.1f}" if sewer_conn > 0 else "—",
-                icon="speed", footnote="Sanitation staff / 1,000 connections (lower is leaner)"),
+                icon="speed", footnote="Sanitation staff / 1,000 connections (lower is leaner)",
+                help="Sanitation staff per 1,000 sewer connections. Lower is leaner."),
         ])
         st.caption(
             "Targets: ≥30% women in decision-making (SDG 5.5); staffing efficiency "

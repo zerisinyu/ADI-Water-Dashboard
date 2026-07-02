@@ -247,16 +247,17 @@ def render_standardized_filters(
     
     # Determine column layout based on what's shown
     num_cols = sum([show_period, True, show_zone, show_year])  # Country always shown
+    # Narrow widths so country/zone/year/month (+ period) fit on a single row.
     col_widths = []
     if show_period:
-        col_widths.append(1.5)
-    col_widths.append(2.5)  # Country
+        col_widths.append(1.4)
+    col_widths.append(1.6)  # Country
     if show_zone:
-        col_widths.append(2.5)
+        col_widths.append(1.6)
     if show_year:
-        col_widths.append(1.5)
+        col_widths.append(1.2)
     if show_month:
-        col_widths.append(1.5)  # keep month in the same row as country/year
+        col_widths.append(1.2)  # keep month in the same row as country/year
 
     cols = st.columns(col_widths)
     col_idx = 0
@@ -685,13 +686,14 @@ def render_target_bar(label: str, value: float, target: float,
 
 
 def render_risk_card(title: str, items: List[Dict[str, str]], *, tone: str = "warn",
-                     bare: bool = False) -> None:
+                     bare: bool = False, show_title: bool = True) -> None:
     """Render a list of risk / win items inside a single card.
 
     Each item is `{"label": str, "detail": str, "action": str (optional)}`.
     `tone` selects the accent: "warn" (amber), "danger" (red), "good" (green).
     When `bare=True` the outer `.risk-card` wrapper is omitted so the title +
-    list can sit inside an existing container (e.g. below a toggle).
+    list can sit inside an existing container. `show_title=False` omits the
+    built-in title row (when the caller renders its own header alongside a toggle).
     """
     accent = {
         "good":   "var(--success)",
@@ -717,13 +719,13 @@ def render_risk_card(title: str, items: List[Dict[str, str]], *, tone: str = "wa
             f'</li>'
         )
     body = "".join(rows) if rows else '<li class="risk-card__empty">Nothing flagged.</li>'
-    inner = (
+    title_html = (
         f'<div class="risk-card__title">'
         f'<span class="icon icon-sm" style="color:{accent};">{icon_for_tone}</span>'
         f'<span>{_html.escape(title)}</span>'
         f'</div>'
-        f'<ul class="risk-card__list">{body}</ul>'
-    )
+    ) if show_title else ""
+    inner = f'{title_html}<ul class="risk-card__list">{body}</ul>'
     if bare:
         st.markdown(
             f'<div class="risk-card risk-card--bare" style="--risk-accent:{accent};">{inner}</div>',

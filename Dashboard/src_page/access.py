@@ -667,23 +667,27 @@ def scene_access():
             delta_kind=water_kind,
             icon="water_drop",
             footnote="Municipal water reach",
+            help="Population with municipal water supply ÷ total population × 100. Annual (JMP/AUDC).",
             sparkline=water_spark_data),
         KPI("Sewer coverage", f"{sewer_conn_pct:.1f}%",
             delta=f"{sewer_growth:+.1f}% {sewer_comparison_label}",
             delta_kind=sewer_kind,
             icon="shower",
             footnote="Households connected",
+            help="Households with a sewer connection ÷ total households × 100. Annual.",
             sparkline=sewer_spark_data),
         KPI("Metered connections", "—",
             delta="Data gap · awaiting input",
             delta_kind="neutral",
             icon="speed",
-            footnote="Metered connection data required"),
+            footnote="Metered connection data required",
+            help="Share of connections with a working meter. Not yet reported in this dataset."),
         KPI("Piped water supply", "—",
             delta="Data gap · awaiting input",
             delta_kind="neutral",
             icon="plumbing",
-            footnote="Piped supply data required"),
+            footnote="Piped supply data required",
+            help="Population served by piped water on premises. Not yet reported in this dataset."),
     ])
 
     # --- Define ladder columns and labels (used by multiple sections) ---
@@ -1329,15 +1333,20 @@ def scene_access():
             total_pop = pop_by_zone['popn_total'].sum()
 
             if total_pop > 0:
-                # Toilets per 100,000 people (AUDC: public toilets ÷ population).
-                toilets_per_capita = (total_toilets / total_pop) * 100000
-
-                st.metric("Public toilets", f"{toilets_per_capita:.1f}", "per 100k people")
-                
-                # Comparison Chart
+                # Per-zone toilets per 100k, then the AVERAGE ACROSS ZONES. A
+                # population-weighted total (toilets ÷ people) is dominated by big
+                # zones and reads far below the per-zone figures (~23 vs the 60–170
+                # seen per zone); the simple mean (~78) matches what's in the data.
                 pt_merged = pd.merge(pt_by_zone, pop_by_zone, on='zone')
                 pt_merged['per_100k'] = (pt_merged['public_toilets'] / pt_merged['popn_total'] * 100000).fillna(0)
-                
+                avg_per_100k = pt_merged['per_100k'].mean() if not pt_merged.empty else 0.0
+
+                st.metric(
+                    "Public toilets", f"{avg_per_100k:.1f}", "avg per zone · per 100k",
+                    help="Average across zones of (public toilets ÷ zone population × 100,000), "
+                         "using each zone's latest-year population. AUDC: public toilets per person.",
+                )
+
                 fig_pt = px.bar(
                     pt_merged, 
                     x='zone', 

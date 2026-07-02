@@ -607,18 +607,21 @@ def scene_finance():
 
     with debt_col1:
         avg_debt_per_month = total_debt / len(fin_service_filtered) if len(fin_service_filtered) > 0 else 0
-        st.metric("Avg Monthly Debt", f"${avg_debt_per_month/1e6:.2f}M")
+        st.metric("Avg Monthly Debt", f"${avg_debt_per_month/1e6:.2f}M",
+                  help="Total outstanding debt ÷ number of service records in the period.")
 
     with debt_col2:
         debt_to_billed_ratio = (total_debt / total_billed * 100) if total_billed > 0 else 0
-        st.metric("Debt-to-Billed Ratio", f"{debt_to_billed_ratio:.1f}%")
+        st.metric("Debt-to-Billed Ratio", f"{debt_to_billed_ratio:.1f}%",
+                  help="Outstanding debt ÷ total billed × 100. Lower is better.")
 
     with debt_col3:
         if 'date_parsed' in fin_service_filtered.columns and len(fin_service_filtered) > 1:
             recent_debt_trend = fin_service_filtered.sort_values('date_parsed')['debt'].iloc[-3:].mean()
             previous_debt_trend = fin_service_filtered.sort_values('date_parsed')['debt'].iloc[-6:-3].mean()
             debt_change = ((recent_debt_trend - previous_debt_trend) / previous_debt_trend * 100) if previous_debt_trend != 0 else 0
-            st.metric("Debt Trend (Recent)", f"{debt_change:+.1f}%", delta_color="inverse")
+            st.metric("Debt Trend (Recent)", f"{debt_change:+.1f}%", delta_color="inverse",
+                      help="Change in average debt: last 3 records vs the prior 3.")
 
     # Debt Analysis Charts
     debt_chart_col1, debt_chart_col2 = st.columns(2)

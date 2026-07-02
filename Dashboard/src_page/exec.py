@@ -466,10 +466,10 @@ def scene_executive():
     # One "Open …" deep-link under each briefing card, in slot order
     # (access · finance · ops · quality).
     _slot_pages = {
-        "access":  ("pages/2_Access_&_Coverage.py", "Open Access & Coverage"),
-        "finance": ("pages/4_Financial_Health.py", "Open Financial Health"),
-        "ops":     ("pages/5_Production.py", "Open Production"),
-        "quality": ("pages/3_Service_Quality.py", "Open Service & Quality"),
+        "access":  ("pages/2_Access_&_Coverage.py", "Access"),
+        "finance": ("pages/4_Financial_Health.py", "Finance"),
+        "ops":     ("pages/5_Production.py", "Production"),
+        "quality": ("pages/3_Service_Quality.py", "Service"),
     }
     nav_cols = st.columns(len(briefing_config.SLOTS))
     for col, slot in zip(nav_cols, briefing_config.SLOTS):
@@ -541,20 +541,28 @@ def scene_executive():
         sig_col, todo_col = st.columns([1, 1])
         with sig_col:
             with st.container(key="signals-card"):
-                # Toggle sits at the top-right of the card; the list renders below.
-                _sp, _ctrl = st.columns([0.42, 0.58], vertical_alignment="center")
-                with _ctrl:
-                    signal_view = st.segmented_control(
-                        "Signals",
-                        ["Top risks", "Top wins"],
-                        default="Top risks",
-                        key="signals_toggle",
-                        label_visibility="collapsed",
+                # Title (top-left) and the Risks/Wins toggle (top-right) share the
+                # top row; the list renders below with no duplicate title.
+                view = st.session_state.get("signals_toggle", "Top risks") or "Top risks"
+                tone = "good" if view == "Top wins" else "warn"
+                accent = "var(--success)" if tone == "good" else "var(--warning)"
+                t_icon = "trending_up" if tone == "good" else "warning"
+                htitle, htoggle = st.columns([0.5, 0.5], vertical_alignment="center")
+                with htitle:
+                    st.markdown(
+                        f'<div class="signals-card__title">'
+                        f'<span class="icon icon-sm" style="color:{accent};">{t_icon}</span>'
+                        f'<span>{view}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                with htoggle:
+                    view = st.segmented_control(
+                        "Signals", ["Top risks", "Top wins"], default="Top risks",
+                        key="signals_toggle", label_visibility="collapsed",
                     ) or "Top risks"
-                if signal_view == "Top wins":
-                    render_risk_card("Top wins", win_items[:4], tone="good", bare=True)
-                else:
-                    render_risk_card("Top risks", risk_items[:4], tone="warn", bare=True)
+                items = win_items[:4] if view == "Top wins" else risk_items[:4]
+                render_risk_card(view, items, tone=("good" if view == "Top wins" else "warn"),
+                                 bare=True, show_title=False)
         with todo_col:
             render_majibot_todo("MajiBot's to-do", todo_items[:5])
 
@@ -606,12 +614,10 @@ def scene_executive():
             }
             _default = ["Collection eff.", "Non-revenue water", "Service hours", "Water quality"]
 
-            hc1, hc2 = st.columns([0.8, 0.2], vertical_alignment="center")
-            with hc2:
-                with st.popover(":material/tune: Metrics", use_container_width=True):
-                    picked = st.multiselect(
-                        "Rows to show", list(_HM), default=_default, key="heatmap_metrics",
-                    )
+            # Inline picker shown directly above the heatmap (not hidden in a popover).
+            picked = st.multiselect(
+                "Rows to show", list(_HM), default=_default, key="heatmap_metrics",
+            )
             picked = picked or _default
             heat_rows = [
                 {"label": lbl, "values": heat[_HM[lbl]["col"]].tolist(),

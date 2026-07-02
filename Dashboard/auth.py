@@ -680,6 +680,9 @@ def render_login_page() -> bool:
             '<div class="login-header">'
             '<div class="login-logo"><span class="icon icon-xl icon-brand">water_drop</span></div>'
             '<h1>Water Utility Dashboard</h1>'
+            '<p class="login-header__desc">A role-based analytics platform for water &amp; '
+            'sanitation utilities — track access &amp; coverage, service quality, financial '
+            'health and production across countries, with AI-assisted insights.</p>'
             '<p>Sign in to access your dashboard.</p>'
             '</div>',
             unsafe_allow_html=True,
@@ -723,9 +726,9 @@ def render_login_page() -> bool:
             '</div>'
             '<dl>'
             '<dt>Master</dt><dd><code>admin</code> &nbsp;/&nbsp; <code>admin123</code></dd>'
-            '<dt>Uganda admin</dt><dd><code>uganda_admin</code> &nbsp;/&nbsp; <code>uganda123</code></dd>'
-            '<dt>Cameroon admin</dt><dd><code>cameroon_admin</code> &nbsp;/&nbsp; <code>cameroon123</code></dd>'
-            '<dt>Analyst</dt><dd><code>analyst1</code> &nbsp;/&nbsp; <code>analyst123</code></dd>'
+            '<dt>Cameroon admin</dt><dd><code>cameroon_admin</code> &nbsp;/&nbsp; <code>admin123</code></dd>'
+            '<dt>Analyst (Uganda)</dt><dd><code>analyst</code> &nbsp;/&nbsp; <code>admin123</code></dd>'
+            '<dt>Viewer (Malawi)</dt><dd><code>viewer</code> &nbsp;/&nbsp; <code>admin123</code></dd>'
             '</dl>'
             '</div>',
             unsafe_allow_html=True,
@@ -1018,6 +1021,18 @@ def render_admin_settings_page() -> None:
     else:
         st.info(
             f"**Country admin access** — manage users assigned to **{user.assigned_country or '—'}**."
+        )
+
+    # Demo credentials reference (mirrors the login page) — all demo users share
+    # the password admin123.
+    with st.expander("Demo credentials", expanded=False):
+        st.markdown(
+            "| Role | Username | Password |\n"
+            "|---|---|---|\n"
+            "| Master | `admin` | `admin123` |\n"
+            "| Cameroon admin | `cameroon_admin` | `admin123` |\n"
+            "| Analyst (Uganda) | `analyst` | `admin123` |\n"
+            "| Viewer (Malawi) | `viewer` | `admin123` |"
         )
 
     modifiable_users = _get_modifiable_users()

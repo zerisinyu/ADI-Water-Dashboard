@@ -50,9 +50,10 @@ html, body {
 }
 
 /* A touch more air between columns in multi-column rows (charts, metrics).
-   KPI rows use their own CSS grid and are unaffected. */
+   KPI rows use their own CSS grid and are unaffected. Kept modest so filter
+   rows with several controls still fit on one line. */
 .stApp [data-testid="stHorizontalBlock"] {
-    gap: 1.5rem;
+    gap: 1rem;
 }
 
 /* Hide the default Streamlit "Made with Streamlit" footer & menu */
@@ -1058,19 +1059,23 @@ hr, .stMarkdown hr {
 
 [data-testid="stAlert"] [data-testid="stMarkdownContainer"] p {
     margin: 0;
-    color: var(--text-primary);
 }
 
-/* Streamlit emits alerts with [data-baseweb="notification"] kind variants.
-   Tighten padding; info reads as a small light-blue banner. */
+/* Alerts mirror the status-badge pill aesthetic (render_status_badge): a soft
+   tinted background with matching COLORED text + pill rounding, per severity. */
 [data-baseweb="notification"] {
     padding: var(--space-2) var(--space-3) !important;
-    border-radius: var(--radius-md) !important;
+    border-radius: var(--radius-full) !important;
+    border: 1px solid transparent !important;
+    font-weight: 500 !important;
 }
-[data-baseweb="notification"][kind="info"]    { background: var(--info-soft)    !important; border-color: rgba(0, 88, 184, 0.18)   !important; }
-[data-baseweb="notification"][kind="positive"]{ background: var(--success-soft) !important; border-color: rgba(14, 126, 81, 0.18)  !important; }
-[data-baseweb="notification"][kind="warning"] { background: var(--warning-soft) !important; border-color: rgba(176, 96, 0, 0.20)   !important; }
-[data-baseweb="notification"][kind="negative"]{ background: var(--danger-soft)  !important; border-color: rgba(179, 38, 30, 0.18)  !important; }
+/* Text (and icons) inherit the severity color so the whole banner reads as the badge. */
+[data-baseweb="notification"] [data-testid="stMarkdownContainer"] p { color: inherit !important; }
+
+[data-baseweb="notification"][kind="info"]     { background: var(--info-soft)    !important; color: var(--info)    !important; }
+[data-baseweb="notification"][kind="positive"] { background: var(--success-soft) !important; color: var(--success) !important; }
+[data-baseweb="notification"][kind="warning"]  { background: var(--warning-soft) !important; color: var(--warning) !important; }
+[data-baseweb="notification"][kind="negative"] { background: var(--danger-soft)  !important; color: var(--danger)  !important; }
 
 /* Radio horizontal */
 [role="radiogroup"] {
@@ -1545,6 +1550,14 @@ div[data-testid="stHorizontalBlock"] {
     color: var(--text-secondary);
     font-size: var(--text-body);
     margin: 0;
+}
+
+.login-header__desc {
+    color: var(--text-tertiary) !important;
+    font-size: var(--text-caption) !important;
+    line-height: 1.5;
+    margin: 6px auto 10px !important;
+    max-width: 30rem;
 }
 
 .login-card {
@@ -2119,6 +2132,19 @@ div[data-testid="stHorizontalBlock"] {
     padding: var(--space-3) var(--space-4);
     min-height: 196px;
     height: 100%;
+}
+/* Signals card header: title left, toggle flush to the right edge. */
+.signals-card__title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+.st-key-signals-card [data-testid="stSegmentedControl"] {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .risk-card__title {
