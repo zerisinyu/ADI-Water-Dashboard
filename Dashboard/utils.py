@@ -255,7 +255,9 @@ def render_standardized_filters(
         col_widths.append(2.5)
     if show_year:
         col_widths.append(1.5)
-    
+    if show_month:
+        col_widths.append(1.5)  # keep month in the same row as country/year
+
     cols = st.columns(col_widths)
     col_idx = 0
     
@@ -368,20 +370,24 @@ def render_standardized_filters(
             )
         col_idx += 1
     
-    # Month filter logic (only show for Monthly/Daily periods)
-    if show_month or result['period'] in ['Monthly', 'Daily']:
-        # Add month selector in a new row if needed
-        month_names = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
-                       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        default_month_idx = 0
-        if "selected_month" in st.session_state and st.session_state.selected_month in month_names:
-            default_month_idx = month_names.index(st.session_state.selected_month)
-        
+    # Month filter. When show_month is True it sits in the same row as
+    # country/year (a column was reserved above); otherwise it appears in its own
+    # row only for Monthly/Daily periods.
+    month_names = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    default_month_idx = 0
+    if "selected_month" in st.session_state and st.session_state.selected_month in month_names:
+        default_month_idx = month_names.index(st.session_state.selected_month)
+
+    if show_month:
+        with cols[col_idx]:
+            result['month'] = st.selectbox(
+                "Month", month_names, index=default_month_idx, key=f"{key_prefix}_month",
+            )
+        col_idx += 1
+    elif result['period'] in ['Monthly', 'Daily']:
         result['month'] = st.selectbox(
-            "Month",
-            month_names,
-            index=default_month_idx,
-            key=f"{key_prefix}_month"
+            "Month", month_names, index=default_month_idx, key=f"{key_prefix}_month",
         )
 
     # ------------------------------------------------------------------

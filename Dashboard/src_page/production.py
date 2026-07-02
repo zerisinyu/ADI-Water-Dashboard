@@ -27,6 +27,7 @@ from charts import (
     STATUS_WARNING,
     STATUS_CRITICAL,
     STATUS_NEUTRAL,
+    SEQ_BLUE,
     apply_axis_percent,
     style_fig,
     style_bar,
@@ -530,45 +531,36 @@ def scene_production():
         
         infra_c1, infra_c2 = st.columns(2)
     
-    # Panel 1: WTP Bubble Matrix
+    # Panel 1: WTP — data-aware. Per-plant capacity/efficiency/asset-age aren't in
+    # this dataset (the old bubble chart fabricated them from hash(source)). When
+    # real per-source production exists we show that; otherwise a data-gap panel.
     with infra_c1:
         st.markdown("**Water Treatment Plants (WTP)**")
-        # Aggregate production by source for bubble size
-        wtp_data = df_p_filt.groupby('source')['volume_display'].sum().reset_index()
-        
+        wtp_data = (
+            df_p_filt.groupby('source')['volume_display'].sum().reset_index()
+            if ('source' in df_p_filt.columns and 'volume_display' in df_p_filt.columns)
+            else pd.DataFrame()
+        )
+        wtp_data = wtp_data[wtp_data['volume_display'] > 0] if not wtp_data.empty else wtp_data
         if not wtp_data.empty:
-            # Simulate attributes
-            # Deterministic simulation based on source name hash to keep it consistent across reruns
-            wtp_data['efficiency'] = wtp_data['source'].apply(lambda x: 80 + (hash(x) % 20)) # 80-99%
-            wtp_data['utilization'] = wtp_data['source'].apply(lambda x: 50 + (hash(x) % 60)) # 50-110%
-            
-            def get_age_cat(x):
-                h = hash(x) % 3
-                if h == 0: return 'New (<5y)', STATUS_GOOD
-                elif h == 1: return 'Mid-life (5-15y)', STATUS_WARNING
-                else: return 'Aging (>15y)', STATUS_CRITICAL
-            
-            wtp_data[['age_category', 'color']] = wtp_data['source'].apply(lambda x: pd.Series(get_age_cat(x)))
-            
-            fig_wtp = px.scatter(wtp_data, x='utilization', y='efficiency',
-                                 size='volume_display', color='age_category',
-                                 color_discrete_map={'New (<5y)': STATUS_GOOD, 'Mid-life (5-15y)': STATUS_WARNING, 'Aging (>15y)': STATUS_CRITICAL},
-                                 hover_name='source',
-                                 labels={'utilization': 'Capacity Util (%)', 'efficiency': 'Efficiency (%)'},
-                                 title="Efficiency vs Utilization")
-            
-            # Optimal Zone (Green Box) - e.g., Util 70-90%, Eff > 90%
-            fig_wtp.add_shape(type="rect",
-                x0=70, y0=90, x1=95, y1=100,
-                line=dict(color=STATUS_GOOD, width=1, dash="dot"),
-                fillcolor="rgba(5, 150, 105, 0.08)",
+            fig_wtp = px.bar(
+                wtp_data.sort_values('volume_display'),
+                x='volume_display', y='source', orientation='h',
+                color='volume_display', color_continuous_scale=SEQ_BLUE,
+                labels={'volume_display': 'Production volume', 'source': 'Source'},
+                title='Production volume by source',
             )
-
-            fig_wtp.update_layout(xaxis=dict(range=[40, 120]), yaxis=dict(range=[70, 105]))
-            style_fig(fig_wtp, height=350, legend_top=True)
+            fig_wtp.update_layout(coloraxis_showscale=False)
+            style_bar(fig_wtp, height=350)
             st.plotly_chart(fig_wtp, use_container_width=True)
+            st.caption("Per-plant capacity utilisation, efficiency and asset age aren't collected yet.")
         else:
-            st.info("No WTP data available.")
+            render_no_data_panel(
+                "Plant-level data not collected yet",
+                "No per-source production is reported for this selection, and per-plant "
+                "capacity / efficiency / asset age aren't in this dataset.",
+                icon="factory",
+            )
 
     # Panel 2: FSM
     with infra_c2:
@@ -739,7 +731,7 @@ def scene_production():
             with c_ctrl3:
                 st.markdown("**Analysis**")
                 show_forecast = st.checkbox("Show Forecast (3 Months)", value=True)
-                show_anomalies = st.checkbox("Highlight Anomalies", value=False)
+                show_anomalies = st.checkbox("Highlight Anomalies", value=True)
                 
             with c_ctrl4:
                 st.markdown("**Export**")
@@ -758,33 +750,43 @@ def scene_production():
         else:
             ts_resampled = ts_df.copy()
 
-        # --- Forecasting (Simple Projection) ---
+        # --- Forecasting (Holt's linear trend, with a linear fallback) ---
+        def _project(values, periods):
+            """Forecast `periods` steps ahead with additive-trend exponential
+            smoothing; fall back to a linear fit for short/degenerate series."""
+            y = np.asarray([float(v) for v in values if v == v], dtype=float)
+            if len(y) < 4:
+                return [float(y[-1]) if len(y) else 0.0] * periods
+            try:
+                from statsmodels.tsa.holtwinters import ExponentialSmoothing
+                fit = ExponentialSmoothing(
+                    y, trend='add', seasonal=None, initialization_method='estimated'
+                ).fit()
+                fc = fit.forecast(periods)
+                return [max(0.0, float(v)) for v in fc]
+            except Exception:
+                x = np.arange(len(y))
+                a, b = np.polyfit(x, y, 1)
+                return [max(0.0, float(a * (len(y) + i) + b)) for i in range(periods)]
+
         forecast_df = pd.DataFrame()
-        if show_forecast and not ts_resampled.empty:
+        if show_forecast and len(ts_resampled) >= 4:
             last_date = ts_resampled['date_dt'].max()
-            # Create future dates
             if smoothing == "Daily":
                 future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=90, freq='D')
             elif smoothing == "Weekly":
                 future_dates = pd.date_range(start=last_date + pd.Timedelta(weeks=1), periods=12, freq='W')
             else:
                 future_dates = pd.date_range(start=last_date + pd.Timedelta(days=30), periods=3, freq='M')
-                
-            # Simple naive forecast (last value + noise)
-            last_vals = ts_resampled.iloc[-1]
-            
-            forecast_data = []
-            for date in future_dates:
-                # Add some seasonality/trend
-                factor = 1.0
-                forecast_data.append({
-                    'date_dt': date,
-                    'volume_display': last_vals['volume_display'] * factor,
-                    'consumption': last_vals['consumption'] * factor,
-                    'nrw': last_vals['nrw'] * factor,
-                    'population': last_vals['population'] # Flat
-                })
-            forecast_df = pd.DataFrame(forecast_data)
+
+            n = len(future_dates)
+            forecast_df = pd.DataFrame({
+                'date_dt': future_dates,
+                'volume_display': _project(ts_resampled['volume_display'].tolist(), n),
+                'consumption': _project(ts_resampled['consumption'].tolist(), n),
+                'nrw': _project(ts_resampled['nrw'].tolist(), n),
+                'population': [float(ts_resampled['population'].iloc[-1])] * n,
+            })
 
         # --- Plotting ---
         fig = go.Figure()
@@ -918,10 +920,22 @@ def scene_production():
             if submitted:
                 st.success(f"Logged: {log_source} - {log_reason} on {log_date}")
 
+    # --- Data-gap summary --------------------------------------------------
+    st.markdown("---")
+    render_no_data_panel(
+        "Some production datasets aren't collected yet",
+        "Plant-level capacity/efficiency, faecal-sludge-treatment utilisation, and "
+        "asset-age records aren't reported in this dataset — the sections above show "
+        "data-gap placeholders rather than estimated figures. Production volume, "
+        "service hours and NRW are real.",
+        icon="fact_check",
+        tag="Data coverage",
+    )
+
     # ============================================================================
     # DATA EXPORT SECTION
     # ============================================================================
-    
+
     st.markdown("---")
     render_section_header("Data export", icon="download")
     

@@ -151,6 +151,38 @@ def _render_scenario_card(result) -> None:
             st.metric(k, delta_str)
 
 
+@st.cache_data
+def _load_corr_frame(country: str) -> pd.DataFrame:
+    """Monthly metric frame (from the DuckDB views) for the correlation explorer."""
+    _ensure_pipeline()
+    where, params = "", []
+    if country and country != "All":
+        where = " WHERE LOWER(country) = ?"
+        params = [country.lower()]
+    b = query(
+        f"SELECT month, "
+        f"CASE WHEN SUM(total_billed) > 0 THEN SUM(total_paid) / SUM(total_billed) * 100 ELSE NULL END AS collection_eff, "
+        f"SUM(total_consumption_m3) AS consumption "
+        f"FROM v_billing_monthly{where} GROUP BY month", params)
+    n = query(
+        f"SELECT month, SUM(total_production_m3) AS production, "
+        f"CASE WHEN SUM(total_production_m3) > 0 THEN "
+        f"(SUM(total_production_m3) - SUM(total_consumption_m3)) / SUM(total_production_m3) * 100 ELSE NULL END AS nrw_pct, "
+        f"AVG(avg_service_hours) AS service_hours FROM v_nrw_monthly{where} GROUP BY month", params)
+    q = query(
+        f"SELECT date_trunc('month', date)::DATE AS month, AVG(water_quality_rate) AS water_quality "
+        f"FROM v_service_quality{where}{' AND' if where else ' WHERE'} water_quality_rate IS NOT NULL GROUP BY 1", params)
+    fdf = query(
+        f"SELECT date_trunc('month', date)::DATE AS month, AVG(cost_recovery_pct) AS cost_recovery, "
+        f"SUM(opex) AS opex FROM v_financial_monthly{where} GROUP BY 1", params)
+    return (
+        b.merge(n, on="month", how="outer")
+         .merge(q, on="month", how="outer")
+         .merge(fdf, on="month", how="outer")
+         .sort_values("month")
+    )
+
+
 def scene_forecasting():
     """Main entry point for the Forecasting & Scenarios page."""
     _ensure_pipeline()
@@ -166,10 +198,11 @@ def scene_forecasting():
         filters={"Country": selected_country, "Zone": selected_zone},
     )
 
-    tab_forecast, tab_decomp, tab_scenarios = st.tabs([
+    tab_forecast, tab_decomp, tab_scenarios, tab_corr = st.tabs([
         "Time-series forecast",
         "Seasonal decomposition",
         "What-if scenarios",
+        "Metric correlations",
     ])
 
     # ----------------------------------------------------------------
@@ -343,3 +376,61 @@ def scene_forecasting():
                     _render_scenario_card(result)
                 else:
                     st.warning("Insufficient data for expansion scenario")
+
+    # ----------------------------------------------------------------
+    # Tab 4: Metric correlations
+    # ----------------------------------------------------------------
+    with tab_corr:
+        render_section_header(
+            "How metrics move together",
+            eyebrow="Correlation explorer",
+            icon="scatter_plot",
+        )
+        corr_df = _load_corr_frame(selected_country)
+        metric_cols = [c for c in corr_df.columns if c != "month"]
+        data = corr_df[metric_cols].dropna(how="all")
+        if len(data) < 4 or data.shape[1] < 2:
+            render_empty_state(
+                "Not enough monthly data to compute correlations for this selection.",
+                icon="scatter_plot",
+            )
+        else:
+            labels = {
+                "collection_eff": "Collection eff.", "consumption": "Consumption",
+                "production": "Production", "nrw_pct": "NRW", "service_hours": "Service hours",
+                "water_quality": "Water quality", "cost_recovery": "Cost recovery", "opex": "Opex",
+            }
+            corr = data.corr(numeric_only=True)
+            disp = [labels.get(c, c) for c in corr.columns]
+            fig_c = go.Figure(go.Heatmap(
+                z=corr.values, x=disp, y=disp,
+                zmin=-1, zmax=1,
+                colorscale=[[0, STATUS_CRITICAL], [0.5, "#f1f4f7"], [1, DATA_WATER]],
+                text=[[f"{v:.2f}" for v in row] for row in corr.values],
+                texttemplate="%{text}", textfont=dict(size=10),
+                hovertemplate="%{y} vs %{x}: %{z:.2f}<extra></extra>",
+                colorbar=dict(title="r"),
+            ))
+            style_fig(fig_c, height=460)
+            fig_c.update_yaxes(autorange="reversed")
+            st.plotly_chart(fig_c, use_container_width=True)
+            st.caption("Pearson correlation of monthly metrics. +1 = move together, −1 = move oppositely.")
+
+            # Scatter drill-down for a chosen pair.
+            sc1, sc2 = st.columns(2)
+            with sc1:
+                x_m = st.selectbox("X metric", corr.columns, format_func=lambda c: labels.get(c, c), key="corr_x")
+            with sc2:
+                y_default = 1 if len(corr.columns) > 1 else 0
+                y_m = st.selectbox("Y metric", corr.columns, index=y_default,
+                                   format_func=lambda c: labels.get(c, c), key="corr_y")
+            pair = data[[x_m, y_m]].dropna()
+            if not pair.empty:
+                fig_s = go.Figure(go.Scatter(
+                    x=pair[x_m], y=pair[y_m], mode="markers",
+                    marker=dict(color=DATA_WATER, size=9, opacity=0.75),
+                    hovertemplate=f"{labels.get(x_m, x_m)}: %{{x:.1f}}<br>{labels.get(y_m, y_m)}: %{{y:.1f}}<extra></extra>",
+                ))
+                fig_s.update_layout(xaxis_title=labels.get(x_m, x_m), yaxis_title=labels.get(y_m, y_m))
+                style_fig(fig_s, height=360)
+                st.plotly_chart(fig_s, use_container_width=True)
