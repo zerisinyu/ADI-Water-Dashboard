@@ -122,19 +122,20 @@ def _render_llm_error(exc: Exception) -> None:
             pass
         return os.getenv(name)
     
-    # Check for common configuration issues
-    provider = (_get_secret_value("LLM_PROVIDER") or "gemini").lower()
-    
-    if provider == "grok":
-        key = _get_secret_value("GROK_API_KEY") or _get_secret_value("XAI_API_KEY")
-        model = _get_secret_value("MODEL_ID") or "grok-beta"
-    elif provider == "glm":
-        key = _get_secret_value("GLM_API_KEY") or _get_secret_value("ZHIPU_API_KEY")
-        model = _get_secret_value("MODEL_ID") or "glm-4-flash"
-    else:
+    # Diagnose the provider MajiBot will actually use, not just the LLM_PROVIDER
+    # secret: a key entered in the panel or set for a different provider (e.g.
+    # GLM_API_KEY) is what the assistant falls back to, so report on that.
+    try:
+        from llm import active_provider, configured_provider, resolve_api_key, default_model as _default_model
+        nominal = active_provider()
+        provider = (configured_provider() or nominal).lower()
+        key = resolve_api_key(provider)
+        model = (st.session_state.get("ai_model") if provider == nominal else None) or _default_model(provider)
+    except Exception:
+        provider = (_get_secret_value("LLM_PROVIDER") or "gemini").lower()
         key = _get_secret_value("GEMINI_API_KEY") or _get_secret_value("GOOGLE_API_KEY")
         model = _get_secret_value("MODEL_ID") or "gemini-1.5-flash"
-        
+
     key_present = bool(key) and "your_api_key_here" not in (key or "") and "your_key_here" not in (key or "")
 
     # Show user-friendly error message

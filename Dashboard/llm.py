@@ -264,15 +264,38 @@ class ChatLLM:
     """
 
     def __init__(self, cfg: Optional[LLMConfig] = None):
-        # Session-state overrides from the sidebar AI Settings panel
-        ss_provider = st.session_state.get("ai_provider")
-        ss_model = st.session_state.get("ai_model")
-        self.cfg = cfg or LLMConfig(
-            provider=ss_provider or _get_secret("LLM_PROVIDER", "gemini") or "gemini",
-            model=ss_model or _get_secret("MODEL_ID", "gemini-1.5-flash") or "gemini-1.5-flash",
-            temperature=float(_get_secret("TEMPERATURE", "0.2") or 0.2),
-            max_tokens=int(_get_secret("MAX_TOKENS", "2048") or 2048),
-        )
+        if cfg is not None:
+            self.cfg = cfg
+        else:
+            # Session-state overrides from the sidebar AI Settings panel.
+            ss_provider = st.session_state.get("ai_provider")
+            ss_model = st.session_state.get("ai_model")
+            nominal = (ss_provider or _get_secret("LLM_PROVIDER", "gemini") or "gemini").lower()
+
+            # BYOK robustness: if the selected/active provider has no usable key
+            # but another provider does (a common case is setting GLM_API_KEY but
+            # leaving LLM_PROVIDER on the gemini default), fall back to whichever
+            # provider actually has a resolvable key so the assistant just works.
+            provider = nominal
+            if not resolve_api_key(provider):
+                fallback = configured_provider()
+                if fallback:
+                    provider = fallback
+
+            # Keep the session/secret model only when it belongs to the provider
+            # we're actually using; otherwise use that provider's own default. A
+            # gemini model name would fail against, say, the GLM endpoint.
+            if provider == nominal:
+                model = ss_model or _get_secret("MODEL_ID") or default_model(provider)
+            else:
+                model = default_model(provider)
+
+            self.cfg = LLMConfig(
+                provider=provider,
+                model=model,
+                temperature=float(_get_secret("TEMPERATURE", "0.2") or 0.2),
+                max_tokens=int(_get_secret("MAX_TOKENS", "2048") or 2048),
+            )
 
         self.provider = (self.cfg.provider or "gemini").lower()
         # Any provider name is accepted: "gemini" uses the Google SDK, anything
