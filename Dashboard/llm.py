@@ -379,7 +379,10 @@ class ChatLLM:
             self._openai_client = openai.OpenAI(api_key=api_key, base_url=self.base_url)
         except ImportError:
             raise LLMNotConfiguredError(
-                "OpenAI SDK not installed. Add 'openai' to requirements.txt."
+                f"The OpenAI SDK (required for '{self.provider}') isn't importable in "
+                "this environment. It is listed in requirements.txt as 'openai' — "
+                "reinstall with `pip install -r requirements.txt`, or trigger a "
+                "rebuild on a hosted deployment."
             )
         except Exception as e:
             raise LLMNotConfiguredError(

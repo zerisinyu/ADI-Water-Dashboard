@@ -8,7 +8,10 @@ toml==0.10.2
 tomli
 tomlkit==0.13.3
 openpyxl==3.0.10
-openai==1.59.9
+# OpenAI-compatible SDK — used for GLM / Grok / OpenAI / DeepSeek / OpenRouter
+# (BYOK, MajiBot). Kept as a range, not a hard pin: the exact 1.59.9 pin failed
+# to co-install on the hosted deployment, leaving the SDK missing at runtime.
+openai>=1.55,<2
 
 # Data Engineering
 duckdb==1.1.3
