@@ -262,19 +262,8 @@ def scene_access():
     """
     
     # ============================================================================
-    # PAGE TITLE
-    # ============================================================================
-    
-    render_page_header(
-        "Access & Coverage",
-        eyebrow="Population reach",
-        subtitle="Zone-level water and sanitation access metrics.",
-        icon="map",
-        badges=[{"label": "Annual", "kind": "neutral"}],
-    )
-    
-    # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
+    # Page title now renders inline with the filters (see render_standardized_filters below).
     # ============================================================================
     
     # Initialize session state for data BEFORE expander to ensure data is available
@@ -293,6 +282,49 @@ def scene_access():
             st.session_state.access_default_data_loaded = True
         except Exception as e:
             st.session_state.access_default_data_loaded = True  # Prevent repeated attempts
+    # Load data (use session state if available, otherwise use default loading)
+    if st.session_state.access_water_data is not None and st.session_state.access_sewer_data is not None:
+        # Use custom data from session state
+        df_water = filter_df_by_user_access(st.session_state.access_water_data.copy(), "country")
+        df_sewer = filter_df_by_user_access(st.session_state.access_sewer_data.copy(), "country")
+    else:
+        # Load data (already filtered by user access in prepare_* functions)
+        access_data = prepare_access_data()
+        df_water = access_data["water_full"]
+        df_sewer = access_data["sewer_full"]
+    
+    service_data = prepare_service_data()
+    df_service = service_data["full_data"]
+    
+    df_fin = load_financial_data()
+
+    # --- Standardized Filters (AUDC Dictionary Compliant) ---
+    # Title + all filters on one row (Home-style header).
+    filters = render_standardized_filters(
+        df=df_water,
+        page="access",
+        key_prefix="access",
+        country_col="country",
+        zone_col="zone",
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=False,  # Access data is Annual/Quarterly
+        title="Access & Coverage",
+        subtitle="Zone-level water and sanitation access metrics.",
+        icon="map",
+    )
+    
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    selected_month = get_month_number(filters.get('month', 'All'))
+    if selected_month is None:
+        selected_month = 'All'
+    
     
     # ============================================================================
     # DATA IMPORT SECTION (Collapsed by default)
@@ -374,48 +406,6 @@ def scene_access():
                     except Exception as e:
                         st.error(f"Error loading default data: {e}")
 
-    # Load data (use session state if available, otherwise use default loading)
-    if st.session_state.access_water_data is not None and st.session_state.access_sewer_data is not None:
-        # Use custom data from session state
-        df_water = filter_df_by_user_access(st.session_state.access_water_data.copy(), "country")
-        df_sewer = filter_df_by_user_access(st.session_state.access_sewer_data.copy(), "country")
-    else:
-        # Load data (already filtered by user access in prepare_* functions)
-        access_data = prepare_access_data()
-        df_water = access_data["water_full"]
-        df_sewer = access_data["sewer_full"]
-    
-    service_data = prepare_service_data()
-    df_service = service_data["full_data"]
-    
-    df_fin = load_financial_data()
-
-    # --- Header Section ---
-    header_container = st.container()
-    
-    # --- Standardized Filters (AUDC Dictionary Compliant) ---
-    filters = render_standardized_filters(
-        df=df_water,
-        page="access",
-        key_prefix="access",
-        country_col="country",
-        zone_col="zone",
-        year_col="year",
-        show_period=True,
-        show_zone=True,
-        show_year=True,
-        show_month=False  # Access data is Annual/Quarterly
-    )
-    
-    # Extract filter values
-    view_type = filters['period']
-    selected_country = filters['country']
-    selected_zone = filters['zone']
-    selected_year = filters['year']
-    selected_month = get_month_number(filters.get('month', 'All'))
-    if selected_month is None:
-        selected_month = 'All'
-    
     # --- Apply Filters using standardized helper ---
     # Helper function for safe year filtering
     def _safe_year_filter(df, year_col, year_value):
@@ -432,19 +422,6 @@ def scene_access():
     df_s_filt = apply_standard_filters(df_sewer, filters, year_col='year')
     df_svc_filt = apply_standard_filters(df_service, filters, year_col='year', month_col='month')
     df_f_filt = apply_standard_filters(df_fin, filters, year_col='year', month_col='month')
-
-    # --- Populate Header with Export Button ---
-    with header_container:
-        h_col1, h_col2 = st.columns([6, 1])
-        with h_col2:
-            csv = df_w_filt.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Export CSV",
-                data=csv,
-                file_name=f"access_data_{selected_country}_{selected_year}.csv",
-                mime="text/csv",
-                key="export_btn",
-            )
 
     if df_w_filt.empty and df_s_filt.empty:
         st.warning("No access data available for selected filters")

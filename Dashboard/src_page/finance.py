@@ -18,6 +18,8 @@ from utils import (
     render_empty_state,
     render_target_bar,
     render_standardized_filters,
+    _render_year_select,
+    _render_month_select,
     apply_standard_filters,
     get_month_number,
     render_risk_card,
@@ -170,16 +172,7 @@ def scene_finance():
     - Upload custom data functionality
     """
 
-    render_page_header(
-        "Financial Health",
-        eyebrow="Performance",
-        subtitle="Revenue, billing, and budget performance at city level.",
-        icon="payments",
-        badges=[
-            {"label": "Monthly", "kind": "neutral"},
-            {"label": "Annual", "kind": "neutral"},
-        ],
-    )
+    # Page title renders inline with the primary filters (see render_standardized_filters below).
 
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
@@ -201,6 +194,83 @@ def scene_finance():
             st.session_state.default_data_loaded = True
         except Exception as e:
             st.session_state.default_data_loaded = True  # Prevent repeated attempts
+    # Check if data is loaded
+    if st.session_state.national_data is None or st.session_state.fin_service_data is None:
+        st.warning("Please upload data files or load default data to continue")
+        return
+
+    # Get data from session state and apply access control filtering
+    national_df = st.session_state.national_data.copy()
+    fin_service_df = st.session_state.fin_service_data.copy()
+    
+    # Apply access control filtering based on user permissions
+    national_df = filter_df_by_user_access(national_df, "country")
+    fin_service_df = filter_df_by_user_access(fin_service_df, "country")
+    
+    # Check if any data remains after filtering
+    if national_df.empty or fin_service_df.empty:
+        st.warning("No data available for your access level. Please contact an administrator.")
+        return
+
+    # ============================================================================
+    # DATA PREPROCESSING
+    # ============================================================================
+
+    # Convert date columns
+    try:
+        fin_service_df['date_parsed'] = pd.to_datetime(fin_service_df['date_MMYY'], format='%b/%y', errors='coerce')
+        fin_service_df['year'] = fin_service_df['date_parsed'].dt.year
+        fin_service_df['month'] = fin_service_df['date_parsed'].dt.month
+        fin_service_df['month_name'] = fin_service_df['date_parsed'].dt.strftime('%B')
+    except:
+        st.warning("Date parsing issue - some date features may not work")
+
+    # Calculate derived metrics
+    fin_service_df['collection_rate'] = (fin_service_df['sewer_revenue'] / fin_service_df['sewer_billed'] * 100).fillna(0)
+    fin_service_df['debt'] = fin_service_df['sewer_billed'] - fin_service_df['sewer_revenue']
+    fin_service_df['complaint_resolution_rate'] = (fin_service_df['resolved'] / fin_service_df['complaints'] * 100).fillna(0)
+    fin_service_df['cost_recovery_ratio'] = (fin_service_df['sewer_revenue'] / fin_service_df['opex'] * 100).fillna(0)
+    fin_service_df['total_staff'] = fin_service_df['san_staff'] + fin_service_df['w_staff']
+    fin_service_df['revenue_per_staff'] = fin_service_df['sewer_revenue'] / fin_service_df['total_staff']
+
+    # ============================================================================
+    # FILTER SECTION (Standardized - AUDC Dictionary Compliant)
+    # ============================================================================
+
+    # Add year column to national_df if not present
+    if 'year' not in national_df.columns and 'date_YY' in national_df.columns:
+        # Convert 2-digit year to 4-digit year (e.g. 23 -> 2023, but leave 2023 as 2023)
+        national_df['year'] = national_df['date_YY'].apply(lambda x: x + 2000 if x < 100 else x)
+    
+    # Standardized Filters — title + primary filters (period, country, city) on one row.
+    # All filters (period, country, city, year, month) share the header row.
+    filters = render_standardized_filters(
+        df=national_df,
+        page="finance",
+        key_prefix="finance",
+        country_col="country",
+        zone_col="city",  # Finance uses city instead of zone
+        year_col="year",
+        show_period=True,
+        show_zone=True,
+        show_year=True,
+        show_month=True,
+        title="Financial Health",
+        subtitle="Revenue, billing, and budget performance at city level.",
+        icon="payments",
+    )
+
+
+    # Extract filter values
+    view_type = filters['period']
+    selected_country = filters['country']
+    selected_city = filters['zone']  # Mapped from zone to city
+    selected_year = filters['year']
+    selected_month_name = filters.get('month', 'All')
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
+
     
     # ============================================================================
     # DATA IMPORT SECTION (Collapsed by default)
@@ -282,78 +352,6 @@ def scene_finance():
                     except Exception as e:
                         st.error(f"Error loading default data: {e}")
 
-    # Check if data is loaded
-    if st.session_state.national_data is None or st.session_state.fin_service_data is None:
-        st.warning("Please upload data files or load default data to continue")
-        return
-
-    # Get data from session state and apply access control filtering
-    national_df = st.session_state.national_data.copy()
-    fin_service_df = st.session_state.fin_service_data.copy()
-    
-    # Apply access control filtering based on user permissions
-    national_df = filter_df_by_user_access(national_df, "country")
-    fin_service_df = filter_df_by_user_access(fin_service_df, "country")
-    
-    # Check if any data remains after filtering
-    if national_df.empty or fin_service_df.empty:
-        st.warning("No data available for your access level. Please contact an administrator.")
-        return
-
-    # ============================================================================
-    # DATA PREPROCESSING
-    # ============================================================================
-
-    # Convert date columns
-    try:
-        fin_service_df['date_parsed'] = pd.to_datetime(fin_service_df['date_MMYY'], format='%b/%y', errors='coerce')
-        fin_service_df['year'] = fin_service_df['date_parsed'].dt.year
-        fin_service_df['month'] = fin_service_df['date_parsed'].dt.month
-        fin_service_df['month_name'] = fin_service_df['date_parsed'].dt.strftime('%B')
-    except:
-        st.warning("Date parsing issue - some date features may not work")
-
-    # Calculate derived metrics
-    fin_service_df['collection_rate'] = (fin_service_df['sewer_revenue'] / fin_service_df['sewer_billed'] * 100).fillna(0)
-    fin_service_df['debt'] = fin_service_df['sewer_billed'] - fin_service_df['sewer_revenue']
-    fin_service_df['complaint_resolution_rate'] = (fin_service_df['resolved'] / fin_service_df['complaints'] * 100).fillna(0)
-    fin_service_df['cost_recovery_ratio'] = (fin_service_df['sewer_revenue'] / fin_service_df['opex'] * 100).fillna(0)
-    fin_service_df['total_staff'] = fin_service_df['san_staff'] + fin_service_df['w_staff']
-    fin_service_df['revenue_per_staff'] = fin_service_df['sewer_revenue'] / fin_service_df['total_staff']
-
-    # ============================================================================
-    # FILTER SECTION (Standardized - AUDC Dictionary Compliant)
-    # ============================================================================
-
-    # Add year column to national_df if not present
-    if 'year' not in national_df.columns and 'date_YY' in national_df.columns:
-        # Convert 2-digit year to 4-digit year (e.g. 23 -> 2023, but leave 2023 as 2023)
-        national_df['year'] = national_df['date_YY'].apply(lambda x: x + 2000 if x < 100 else x)
-    
-    # Standardized Filters
-    filters = render_standardized_filters(
-        df=national_df,
-        page="finance",
-        key_prefix="finance",
-        country_col="country",
-        zone_col="city",  # Finance uses city instead of zone
-        year_col="year",
-        show_period=True,
-        show_zone=True,
-        show_year=True,
-        show_month=True  # Finance data is Monthly
-    )
-    
-    # Extract filter values
-    view_type = filters['period']
-    selected_country = filters['country']
-    selected_city = filters['zone']  # Mapped from zone to city
-    selected_year = filters['year']
-    selected_month_name = filters.get('month', 'All')
-    selected_month = get_month_number(selected_month_name)
-    if selected_month is None:
-        selected_month = 'All'
-
     # Apply filters (case-insensitive for country/city)
     national_filtered = national_df.copy()
     fin_service_filtered = fin_service_df.copy()
@@ -387,9 +385,6 @@ def scene_finance():
     # Month filter
     if selected_month != 'All' and 'month' in fin_service_filtered.columns:
         fin_service_filtered = fin_service_filtered[fin_service_filtered['month'] == selected_month]
-
-    # Display filter summary
-    st.info(f"Viewing: **{len(national_filtered)}** national records, **{len(fin_service_filtered)}** service records")
 
     # ============================================================================
     # KEY METRICS DASHBOARD
@@ -1069,46 +1064,23 @@ def scene_finance():
     # SUMMARY INSIGHTS
     # ============================================================================
 
-    render_section_header("Key insights & recommendations", eyebrow="Analyst notes")
+    # Data quality & alerts (consistent with the Access / Service / Production pages).
+    render_section_header("Data quality & alerts", icon="warning")
 
-    if fin_service_filtered.empty or 'cost_recovery_ratio' not in fin_service_filtered.columns:
-        render_no_data_panel(
-            "No financial data for this selection",
-            "Adjust the filters (or load finance data) to see insights and recommendations.",
-            icon="query_stats",
-            tag=None,
-        )
-    else:
-        # (severity, label, action) — severity in {critical, warning, good}
-        insights = []
-        if avg_collection_rate < 70:
-            insights.append(("critical", f"Collection rate low at {avg_collection_rate:.1f}%", "Tighten collection policy + incentives."))
-        elif avg_collection_rate < 85:
-            insights.append(("warning", f"Collection rate at {avg_collection_rate:.1f}%", "Review billing & customer engagement."))
-        else:
-            insights.append(("good", f"Collection rate healthy at {avg_collection_rate:.1f}%", "Maintain current practices."))
-
-        if debt_to_billed_ratio > 20:
-            insights.append(("critical", f"Debt-to-billed ratio {debt_to_billed_ratio:.1f}%", "Launch aggressive debt recovery."))
-        elif debt_to_billed_ratio > 10:
-            insights.append(("warning", f"Debt-to-billed ratio {debt_to_billed_ratio:.1f}%", "Consider debt restructuring."))
-
-        avg_cost_recovery = fin_service_filtered['cost_recovery_ratio'].mean()
-        if avg_cost_recovery < 80:
-            insights.append(("critical", f"Cost recovery only {avg_cost_recovery:.1f}%", "Revenue below O&M cost — review tariffs."))
-        elif avg_cost_recovery < 100:
-            insights.append(("warning", f"Cost recovery {avg_cost_recovery:.1f}%", "Push toward 100% for sustainability."))
-        else:
-            insights.append(("good", f"Cost recovery {avg_cost_recovery:.1f}%", "Financially sustainable."))
-
-        # Render as the app's risk/win cards (consistent with the Home page).
-        watch = [{"label": lbl, "action": act} for sev, lbl, act in insights if sev != "good"]
-        good = [{"label": lbl, "action": act} for sev, lbl, act in insights if sev == "good"]
-        ins_c1, ins_c2 = st.columns(2, gap="large")
-        with ins_c1:
-            render_risk_card("Watch-outs", watch, tone="warn")
-        with ins_c2:
-            render_risk_card("Strengths", good, tone="good")
+    fin_alerts = [
+        "⚠️ Aged-debt breakdown (0–30 / 30–60 / 90+ days) not collected",
+        "⚠️ Capital-expenditure and asset-investment detail unavailable",
+        "⚠️ Tariff-band and customer-category billing splits not reported",
+    ]
+    st.markdown(f"""
+    <div style='background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px; margin-bottom: 16px;'>
+        <h4 style='color: #854d0e; margin-top: 0; font-size: 16px; margin-bottom: 8px;'>Data Gaps Detected</h4>
+        <ul style='color: #a16207; margin-bottom: 0; padding-left: 20px;'>
+            {''.join([f"<li style='margin-bottom: 4px;'>{a}</li>" for a in fin_alerts])}
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    st.caption("Billing, revenue, opex, budget and debt figures shown above are real, measured values.")
 
     # Footer
     st.markdown("---")

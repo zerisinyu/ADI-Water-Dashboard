@@ -43,7 +43,7 @@ html, body {
 /* Streamlit padding tightening — give us more usable canvas. */
 .stApp .block-container {
     max-width: 1440px;
-    padding-top: 1rem;
+    padding-top: 3rem;       /* clear the fixed Streamlit toolbar (Deploy / menu) */
     padding-bottom: 3rem;
     padding-left: 2.5rem;
     padding-right: 3.5rem;   /* extra breathing room on the right */
@@ -388,6 +388,25 @@ hr, .stMarkdown hr {
     margin: 0;
 }
 
+/* Inline header (title + subtitle) — keep the two lines tight as one group so
+   they centre cleanly against the filters beside them. */
+.exec-head { display: flex; flex-direction: column; justify-content: center; gap: 0; }
+.exec-head [data-testid="stHeadingWithActionElements"] { margin: 0 !important; padding: 0 !important; }
+.exec-head .page-header__title { line-height: 1.1; margin: 0 !important; }
+.exec-head .page-header__subtitle { margin-top: 1px !important; line-height: 1.3; }
+
+/* A little air above the Data Import panel so it separates from the header row. */
+[data-testid="stExpander"] { margin-top: var(--space-3); }
+
+/* Thin separator with breathing room (Home: between briefing cards and signals). */
+.soft-divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: var(--space-5) 0 var(--space-4) 0;
+}
+/* A small vertical gap between two stacked filter rows (secondary filter rows). */
+.filter-row-gap { height: var(--space-3); }
+
 .page-header__meta {
     display: flex;
     flex-direction: column;
@@ -495,6 +514,21 @@ hr, .stMarkdown hr {
 .kpi-card:hover {
     border-color: var(--border-strong);
     background: var(--surface-muted);
+}
+
+/* KPI cards that link to a page (Home briefing cards) — the whole card is an <a>. */
+.kpi-card--link,
+.stMarkdown a.kpi-card--link {
+    text-decoration: none !important;
+    color: inherit;
+    cursor: pointer;
+    height: 100%;
+}
+.kpi-card--link:hover,
+.stMarkdown a.kpi-card--link:hover {
+    text-decoration: none !important;
+    color: inherit;
+    border-color: var(--border-strong);
 }
 
 .kpi-card__head {
@@ -1061,21 +1095,25 @@ hr, .stMarkdown hr {
     margin: 0;
 }
 
-/* Alerts mirror the status-badge pill aesthetic (render_status_badge): a soft
-   tinted background with matching COLORED text + pill rounding, per severity. */
+/* Alerts render as a line of severity-coloured text with no background box.
+   Baseweb pins the notification to a tiny fixed height and the text overflows a
+   tinted pill awkwardly, so dropping the background sidesteps that entirely while
+   keeping the colour cue. */
 [data-baseweb="notification"] {
-    padding: var(--space-2) var(--space-3) !important;
-    border-radius: var(--radius-full) !important;
-    border: 1px solid transparent !important;
+    padding: var(--space-1) 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
     font-weight: 500 !important;
 }
-/* Text (and icons) inherit the severity color so the whole banner reads as the badge. */
-[data-baseweb="notification"] [data-testid="stMarkdownContainer"] p { color: inherit !important; }
+[data-baseweb="notification"] [data-testid="stMarkdownContainer"] p { color: inherit !important; margin: 0 !important; }
 
-[data-baseweb="notification"][kind="info"]     { background: var(--info-soft)    !important; color: var(--info)    !important; }
-[data-baseweb="notification"][kind="positive"] { background: var(--success-soft) !important; color: var(--success) !important; }
-[data-baseweb="notification"][kind="warning"]  { background: var(--warning-soft) !important; color: var(--warning) !important; }
-[data-baseweb="notification"][kind="negative"] { background: var(--danger-soft)  !important; color: var(--danger)  !important; }
+/* Severity colours for the text (Streamlit also colours these by default). */
+[data-baseweb="notification"][kind="info"]     { color: var(--info)    !important; }
+[data-baseweb="notification"][kind="positive"] { color: var(--success) !important; }
+[data-baseweb="notification"][kind="warning"]  { color: var(--warning) !important; }
+[data-baseweb="notification"][kind="negative"] { color: var(--danger)  !important; }
 
 /* Radio horizontal */
 [role="radiogroup"] {
@@ -1445,6 +1483,7 @@ div[data-testid="stHorizontalBlock"] {
 [data-testid="stSidebarNav"] a[href*="Admin_Settings"]::after,
 [data-testid="stSidebarNav"] a[href*="Admin%20Settings"]::after { content: "settings"; }
 [data-testid="stSidebarNav"] a[href*="Forecasting"]::after { content: "trending_up"; }
+[data-testid="stSidebarNav"] a[href*="Documentation"]::after { content: "menu_book"; }
 [data-testid="stSidebarNav"] a[aria-current="page"]::after { color: var(--brand); }
 
 [data-testid="stSidebarNav"] a span,
@@ -2103,13 +2142,13 @@ div[data-testid="stHorizontalBlock"] {
 
 /* Risk / wins cards */
 .risk-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--risk-accent, var(--text-secondary));
+    background: transparent;
+    /* Thin border all around in the accent colour (green for wins, amber for
+       risks), rather than a single thick left bar. */
+    border: 1px solid var(--risk-accent, var(--border));
     border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
-    height: 100%;
-    min-height: 196px;            /* keep Top risks & Top wins the same height */
+    min-height: 196px;            /* Top wins / Top risks / MajiBot all share this height */
     display: flex;
     flex-direction: column;
 }
@@ -2236,11 +2275,10 @@ div[data-testid="stHorizontalBlock"] {
 /* MajiBot to-do — light-blue companion card beside the risks/wins toggle.
    Consistent with the palette; fills the column so it matches the signals card. */
 .majibot-todo {
-    background: var(--surface-info, #eaf1f8);
+    background: transparent;
     border: 1px solid var(--brand-ring);
     border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
-    height: 100%;
     min-height: 196px;
     display: flex;
     flex-direction: column;
@@ -2290,14 +2328,34 @@ div[data-testid="stHorizontalBlock"] {
     font-style: italic;
 }
 
-/* Equal-height: let the to-do card fill its column so it matches the signals
-   card height. The column is already stretched by the flex row; chain height
-   down to the card. */
-[data-testid="stColumn"]:has(.majibot-todo) > [data-testid="stVerticalBlock"],
-[data-testid="stColumn"]:has(.majibot-todo) [data-testid="stElementContainer"]:has(.majibot-todo),
-[data-testid="stColumn"]:has(.majibot-todo) .stMarkdown:has(.majibot-todo),
-[data-testid="stColumn"]:has(.majibot-todo) [data-testid="stMarkdownContainer"]:has(.majibot-todo) {
-    height: 100%;
+/* Top wins, Top risks and the MajiBot to-do all share a fixed min-height so the
+   three cards line up. The card is intentionally not stretched to the column,
+   so the Generate button sits directly beneath the to-do card. */
+
+/* MajiBot to-do card (Home) — the "Generate with AI" button lives inside this
+   keyed container so it reads as part of the same bordered card, not a
+   separate control below it. render_majibot_todo(bare=True) supplies just the
+   title + list; this container supplies the border. */
+.st-key-majibot-todo-card {
+    background: transparent;
+    border: 1px solid var(--brand-ring);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    min-height: 196px;
+    display: flex;
+    flex-direction: column;
+}
+.st-key-majibot-todo-card [data-testid="stButton"] {
+    margin-top: var(--space-2);
+}
+.st-key-majibot-todo-card [data-testid="stButton"] button {
+    font-size: 12px;
+    padding: 4px 12px;
+    min-height: 0;
+    height: 28px;
+}
+.st-key-majibot-todo-card [data-testid="stCaptionContainer"] {
+    margin-top: var(--space-2);
 }
 
 

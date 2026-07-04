@@ -314,12 +314,18 @@ def _get_demo_users() -> Dict[str, User]:
     have been removed to avoid shipping passwords in source.
     """
     # Load secrets-backed user config to keep credentials out of source
-    secret_users = _load_users_from_secrets()
-    if secret_users:
-        return secret_users
-    
-    # If no secrets are configured, return empty dict to avoid embedding passwords in code
-    return {}
+    secret_users = _load_users_from_secrets() or {}
+    users = dict(secret_users)
+
+    # Session-scoped admin edits (add / remove). In this demo these live in
+    # session state and persist for the session only, mirroring how
+    # update_user_password stores password changes.
+    for uname, usr in (st.session_state.get("added_users") or {}).items():
+        users[uname] = usr
+    for uname in (st.session_state.get("removed_users") or []):
+        users.pop(uname, None)
+
+    return users
 
 
 def get_user(username: str) -> Optional[User]:
@@ -680,9 +686,6 @@ def render_login_page() -> bool:
             '<div class="login-header">'
             '<div class="login-logo"><span class="icon icon-xl icon-brand">water_drop</span></div>'
             '<h1>Water Utility Dashboard</h1>'
-            '<p class="login-header__desc">A role-based analytics platform for water &amp; '
-            'sanitation utilities — track access &amp; coverage, service quality, financial '
-            'health and production across countries, with AI-assisted insights.</p>'
             '<p>Sign in to access your dashboard.</p>'
             '</div>',
             unsafe_allow_html=True,
@@ -718,6 +721,13 @@ def render_login_page() -> bool:
                 else:
                     st.error(message)
                     return False
+
+        st.markdown(
+            '<p class="login-header__desc">A role-based analytics platform for water &amp; '
+            'sanitation utilities — track access &amp; coverage, service quality, financial '
+            'health and production across countries, with AI-assisted insights.</p>',
+            unsafe_allow_html=True,
+        )
 
         st.markdown(
             '<div class="demo-credentials">'
@@ -902,8 +912,69 @@ def update_user_password(username: str, new_password: str) -> Tuple[bool, str]:
         st.session_state["password_updates"] = {}
     
     st.session_state["password_updates"][username] = _hash_password(new_password)
-    
+
     return True, f"Password updated successfully for {username}"
+
+
+def add_demo_user(
+    username: str,
+    password: str,
+    role,
+    full_name: str = "",
+    assigned_country: str = "",
+    email: str = "",
+) -> Tuple[bool, str]:
+    """Add a new user. Session-scoped (demo persistence), mirroring
+    update_user_password. Returns (success, message)."""
+    username = (username or "").strip()
+    if not username:
+        return False, "Username is required."
+    if " " in username:
+        return False, "Username cannot contain spaces."
+    if len(password or "") < 6:
+        return False, "Password must be at least 6 characters."
+    if username in _get_demo_users():
+        return False, f"A user named '{username}' already exists."
+    try:
+        role_enum = role if isinstance(role, UserRole) else UserRole(role)
+    except ValueError:
+        return False, "Invalid role."
+
+    new_user = User(
+        username=username,
+        password_hash=_hash_password(password),
+        role=role_enum,
+        assigned_country=(assigned_country or None) if role_enum != UserRole.MASTER_USER else None,
+        full_name=full_name or username,
+        email=email or "",
+        is_active=True,
+    )
+    added = dict(st.session_state.get("added_users") or {})
+    added[username] = new_user
+    st.session_state["added_users"] = added
+    # If it had been removed earlier this session, revive it.
+    removed = [u for u in (st.session_state.get("removed_users") or []) if u != username]
+    st.session_state["removed_users"] = removed
+    return True, f"User '{username}' added. They can sign in this session."
+
+
+def remove_demo_user(username: str) -> Tuple[bool, str]:
+    """Remove a user. Session-scoped. Master users cannot be removed."""
+    usr = _get_demo_users().get(username)
+    if usr is None:
+        return False, "User not found."
+    if usr.role == UserRole.MASTER_USER:
+        return False, "Master users cannot be removed."
+
+    added = dict(st.session_state.get("added_users") or {})
+    added.pop(username, None)
+    st.session_state["added_users"] = added
+
+    removed = list(st.session_state.get("removed_users") or [])
+    if username not in removed:
+        removed.append(username)
+    st.session_state["removed_users"] = removed
+    return True, f"User '{username}' removed."
 
 
 def render_briefing_layout_settings() -> None:
@@ -1014,27 +1085,6 @@ def render_admin_settings_page() -> None:
         icon="settings",
     )
 
-    if role_val == "master_user":
-        st.info(
-            "**Master admin access** — manage all non-master users across every country."
-        )
-    else:
-        st.info(
-            f"**Country admin access** — manage users assigned to **{user.assigned_country or '—'}**."
-        )
-
-    # Demo credentials reference (mirrors the login page) — all demo users share
-    # the password admin123.
-    with st.expander("Demo credentials", expanded=False):
-        st.markdown(
-            "| Role | Username | Password |\n"
-            "|---|---|---|\n"
-            "| Master | `admin` | `admin123` |\n"
-            "| Cameroon admin | `cameroon_admin` | `admin123` |\n"
-            "| Analyst (Uganda) | `analyst` | `admin123` |\n"
-            "| Viewer (Malawi) | `viewer` | `admin123` |"
-        )
-
     modifiable_users = _get_modifiable_users()
     if not modifiable_users:
         st.warning("No users available for management under your access level.")
@@ -1074,7 +1124,7 @@ def render_admin_settings_page() -> None:
             status_text = "Active" if usr.is_active else "Inactive"
             country = usr.assigned_country or "—"
 
-            col1, col2, col3 = st.columns([2, 2, 1])
+            col1, col2, col3, col4 = st.columns([2, 2, 1, 1], vertical_alignment="center")
             with col1:
                 st.markdown(
                     f'<div class="managed-user__name">{usr.full_name or usr.username}</div>'
@@ -1093,7 +1143,60 @@ def render_admin_settings_page() -> None:
                     f'<span class="pill pill--{status_kind}">{status_text}</span>',
                     unsafe_allow_html=True,
                 )
+            with col4:
+                if st.button("Remove", key=f"remove_user_{username}"):
+                    ok, msg = remove_demo_user(username)
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
             st.markdown('<hr class="managed-user__divider">', unsafe_allow_html=True)
+
+        # --- Add a user (session-scoped in this demo) ---
+        with st.expander("Add a user", expanded=False):
+            if role_val == "master_user":
+                role_choices = [UserRole.COUNTRY_ADMIN, UserRole.ANALYST, UserRole.VIEWER]
+                country_locked = None
+            else:
+                role_choices = [UserRole.ANALYST, UserRole.VIEWER]
+                country_locked = user.assigned_country
+
+            with st.form("add_user_form", clear_on_submit=True):
+                ac1, ac2 = st.columns(2)
+                with ac1:
+                    new_username = st.text_input("Username", key="add_user_username")
+                    new_fullname = st.text_input("Full name", key="add_user_fullname")
+                    new_role = st.selectbox(
+                        "Role", role_choices,
+                        format_func=lambda r: r.display_name, key="add_user_role",
+                    )
+                with ac2:
+                    if country_locked:
+                        st.text_input("Country", value=country_locked, disabled=True)
+                        new_country = country_locked
+                    else:
+                        new_country = st.text_input("Country (leave blank for all)", key="add_user_country")
+                    new_password = st.text_input("Password", type="password", key="add_user_password")
+                    new_email = st.text_input("Email (optional)", key="add_user_email")
+
+                submitted = st.form_submit_button("Add user", type="primary")
+                if submitted:
+                    ok, msg = add_demo_user(
+                        new_username, new_password, new_role,
+                        full_name=new_fullname,
+                        assigned_country=(new_country or ""),
+                        email=new_email or "",
+                    )
+                    if ok:
+                        st.success(msg)
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            st.caption(
+                "New accounts and removals are session-scoped in this demo. In "
+                "production, back this with a real user database."
+            )
 
     # ----- Tab 2: Change password -----
     with tab2:

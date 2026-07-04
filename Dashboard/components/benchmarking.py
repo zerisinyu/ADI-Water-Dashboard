@@ -18,11 +18,22 @@ logger = logging.getLogger(__name__)
 
 def render_benchmarking_radar(
     year: Optional[int] = None,
+    country: Optional[str] = None,
 ) -> None:
     """
-    Render a radar chart comparing all countries across 6 KPIs,
-    plus a ranking table with percentile positions.
+    Render a peer-comparison radar chart. With no country selected (or "All"),
+    compares every country. With a single country selected, compares its zones
+    instead — the meaningful comparison narrows from country to zone once the
+    reader has picked one country to look at.
     """
+    if country and country != "All":
+        _render_zone_benchmark(country)
+    else:
+        _render_country_benchmark()
+
+
+def _render_country_benchmark() -> None:
+    """Cross-country radar across 6 KPIs, plus a country ranking table."""
     from data.database import query
     from utils import _ensure_pipeline
 
@@ -152,6 +163,116 @@ def render_benchmarking_radar(
     rows = []
     for country, metrics in sorted(countries_data.items()):
         row = {"Country": country}
+        total = 0
+        for cat in categories:
+            val = metrics.get(cat, 0)
+            row[cat] = f"{val:.1f}"
+            total += val
+        row["Overall Score"] = f"{total / len(categories):.1f}"
+        rows.append(row)
+
+    ranking_df = pd.DataFrame(rows).sort_values("Overall Score", ascending=False)
+    ranking_df.index = range(1, len(ranking_df) + 1)
+    ranking_df.index.name = "Rank"
+    st.dataframe(ranking_df, use_container_width=True)
+
+
+def _render_zone_benchmark(country: str) -> None:
+    """Cross-zone radar for a single country, plus a zone ranking table.
+
+    Only three KPIs are genuinely available at zone granularity: collection
+    efficiency and the two JMP access rates. NRW and service continuity are
+    keyed to `source` (production/NRW data), and a source can serve several
+    zones, so those two can't be attributed to a single zone without
+    fabricating a split — they're left out here rather than estimated,
+    matching how the rest of the dashboard handles this gap (see the
+    Production page's source-level filter and its data-quality notes).
+    """
+    from data.database import query
+    from utils import _ensure_pipeline
+
+    _ensure_pipeline()
+    _c = country.replace("'", "''")
+
+    zones_data: dict = {}
+
+    try:
+        coll_df = query(f"""
+            SELECT zone,
+                   SUM(total_paid) / NULLIF(SUM(total_billed), 0) * 100 AS collection_efficiency
+            FROM v_billing_monthly
+            WHERE LOWER(country) = LOWER('{_c}')
+            GROUP BY zone
+        """)
+        for _, row in coll_df.iterrows():
+            z = row["zone"]
+            zones_data.setdefault(z, {})["Collection Efficiency"] = min(row["collection_efficiency"], 100)
+    except Exception:
+        pass
+
+    try:
+        wa_df = query(f"""
+            SELECT zone, AVG(w_safely_managed_pct) AS safe_pct
+            FROM w_access
+            WHERE LOWER(country) = LOWER('{_c}') AND year = (
+                SELECT MAX(year) FROM w_access WHERE LOWER(country) = LOWER('{_c}')
+            )
+            GROUP BY zone
+        """)
+        for _, row in wa_df.iterrows():
+            zones_data.setdefault(row["zone"], {})["Water Access"] = row["safe_pct"]
+    except Exception:
+        pass
+
+    try:
+        sa_df = query(f"""
+            SELECT zone, AVG(s_safely_managed_pct) AS safe_pct
+            FROM s_access
+            WHERE LOWER(country) = LOWER('{_c}') AND year = (
+                SELECT MAX(year) FROM s_access WHERE LOWER(country) = LOWER('{_c}')
+            )
+            GROUP BY zone
+        """)
+        for _, row in sa_df.iterrows():
+            zones_data.setdefault(row["zone"], {})["Sanitation Access"] = row["safe_pct"]
+    except Exception:
+        pass
+
+    if not zones_data:
+        st.info(f"Insufficient zone-level data for {country}.")
+        return
+
+    categories = ["Collection Efficiency", "Water Access", "Sanitation Access"]
+
+    from charts import colorway
+    colors = colorway()
+
+    fig = go.Figure()
+    for i, (zone, metrics) in enumerate(sorted(zones_data.items())):
+        values = [metrics.get(cat, 0) for cat in categories]
+        values.append(values[0])
+        color = colors[i % len(colors)]
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=categories + [categories[0]],
+            fill="toself",
+            name=zone,
+            line=dict(color=color),
+            fillcolor=f"rgba({','.join(str(int(color[j:j+2], 16)) for j in (1, 3, 5))}, 0.1)" if len(color) == 7 else None,
+        ))
+
+    from charts import style_fig
+    fig.update_layout(
+        polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
+        showlegend=True,
+    )
+    style_fig(fig, title=f"{country} — cross-zone performance benchmark", height=440, legend_top=True)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    st.markdown("#### Zone Rankings")
+    rows = []
+    for zone, metrics in sorted(zones_data.items()):
+        row = {"Zone": zone}
         total = 0
         for cat in categories:
             val = metrics.get(cat, 0)

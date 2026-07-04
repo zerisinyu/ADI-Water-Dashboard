@@ -23,6 +23,8 @@ from utils import (
     render_empty_state,
     render_no_data_panel,
     render_standardized_filters,
+    _render_year_select,
+    _render_month_select,
     apply_standard_filters,
     get_month_number,
 )
@@ -142,14 +144,8 @@ def scene_quality():
     Service Quality & Reliability scene - Redesigned based on User Journey.
     """
     
-    render_page_header(
-        "Service Quality & Reliability",
-        eyebrow="Performance",
-        subtitle="Water quality, continuity, and service performance metrics.",
-        icon="verified",
-        badges=[{"label": "Monthly", "kind": "neutral"}],
-    )
-    
+    # Page title renders inline with the primary filters (see render_standardized_filters below).
+
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
     # ============================================================================
@@ -167,6 +163,84 @@ def scene_quality():
             st.session_state.quality_default_data_loaded = True
         except Exception as e:
             st.session_state.quality_default_data_loaded = True  # Prevent repeated attempts
+    # Load data (use session state if available, otherwise use default loading)
+    if st.session_state.quality_service_data is not None:
+        # Use custom service data from session state
+        raw_data = st.session_state.quality_service_data.copy()
+        # Ensure date column is proper datetime
+        if 'date' in raw_data.columns:
+            # Convert string date like "Jan 2020" to datetime
+            raw_data['date'] = pd.to_datetime(raw_data['date'], format='%b %Y', errors='coerce')
+            # If that fails, try creating from year/month
+            if raw_data['date'].isna().all() and 'year' in raw_data.columns and 'month' in raw_data.columns:
+                raw_data['date'] = pd.to_datetime(
+                    raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
+                )
+        elif 'year' in raw_data.columns and 'month' in raw_data.columns:
+            raw_data['date'] = pd.to_datetime(
+                raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
+            )
+        raw_data = raw_data.sort_values('date') if 'date' in raw_data.columns else raw_data
+        service_data = {"full_data": filter_df_by_user_access(raw_data, "country")}
+        df_service = service_data["full_data"]
+    else:
+        service_data = _prepare_service_data()
+        df_service = service_data["full_data"]
+    
+    df_billing, df_fin, df_prod, df_national = load_extra_data()
+
+    # --- Header row: title on the left; View Period + View metrics on the right ---
+    from utils import get_page_frequencies
+    _freq = get_page_frequencies("quality")
+    _title_col, _r1_col = st.columns([2, 3], vertical_alignment="center")
+    with _title_col:
+        st.markdown(
+            '<div class="exec-head">'
+            '<h1 class="page-header__title"><span class="icon icon-xl icon-muted">verified</span>Service Quality</h1>'
+            '<p class="page-header__subtitle">Water quality, continuity, and service performance metrics.</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with _r1_col:
+        _vp_col, _vm_col = st.columns(2)
+        with _vp_col:
+            st.markdown('<div class="text-eyebrow">View Period</div>', unsafe_allow_html=True)
+            view_type = st.radio(
+                "View Period", _freq['allowed'], horizontal=True,
+                key="quality_period", label_visibility="collapsed",
+                help=_freq['description'],
+            )
+        with _vm_col:
+            st.markdown('<div class="text-eyebrow">View metrics for</div>', unsafe_allow_html=True)
+            service_type = st.radio(
+                "View metrics for", ["Water", "Sanitation", "Both"], horizontal=True,
+                key="service_type_toggle_quality", label_visibility="collapsed",
+            ) or "Water"
+
+    # --- Second row: Country, Zone/City, Year, Month ------------------------
+    st.markdown("<div class='filter-row-gap'></div>", unsafe_allow_html=True)
+    filters = render_standardized_filters(
+        df=df_service,
+        page="quality",
+        key_prefix="quality",
+        country_col="country",
+        zone_col="zone",
+        year_col="year",
+        show_period=False,
+        show_zone=True,
+        show_year=True,
+        show_month=True,
+        auto_month=False,
+    )
+    filters['period'] = view_type
+    selected_country = filters['country']
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    selected_month_name = filters.get('month', 'All')  # Keep the name for display
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
+
     
     # ============================================================================
     # DATA IMPORT SECTION (Collapsed by default)
@@ -218,70 +292,6 @@ def scene_quality():
                     except Exception as e:
                         st.error(f"Error loading default data: {e}")
 
-    # Load data (use session state if available, otherwise use default loading)
-    if st.session_state.quality_service_data is not None:
-        # Use custom service data from session state
-        raw_data = st.session_state.quality_service_data.copy()
-        # Ensure date column is proper datetime
-        if 'date' in raw_data.columns:
-            # Convert string date like "Jan 2020" to datetime
-            raw_data['date'] = pd.to_datetime(raw_data['date'], format='%b %Y', errors='coerce')
-            # If that fails, try creating from year/month
-            if raw_data['date'].isna().all() and 'year' in raw_data.columns and 'month' in raw_data.columns:
-                raw_data['date'] = pd.to_datetime(
-                    raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
-                )
-        elif 'year' in raw_data.columns and 'month' in raw_data.columns:
-            raw_data['date'] = pd.to_datetime(
-                raw_data['year'].astype(str) + '-' + raw_data['month'].astype(str).str.zfill(2) + '-01'
-            )
-        raw_data = raw_data.sort_values('date') if 'date' in raw_data.columns else raw_data
-        service_data = {"full_data": filter_df_by_user_access(raw_data, "country")}
-        df_service = service_data["full_data"]
-    else:
-        service_data = _prepare_service_data()
-        df_service = service_data["full_data"]
-    
-    df_billing, df_fin, df_prod, df_national = load_extra_data()
-
-    # --- Header Section ---
-    header_container = st.container()
-    
-    # --- Standardized Filters (AUDC Dictionary Compliant) ---
-    filters = render_standardized_filters(
-        df=df_service,
-        page="quality",
-        key_prefix="quality",
-        country_col="country",
-        zone_col="zone",
-        year_col="year",
-        show_period=True,
-        show_zone=True,
-        show_year=True,
-        show_month=True  # Quality data is Monthly
-    )
-    
-    # Extract filter values
-    view_type = filters['period']
-    selected_country = filters['country']
-    selected_zone = filters['zone']
-    selected_year = filters['year']
-    selected_month_name = filters.get('month', 'All')  # Keep the name for display
-    selected_month = get_month_number(selected_month_name)
-    if selected_month is None:
-        selected_month = 'All'
-    
-    # Service Type Toggle (Quality-specific) — prominent so users notice they can
-    # switch between water and sanitation metrics.
-    st.markdown("**View metrics for**")
-    service_type = st.segmented_control(
-        "Service type",
-        ["Water", "Sanitation", "Both"],
-        default="Water",
-        key="service_type_toggle_quality",
-        label_visibility="collapsed",
-    ) or "Water"
-
     # --- Apply Filters using standardized helper ---
     df_s_filt = apply_standard_filters(df_service, filters, year_col='year', month_col='month')
     df_b_filt = apply_standard_filters(df_billing, filters, year_col='year', month_col='month') if not df_billing.empty else df_billing
@@ -295,22 +305,6 @@ def scene_quality():
             df_n_filt = df_n_filt[df_n_filt['country'].str.lower() == selected_country.lower()]
         if 'date_YY' in df_n_filt.columns and selected_year:
             df_n_filt = _safe_year_filter(df_n_filt, 'date_YY', selected_year)
-
-    # --- Populate Header with Export Button ---
-    with header_container:
-        h_col1, h_col2 = st.columns([6, 1])
-        with h_col1:
-            st.markdown("<h1 style='font-size: 24px; font-weight: 700; color: #111827; margin-bottom: 16px;'>Service & Quality</h1>", unsafe_allow_html=True)
-        with h_col2:
-            st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True) # Spacer for alignment
-            csv = df_s_filt.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="Export CSV",
-                data=csv,
-                file_name=f"quality_data_{selected_country}_{selected_year}.csv",
-                mime="text/csv",
-                key="export_btn_quality"
-            )
 
     if df_s_filt.empty:
         st.warning("No service data available for selected filters")

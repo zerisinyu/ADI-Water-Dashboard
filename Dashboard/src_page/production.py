@@ -17,6 +17,8 @@ from utils import (
     render_empty_state,
     render_no_data_panel,
     render_standardized_filters,
+    _render_month_select,
+    _render_year_select,
     apply_standard_filters,
     get_month_number,
 )
@@ -162,13 +164,7 @@ def scene_production():
     Focus: Plant Uptime, Extraction Optimization, Source Sustainability.
     """
     
-    render_page_header(
-        "Production & Operations",
-        eyebrow="Operations",
-        subtitle="Source-level production, NRW, and operational metrics.",
-        icon="factory",
-        badges=[{"label": "Daily", "kind": "neutral"}],
-    )
+    # Page title renders inline with the primary filters (see render_standardized_filters below).
 
     # ============================================================================
     # DATA INITIALIZATION (Before UI elements)
@@ -187,6 +183,113 @@ def scene_production():
             st.session_state.production_default_data_loaded = True
         except Exception as e:
             st.session_state.production_default_data_loaded = True  # Prevent repeated attempts
+    # --- Load Data ---
+    # Use session state data if available, otherwise use load_production_data()
+    if st.session_state.production_data is not None:
+        df_prod = st.session_state.production_data.copy()
+        # Apply preprocessing for session state data
+        cols_to_numeric = ['production_m3', 'service_hours']
+        for col in cols_to_numeric:
+            if col in df_prod.columns:
+                if df_prod[col].dtype == 'object':
+                    df_prod[col] = df_prod[col].astype(str).str.replace(r'[$,]', '', regex=True)
+                df_prod[col] = pd.to_numeric(df_prod[col], errors='coerce').fillna(0)
+        
+        if 'date_YYMMDD' in df_prod.columns:
+            df_prod['date_dt'] = pd.to_datetime(df_prod['date_YYMMDD'], format='%Y/%m/%d', errors='coerce')
+        elif 'date' in df_prod.columns:
+            df_prod['date_dt'] = pd.to_datetime(df_prod['date'], errors='coerce')
+        
+        if 'date_dt' in df_prod.columns:
+            df_prod['year'] = df_prod['date_dt'].dt.year.astype('Int64')
+            df_prod['month'] = df_prod['date_dt'].dt.month.astype('Int64')
+            df_prod['day'] = df_prod['date_dt'].dt.day.astype('Int64')
+        
+        # Clean zone column to ensure matching works
+        if 'zone' in df_prod.columns:
+            df_prod['zone'] = df_prod['zone'].astype(str).str.strip()
+
+        # Apply access control filtering
+        df_prod = filter_df_by_user_access(df_prod, "country")
+    else:
+        df_prod = load_production_data()
+    
+    if df_prod.empty:
+        st.warning("Production data not available.")
+        return
+
+    # --- Header row: title on the left; View Period + Unit on the right ---
+    from utils import get_page_frequencies, _render_country_select
+    _freq = get_page_frequencies("production")
+    _title_col, _r1_col = st.columns([2, 3], vertical_alignment="center")
+    with _title_col:
+        st.markdown(
+            '<div class="exec-head">'
+            '<h1 class="page-header__title"><span class="icon icon-xl icon-muted">factory</span>Production &amp; Operations</h1>'
+            '<p class="page-header__subtitle">Source-level production, NRW, and operational metrics.</p>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    with _r1_col:
+        _vp_col, _unit_col = st.columns(2)
+        with _vp_col:
+            st.markdown('<div class="text-eyebrow">View Period</div>', unsafe_allow_html=True)
+            view_type = st.radio(
+                "View Period", _freq['allowed'], horizontal=True,
+                key="prod_period", label_visibility="collapsed",
+                help=_freq['description'],
+            )
+        with _unit_col:
+            st.markdown('<div class="text-eyebrow">Unit</div>', unsafe_allow_html=True)
+            unit_mode = st.radio(
+                "Unit", ["Metric (m³)", "Imperial (gal)", "Percentage"],
+                horizontal=True, key="prod_unit_toggle", label_visibility="collapsed",
+            )
+
+    # Second row: Country, Year, Month, Source — all dropdowns together.
+    st.markdown("<div class='filter-row-gap'></div>", unsafe_allow_html=True)
+    f_country, f_year, f_month, f_source = st.columns([1.6, 1.2, 1.2, 2.2])
+
+    filters = {'period': view_type, 'zone': 'All'}
+    with f_country:
+        _country_res = _render_country_select(df_prod, "prod", "country")
+        selected_country = filters['country'] = _country_res['country']
+    with f_year:
+        filters['year'] = _render_year_select(df_prod, "prod", "year")
+    with f_month:
+        filters['month'] = _render_month_select("prod")
+    with f_source:
+        # Source filter. Production is measured per source (intake / treatment
+        # works), not per zone — a single source serves several billing zones, so
+        # a zone filter here can't be attributed without inflating volumes. The
+        # source dimension is the real, filterable one.
+        available_sources = []
+        if 'source' in df_prod.columns:
+            if selected_country != "All" and 'country' in df_prod.columns:
+                available_sources = sorted(
+                    df_prod[df_prod['country'].str.lower() == selected_country.lower()]['source'].astype(str).unique().tolist()
+                )
+            else:
+                available_sources = sorted(df_prod['source'].astype(str).unique().tolist())
+
+        selected_sources = st.multiselect(
+            "Source (Multi-select)",
+            available_sources,
+            key="prod_source_multiselect",
+            placeholder="All sources",
+        )
+
+    selected_zone = filters['zone']
+    selected_year = filters['year']
+    st.session_state["selected_year"] = selected_year
+    st.session_state["selected_month"] = filters['month']
+    selected_month_name = filters.get('month', 'All')
+    selected_month = get_month_number(selected_month_name)
+    if selected_month is None:
+        selected_month = 'All'
+
+    st.markdown("---")
+
     
     # ============================================================================
     # DATA IMPORT SECTION (Collapsed by default)
@@ -238,96 +341,6 @@ def scene_production():
                     except Exception as e:
                         st.error(f"Error loading default data: {e}")
 
-    # --- Load Data ---
-    # Use session state data if available, otherwise use load_production_data()
-    if st.session_state.production_data is not None:
-        df_prod = st.session_state.production_data.copy()
-        # Apply preprocessing for session state data
-        cols_to_numeric = ['production_m3', 'service_hours']
-        for col in cols_to_numeric:
-            if col in df_prod.columns:
-                if df_prod[col].dtype == 'object':
-                    df_prod[col] = df_prod[col].astype(str).str.replace(r'[$,]', '', regex=True)
-                df_prod[col] = pd.to_numeric(df_prod[col], errors='coerce').fillna(0)
-        
-        if 'date_YYMMDD' in df_prod.columns:
-            df_prod['date_dt'] = pd.to_datetime(df_prod['date_YYMMDD'], format='%Y/%m/%d', errors='coerce')
-        elif 'date' in df_prod.columns:
-            df_prod['date_dt'] = pd.to_datetime(df_prod['date'], errors='coerce')
-        
-        if 'date_dt' in df_prod.columns:
-            df_prod['year'] = df_prod['date_dt'].dt.year.astype('Int64')
-            df_prod['month'] = df_prod['date_dt'].dt.month.astype('Int64')
-            df_prod['day'] = df_prod['date_dt'].dt.day.astype('Int64')
-        
-        # Clean zone column to ensure matching works
-        if 'zone' in df_prod.columns:
-            df_prod['zone'] = df_prod['zone'].astype(str).str.strip()
-
-        # Apply access control filtering
-        df_prod = filter_df_by_user_access(df_prod, "country")
-    else:
-        df_prod = load_production_data()
-    
-    if df_prod.empty:
-        st.warning("Production data not available.")
-        return
-
-    # --- Standardized Filters (AUDC Dictionary Compliant) ---
-    filters = render_standardized_filters(
-        df=df_prod,
-        page="production",
-        key_prefix="prod",
-        country_col="country",
-        zone_col="zone",
-        year_col="year",
-        show_period=True,
-        show_zone=False, # We use a custom multiselect for zone on this page
-        show_year=True,
-        show_month=True  # Production data is Monthly/Daily
-    )
-    
-    # Extract filter values
-    view_type = filters['period']
-    selected_country = filters['country']
-    selected_zone = filters['zone']
-    selected_year = filters['year']
-    selected_month_name = filters.get('month', 'All')
-    selected_month = get_month_number(selected_month_name)
-    if selected_month is None:
-        selected_month = 'All'
-    
-    # Production-specific: Zone multiselect and Unit toggle
-    f3, f4 = st.columns([2, 1.5])
-    
-    with f3:
-        # Zone/City Filter (multiselect for production)
-        available_zones = []
-        if selected_country != "All":
-            if 'country' in df_prod.columns and 'zone' in df_prod.columns:
-                available_zones = sorted(df_prod[df_prod['country'].str.lower() == selected_country.lower()]['zone'].unique().tolist())
-        else:
-            if 'zone' in df_prod.columns:
-                available_zones = sorted(df_prod['zone'].unique().tolist())
-        
-        selected_zones = st.multiselect(
-            "Zone/City (Multi-select)",
-            available_zones,
-            key="prod_zone_multiselect",
-            placeholder="Select Zones"
-        )
-        
-    with f4:
-        # Unit Toggle
-        unit_mode = st.radio(
-            "Unit",
-            ["Metric (m³)", "Imperial (gal)", "Percentage"],
-            horizontal=True,
-            key="prod_unit_toggle"
-        )
-
-    st.markdown("---")
-
     # --- Apply Filters ---
     df_p_filt = df_prod.copy()
     
@@ -347,9 +360,9 @@ def scene_production():
     df_p_filt = apply_standard_filters(df_p_filt, filters, year_col='year', month_col='month')
         
     # Apply Zone Filter (multiselect - case-insensitive)
-    if selected_zones and 'zone' in df_p_filt.columns:
-        selected_zones_lower = [z.lower() for z in selected_zones]
-        df_p_filt = df_p_filt[df_p_filt['zone'].str.lower().isin(selected_zones_lower)]
+    if selected_sources and 'source' in df_p_filt.columns:
+        _sel_src = [s.lower() for s in selected_sources]
+        df_p_filt = df_p_filt[df_p_filt['source'].astype(str).str.lower().isin(_sel_src)]
 
     if df_p_filt.empty:
         st.warning(f"No data available for the selected filters.")
@@ -453,14 +466,15 @@ def scene_production():
         if not _bill.empty:
             if selected_country and selected_country != "All":
                 _bill = _bill[_bill["country"].str.lower() == selected_country.lower()]
-            if selected_zones and "zone" in _bill.columns:
-                _zl = [z.lower() for z in selected_zones]
-                _bill = _bill[_bill["zone"].str.lower().isin(_zl)]
+            if selected_sources and "source" in _bill.columns:
+                _sl = [s.lower() for s in selected_sources]
+                _bill = _bill[_bill["source"].astype(str).str.lower().isin(_sl)]
         _months_in_scope = df_p_filt["date_dt"].dt.to_period("M").unique()
         if not _bill.empty and len(_months_in_scope) > 0:
             _bill = _bill[_bill["_month"].isin(_months_in_scope)]
         _total_cons_m3 = float(_bill["consumption_m3"].sum()) if not _bill.empty else 0.0
-        _pop = _population_for_rows(df_p_filt, selected_country, selected_zones)
+        # Population is a zone/country figure, not attributable to a source — keep it country-level.
+        _pop = _population_for_rows(df_p_filt, selected_country, None)
         _pop_val = float(_pop.dropna().iloc[0]) if _pop.notna().any() else 0.0
         _span = df_p_filt["date_dt"].max() - df_p_filt["date_dt"].min()
         _days = max(int(_span.days) + 1, 1)
@@ -521,156 +535,14 @@ def scene_production():
     # TABBED ANALYSIS SECTIONS
     # ============================================================================
 
-    render_section_header("Production analysis", eyebrow="Deep dive")
-    
-    prod_tab1, prod_tab2, prod_tab3 = st.tabs(["Infrastructure", "Source analysis", "Trends & forecasting"])
-    
     # ============================================================================
-    # TAB 1: Treatment Infrastructure Performance
+    # PRODUCTION TRENDS & FORECASTING (shown above the analysis tabs)
     # ============================================================================
-    with prod_tab1:
-        render_section_header("Treatment infrastructure performance", icon="water")
-        st.markdown("Water Treatment Plants (WTP) and Faecal Sludge Management (FSM) metrics.")
-        
-        infra_c1, infra_c2 = st.columns(2)
-    
-    # Panel 1: WTP — data-aware. Per-plant capacity/efficiency/asset-age aren't in
-    # this dataset (the old bubble chart fabricated them from hash(source)). When
-    # real per-source production exists we show that; otherwise a data-gap panel.
-    with infra_c1:
-        st.markdown("**Water Treatment Plants (WTP)**")
-        wtp_data = (
-            df_p_filt.groupby('source')['volume_display'].sum().reset_index()
-            if ('source' in df_p_filt.columns and 'volume_display' in df_p_filt.columns)
-            else pd.DataFrame()
-        )
-        wtp_data = wtp_data[wtp_data['volume_display'] > 0] if not wtp_data.empty else wtp_data
-        if not wtp_data.empty:
-            fig_wtp = px.bar(
-                wtp_data.sort_values('volume_display'),
-                x='volume_display', y='source', orientation='h',
-                color='volume_display', color_continuous_scale=SEQ_BLUE,
-                labels={'volume_display': 'Production volume', 'source': 'Source'},
-                title='Production volume by source',
-            )
-            fig_wtp.update_layout(coloraxis_showscale=False)
-            style_bar(fig_wtp, height=350)
-            st.plotly_chart(fig_wtp, use_container_width=True)
-            st.caption("Per-plant capacity utilisation, efficiency and asset age aren't collected yet.")
-        else:
-            render_no_data_panel(
-                "Plant-level data not collected yet",
-                "No per-source production is reported for this selection, and per-plant "
-                "capacity / efficiency / asset age aren't in this dataset.",
-                icon="factory",
-            )
+    render_section_header("Production trends & forecasting", icon="show_chart")
+    st.markdown("Advanced analytics with time series visualization and forecasting.")
 
-    # Panel 2: FSM
-    with infra_c2:
-        st.markdown("**Faecal Sludge Management**")
-        render_no_data_panel(
-            "FSTP capacity utilisation not collected yet",
-            "Treatment-plant capacity-utilisation data isn't reported here yet. "
-            "Real faecal-sludge emptied / treated / reused volumes are available "
-            "on the Service & Quality page (Sanitation tab).",
-            icon="recycling",
-        )
-
-    # ============================================================================
-    # TAB 2: Source Balancing Act (Extraction Analysis)
-    # ============================================================================
-    with prod_tab2:
-        render_section_header("Source balancing", icon="tune")
-        st.markdown("Extraction analysis and source performance metrics.")
-        
-        c1, c2 = st.columns(2)
-    
-    with c1:
-        st.markdown(f"**Production Mix ({view_type})**")
-        
-        # Aggregation based on View Type
-        if view_type == "Daily":
-            group_cols = ['date_dt', 'source']
-            x_axis = 'date_dt'
-        elif view_type == "Monthly":
-            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('M').dt.to_timestamp()
-            group_cols = ['period', 'source']
-            x_axis = 'period'
-        elif view_type == "Quarterly":
-            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('Q').dt.to_timestamp()
-            group_cols = ['period', 'source']
-            x_axis = 'period'
-        else: # Annual
-            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('Y').dt.to_timestamp()
-            group_cols = ['period', 'source']
-            x_axis = 'period'
-
-        prod_trend = df_p_filt.groupby(group_cols)['volume_display'].sum().reset_index()
-        
-        if prod_trend.empty:
-            st.info("No production data available for visualization.")
-        else:
-            # Handle Percentage View
-            groupnorm = 'percent' if unit_mode == "Percentage" else None
-            y_label = f'Volume ({unit_label})' if unit_mode != "Percentage" else "Percentage Share"
-            
-            # Use bar chart for better readability when daily data is dense
-            if view_type == "Daily" and len(prod_trend) > 60:
-                # Switch to line chart for cleaner visualization with many data points
-                fig_mix = px.line(prod_trend, x=x_axis, y='volume_display', color='source',
-                                  labels={'volume_display': y_label, x_axis: 'Date'},
-                                  color_discrete_sequence=colorway())
-                fig_mix.update_traces(mode='lines')
-            else:
-                # Use stacked bar chart for clearer comparison
-                fig_mix = px.bar(prod_trend, x=x_axis, y='volume_display', color='source',
-                                 labels={'volume_display': y_label, x_axis: 'Date'},
-                                 color_discrete_sequence=colorway(),
-                                 barmode='stack')
-            
-            fig_mix.update_layout(xaxis_tickangle=-45)
-            style_bar(fig_mix, height=340)
-            st.plotly_chart(fig_mix, use_container_width=True)
-        
-    with c2:
-        st.markdown("**Source Performance Leaderboard**")
-        # Aggregated stats
-        source_stats = df_p_filt.groupby('source').agg({
-            'volume_display': 'sum',
-            'service_hours': 'mean'
-        }).reset_index()
-        
-        if source_stats.empty:
-            st.info("No source performance data available.")
-        else:
-            x_col = 'volume_display'
-            x_label = f'Total Volume ({unit_label})'
-            
-            # If percentage view, calculate share
-            if unit_mode == "Percentage":
-                total_vol = source_stats['volume_display'].sum()
-                source_stats['share'] = (source_stats['volume_display'] / total_vol * 100)
-                x_col = 'share'
-                x_label = 'Volume Share (%)'
-
-            fig_perf = px.bar(source_stats, x=x_col, y='source', 
-                              color='service_hours',
-                              title=f"Volume vs Avg Service Hours",
-                              labels={x_col: x_label, 'service_hours': 'Avg Hours/Day'},
-                              color_continuous_scale=performance_scale(higher_is_better=True),
-                              orientation='h')
-            style_bar(fig_perf, height=350)
-            st.plotly_chart(fig_perf, use_container_width=True)
-
-    # ============================================================================
-    # TAB 3: Production Trends & Forecasting
-    # ============================================================================
-    with prod_tab3:
-        render_section_header("Production trends & forecasting", icon="show_chart")
-        st.markdown("Advanced analytics with time series visualization and forecasting.")
-
-        # --- Data Preparation for Time Series ---
-        import numpy as np
+    # --- Data Preparation for Time Series ---
+    import numpy as np
     
     # Aggregate to daily total across all selected sources/zones
     ts_df = df_p_filt.groupby('date_dt')['volume_display'].sum().reset_index()
@@ -685,9 +557,9 @@ def scene_production():
         if not bill.empty:
             if selected_country and selected_country != "All" and "country" in bill.columns:
                 bill = bill[bill["country"].str.lower() == selected_country.lower()]
-            if selected_zones and "zone" in bill.columns:
-                _zl = [z.lower() for z in selected_zones]
-                bill = bill[bill["zone"].str.lower().isin(_zl)]
+            if selected_sources and "source" in bill.columns:
+                _sl = [s.lower() for s in selected_sources]
+                bill = bill[bill["source"].astype(str).str.lower().isin(_sl)]
 
         ts_df["_month"] = ts_df["date_dt"].dt.to_period("M")
         if not bill.empty:
@@ -707,7 +579,7 @@ def scene_production():
 
         # Population served — real annual figure from access data (held flat
         # within a year), left as NaN when unavailable rather than fabricated.
-        ts_df["population"] = _population_for_rows(ts_df, selected_country, selected_zones)
+        ts_df["population"] = _population_for_rows(ts_df, selected_country, None)
 
         if not has_real_consumption:
             st.caption(
@@ -884,6 +756,149 @@ def scene_production():
     else:
         st.info("No data available for trend analysis.")
 
+    st.markdown("---")
+
+    render_section_header("Production analysis", eyebrow="Deep dive")
+    
+    prod_tab1, prod_tab2 = st.tabs(["Infrastructure", "Source analysis"])
+    
+    # ============================================================================
+    # TAB 1: Treatment Infrastructure Performance
+    # ============================================================================
+    with prod_tab1:
+        render_section_header("Treatment infrastructure performance", icon="water")
+        
+        infra_c1, infra_c2 = st.columns(2)
+    
+    # Panel 1: WTP — data-aware. Per-plant capacity/efficiency/asset-age aren't in
+    # this dataset (the old bubble chart fabricated them from hash(source)). When
+    # real per-source production exists we show that; otherwise a data-gap panel.
+    with infra_c1:
+        st.markdown("**Water Treatment Plants (WTP)**")
+        wtp_data = (
+            df_p_filt.groupby('source')['volume_display'].sum().reset_index()
+            if ('source' in df_p_filt.columns and 'volume_display' in df_p_filt.columns)
+            else pd.DataFrame()
+        )
+        wtp_data = wtp_data[wtp_data['volume_display'] > 0] if not wtp_data.empty else wtp_data
+        if not wtp_data.empty:
+            fig_wtp = px.bar(
+                wtp_data.sort_values('volume_display'),
+                x='volume_display', y='source', orientation='h',
+                color='volume_display', color_continuous_scale=SEQ_BLUE,
+                labels={'volume_display': 'Production volume', 'source': 'Source'},
+                title='Production volume by source',
+            )
+            fig_wtp.update_layout(coloraxis_showscale=False)
+            style_bar(fig_wtp, height=350)
+            st.plotly_chart(fig_wtp, use_container_width=True)
+            st.caption("Per-plant capacity utilisation, efficiency and asset age aren't collected yet.")
+        else:
+            render_no_data_panel(
+                "Plant-level data not collected yet",
+                "No per-source production is reported for this selection, and per-plant "
+                "capacity / efficiency / asset age aren't in this dataset.",
+                icon="factory",
+            )
+
+    # Panel 2: FSM
+    with infra_c2:
+        st.markdown("**Faecal Sludge Management**")
+        render_no_data_panel(
+            "FSTP capacity utilisation not collected yet",
+            "Treatment-plant capacity-utilisation data isn't reported here yet. "
+            "Real faecal-sludge emptied / treated / reused volumes are available "
+            "on the Service & Quality page (Sanitation tab).",
+            icon="recycling",
+        )
+
+    # ============================================================================
+    # TAB 2: Source Balancing Act (Extraction Analysis)
+    # ============================================================================
+    with prod_tab2:
+        render_section_header("Source balancing", icon="tune")
+        st.markdown("Extraction analysis and source performance metrics.")
+        
+        c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown(f"**Production Mix ({view_type})**")
+        
+        # Aggregation based on View Type
+        if view_type == "Daily":
+            group_cols = ['date_dt', 'source']
+            x_axis = 'date_dt'
+        elif view_type == "Monthly":
+            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('M').dt.to_timestamp()
+            group_cols = ['period', 'source']
+            x_axis = 'period'
+        elif view_type == "Quarterly":
+            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('Q').dt.to_timestamp()
+            group_cols = ['period', 'source']
+            x_axis = 'period'
+        else: # Annual
+            df_p_filt['period'] = df_p_filt['date_dt'].dt.to_period('Y').dt.to_timestamp()
+            group_cols = ['period', 'source']
+            x_axis = 'period'
+
+        prod_trend = df_p_filt.groupby(group_cols)['volume_display'].sum().reset_index()
+        
+        if prod_trend.empty:
+            st.info("No production data available for visualization.")
+        else:
+            # Handle Percentage View
+            groupnorm = 'percent' if unit_mode == "Percentage" else None
+            y_label = f'Volume ({unit_label})' if unit_mode != "Percentage" else "Percentage Share"
+            
+            # Use bar chart for better readability when daily data is dense
+            if view_type == "Daily" and len(prod_trend) > 60:
+                # Switch to line chart for cleaner visualization with many data points
+                fig_mix = px.line(prod_trend, x=x_axis, y='volume_display', color='source',
+                                  labels={'volume_display': y_label, x_axis: 'Date'},
+                                  color_discrete_sequence=colorway())
+                fig_mix.update_traces(mode='lines')
+            else:
+                # Use stacked bar chart for clearer comparison
+                fig_mix = px.bar(prod_trend, x=x_axis, y='volume_display', color='source',
+                                 labels={'volume_display': y_label, x_axis: 'Date'},
+                                 color_discrete_sequence=colorway(),
+                                 barmode='stack')
+            
+            fig_mix.update_layout(xaxis_tickangle=-45)
+            style_bar(fig_mix, height=340)
+            st.plotly_chart(fig_mix, use_container_width=True)
+        
+    with c2:
+        st.markdown("**Source Performance Leaderboard**")
+        # Aggregated stats
+        source_stats = df_p_filt.groupby('source').agg({
+            'volume_display': 'sum',
+            'service_hours': 'mean'
+        }).reset_index()
+        
+        if source_stats.empty:
+            st.info("No source performance data available.")
+        else:
+            x_col = 'volume_display'
+            x_label = f'Total Volume ({unit_label})'
+            
+            # If percentage view, calculate share
+            if unit_mode == "Percentage":
+                total_vol = source_stats['volume_display'].sum()
+                source_stats['share'] = (source_stats['volume_display'] / total_vol * 100)
+                x_col = 'share'
+                x_label = 'Volume Share (%)'
+
+            fig_perf = px.bar(source_stats, x=x_col, y='source', 
+                              color='service_hours',
+                              title=f"Volume vs Avg Service Hours",
+                              labels={x_col: x_label, 'service_hours': 'Avg Hours/Day'},
+                              color_continuous_scale=performance_scale(higher_is_better=True),
+                              orientation='h')
+            style_bar(fig_perf, height=350)
+            st.plotly_chart(fig_perf, use_container_width=True)
+
+
     # ============================================================================
     # STRATEGIC PLANNING SECTION
     # ============================================================================
@@ -894,17 +909,24 @@ def scene_production():
     plan_tab1, plan_tab2 = st.tabs(["Resource Sustainability", "Downtime Logger"])
     
     with plan_tab1:
-        # Level of water stress (SDG 6.4.2) needs total freshwater WITHDRAWALS
-        # vs renewable resources. Utility production alone is not national
-        # withdrawal, so a true extraction rate can't be computed here — show an
-        # honest placeholder instead of a gauge built on a fabricated limit.
-        render_no_data_panel(
-            "Water-stress data not available",
-            "The SDG 6.4.2 water-stress ratio needs total freshwater withdrawals "
-            "against renewable resources. Utility production alone can't stand in "
-            "for national withdrawals, so this isn't shown rather than estimated.",
-            icon="water_loss",
-        )
+        # Both sustainability views need inputs the utility dataset does not carry,
+        # so two honest placeholders sit side by side rather than fabricated gauges.
+        rs_c1, rs_c2 = st.columns(2)
+        with rs_c1:
+            render_no_data_panel(
+                "Water-stress ratio not available",
+                "The SDG 6.4.2 water-stress ratio needs total freshwater withdrawals "
+                "against renewable resources. Utility production alone can't stand in "
+                "for national withdrawals, so this isn't shown rather than estimated.",
+                icon="water_loss",
+            )
+        with rs_c2:
+            render_no_data_panel(
+                "Source-yield trend not available",
+                "Long-term source-yield and groundwater-level records aren't reported "
+                "in this dataset, so gradual source depletion can't be tracked here yet.",
+                icon="show_chart",
+            )
     
     with plan_tab2:
         st.markdown("**Downtime Logger**")
@@ -922,18 +944,6 @@ def scene_production():
             submitted = st.form_submit_button("Log Downtime Event")
             if submitted:
                 st.success(f"Logged: {log_source} - {log_reason} on {log_date}")
-
-    # --- Data-gap summary --------------------------------------------------
-    st.markdown("---")
-    render_no_data_panel(
-        "Some production datasets aren't collected yet",
-        "Plant-level capacity/efficiency, faecal-sludge-treatment utilisation, and "
-        "asset-age records aren't reported in this dataset — the sections above show "
-        "data-gap placeholders rather than estimated figures. Production volume, "
-        "service hours and NRW are real.",
-        icon="fact_check",
-        tag="Data coverage",
-    )
 
     # ============================================================================
     # DATA EXPORT SECTION
@@ -1126,3 +1136,21 @@ def scene_production():
                 key="download_prod_metrics_json"
             )
 
+
+    # --- Data quality & alerts (footer, consistent with the other pages) ---
+    st.markdown("---")
+    render_section_header("Data quality & alerts", icon="warning")
+    prod_alerts = [
+        "⚠️ Plant-level capacity, efficiency and asset-age records not collected",
+        "⚠️ Faecal-sludge-treatment (FSTP) utilisation not reported here",
+        "⚠️ SDG 6.4.2 water-stress inputs (national withdrawals) unavailable",
+    ]
+    st.markdown(f"""
+    <div style='background-color: #fefce8; border: 1px solid #fde047; border-radius: 8px; padding: 16px; margin-bottom: 16px;'>
+        <h4 style='color: #854d0e; margin-top: 0; font-size: 16px; margin-bottom: 8px;'>Data Gaps Detected</h4>
+        <ul style='color: #a16207; margin-bottom: 0; padding-left: 20px;'>
+            {''.join([f"<li style='margin-bottom: 4px;'>{a}</li>" for a in prod_alerts])}
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    st.caption("Production volume, service hours and NRW are real, measured figures.")

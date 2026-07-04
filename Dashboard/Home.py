@@ -95,6 +95,7 @@ from src_page.production import scene_production as scene_production_page
 from src_page.governance import scene_governance as scene_governance_page
 from src_page.sector import scene_sector as scene_sector_page
 from src_page.forecasting import scene_forecasting as scene_forecasting_page
+from src_page.docs import scene_docs as scene_docs_page
 
 
 def _render_llm_error(exc: Exception) -> None:
@@ -1102,11 +1103,12 @@ def _majibot_panel_css() -> str:
                    the rest of the content sits in its own scroll region. */
                 > [data-testid="stLayoutWrapper"]:first-child {
                     flex: 0 0 auto;
-                    background: var(--navy, #1f2d3a);
+                    background: var(--brand-strong, #2c5582);
                     margin: -12px -16px 8px;          /* bleed to panel edges */
                     padding: 14px 16px;
                     border-bottom: none;
                     border-radius: 16px 16px 0 0;
+                    width: calc(100% + 32px) !important;
                 }
                 /* Light text + translucent avatar on the navy header bar */
                 > [data-testid="stLayoutWrapper"]:first-child .majibot-panel__name-main,
@@ -1423,7 +1425,7 @@ def _render_majibot_panel() -> None:
         if show_chat_surface and suggested and not display_messages:
             with msg_container:
                 st.markdown(
-                    '<div class="text-eyebrow" style="margin-top: 8px;">'
+                    '<div class="text-eyebrow" style="margin-top: 8px; margin-bottom: 10px;">'
                     '<span class="icon icon-sm icon-muted">lightbulb</span>&nbsp;Try asking'
                     '</div>',
                     unsafe_allow_html=True,
@@ -1581,6 +1583,8 @@ def render_scene_page(scene_key: str) -> None:
             scene_sector_page()
         elif scene_key == "forecasting":
             scene_forecasting_page()
+        elif scene_key == "docs":
+            scene_docs_page()
         elif scene_key == "admin":
             # Admin settings page - access controlled within render_admin_settings_page
             render_admin_settings_page()

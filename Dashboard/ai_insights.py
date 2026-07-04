@@ -1033,6 +1033,66 @@ def generate_board_brief_llm(
     return (text or "").strip()
 
 
+def generate_todo_list_llm(
+    nrw: float,
+    collection_efficiency: float,
+    service_hours: float,
+    anomalies: Optional[list] = None,
+    selected_country: str = "All",
+) -> list:
+    """AI-drafted MajiBot to-do list (BYOK).
+
+    Turns the current headline metrics and any detected anomalies into a short,
+    prioritized action list. Returns a list of ``{"text": ...}`` items. Raises on
+    failure so callers can fall back to the rule-based list.
+    """
+    from llm import ChatLLM, LLMConfig, configured_provider, active_provider, default_model
+
+    scope = selected_country if selected_country and selected_country != "All" else "all countries"
+    anomaly_lines = ""
+    for a in (anomalies or [])[:6]:
+        metric = a.get("metric", "metric")
+        zone = a.get("zone") or a.get("country") or "system"
+        change = a.get("change_pct", 0)
+        anomaly_lines += f"- {metric} in {zone} changed {change:+.1f}% versus the prior window\n"
+
+    facts = (
+        f"Scope: {scope}\n"
+        f"Non-revenue water: {nrw:.1f}%\n"
+        f"Collection efficiency: {collection_efficiency:.1f}%\n"
+        f"Service continuity: {service_hours:.1f} hours per day\n"
+        f"Recent anomalies:\n{anomaly_lines or '- none flagged'}\n"
+    )
+
+    system = (
+        "You are MajiBot, an operations assistant for the Managing Director of a "
+        "water utility. From the facts, write a short prioritized to-do list of "
+        "concrete next actions. Use ONLY the facts provided and never invent "
+        "numbers. Return three to five items, one per line, each a single "
+        "imperative sentence. No numbering, no markdown, no preamble."
+    )
+    user = f"Facts:\n{facts}\nWrite the to-do list now."
+
+    prov = configured_provider()
+    if prov and prov != active_provider():
+        llm = ChatLLM(LLMConfig(provider=prov, model=default_model(prov)))
+    else:
+        llm = ChatLLM()
+    text = llm.chat_once(
+        [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        inject_context=False,
+    )
+    items = []
+    for line in (text or "").splitlines():
+        cleaned = line.strip().lstrip("-•*0123456789. ").strip()
+        if cleaned:
+            items.append({"text": cleaned})
+    return items[:5]
+
+
 def generate_monthly_report(
     billing_df: pd.DataFrame,
     prod_df: pd.DataFrame,

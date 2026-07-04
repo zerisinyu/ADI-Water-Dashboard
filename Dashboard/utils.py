@@ -188,6 +188,78 @@ def get_page_frequencies(page: str) -> Dict[str, Any]:
     })
 
 
+def _render_year_select(df: pd.DataFrame, key_prefix: str, year_col: str = "year"):
+    """Render the standard Year selectbox (reads/writes the global selected_year).
+
+    Factored out so pages can place Year in a secondary filter row while
+    render_standardized_filters keeps it in the header row."""
+    if year_col in df.columns:
+        years = sorted(df[year_col].dropna().unique().tolist(), reverse=True)
+        try:
+            years = [int(y) for y in years]
+        except (ValueError, TypeError):
+            pass
+    else:
+        years = list(range(2024, 2019, -1))  # Default 2024-2020
+
+    default_year_idx = 0
+    if "selected_year" in st.session_state and st.session_state.selected_year in years:
+        default_year_idx = years.index(st.session_state.selected_year)
+
+    return st.selectbox("Year", years, index=default_year_idx, key=f"{key_prefix}_year")
+
+
+def _render_month_select(key_prefix: str):
+    """Render the standard Month selectbox (reads/writes the global selected_month)."""
+    month_names = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    default_month_idx = 0
+    if "selected_month" in st.session_state and st.session_state.selected_month in month_names:
+        default_month_idx = month_names.index(st.session_state.selected_month)
+    return st.selectbox("Month", month_names, index=default_month_idx, key=f"{key_prefix}_month")
+
+
+def _render_country_select(df: pd.DataFrame, key_prefix: str, country_col: str = "country") -> Dict[str, Any]:
+    """Render the standard Country selectbox, with access-control locking.
+
+    Factored out so pages can place Country in a secondary filter row while
+    render_standardized_filters keeps it in the header row. Returns
+    {'country': str, 'is_locked': bool}."""
+    try:
+        from auth import get_current_user, UserRole, get_allowed_countries
+        user = get_current_user()
+        allowed_countries = get_allowed_countries()
+        is_master_user = user is not None and user.role == UserRole.MASTER_USER
+    except ImportError:
+        allowed_countries = []
+        is_master_user = True
+
+    if is_master_user:
+        countries = ['All'] + sorted(df[country_col].unique().tolist()) if country_col in df.columns else ['All']
+    else:
+        countries = allowed_countries if allowed_countries else ['All']
+
+    default_country_idx = 0
+    if "selected_country" in st.session_state:
+        validated = validate_selected_country(st.session_state.selected_country)
+        if validated in countries:
+            default_country_idx = countries.index(validated)
+
+    is_locked = not is_master_user and len(countries) == 1
+    if is_locked:
+        st.markdown(f"""
+        <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+                    padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-top: 24px;'>
+            <span style='font-size: 1rem;'>🔒</span>
+            <span style='font-weight: 600; color: #334155;'>{countries[0]}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        return {'country': countries[0], 'is_locked': True}
+
+    country = st.selectbox("Country", countries, index=default_country_idx, key=f"{key_prefix}_country")
+    return {'country': validate_selected_country(country), 'is_locked': False}
+
+
 def render_standardized_filters(
     df: pd.DataFrame,
     page: str,
@@ -199,7 +271,12 @@ def render_standardized_filters(
     show_period: bool = True,
     show_zone: bool = True,
     show_year: bool = True,
-    show_month: bool = False
+    show_month: bool = False,
+    show_country: bool = True,
+    title: Optional[str] = None,
+    subtitle: Optional[str] = None,
+    icon: Optional[str] = None,
+    auto_month: bool = True,
 ) -> Dict[str, Any]:
     """
     Render standardized filters for all dashboard pages based on AUDC data dictionary.
@@ -246,12 +323,13 @@ def render_standardized_filters(
     freq_config = get_page_frequencies(page)
     
     # Determine column layout based on what's shown
-    num_cols = sum([show_period, True, show_zone, show_year])  # Country always shown
+    num_cols = sum([show_period, show_country, show_zone, show_year])
     # Narrow widths so country/zone/year/month (+ period) fit on a single row.
     col_widths = []
     if show_period:
         col_widths.append(1.4)
-    col_widths.append(1.6)  # Country
+    if show_country:
+        col_widths.append(1.6)  # Country
     if show_zone:
         col_widths.append(1.6)
     if show_year:
@@ -259,9 +337,34 @@ def render_standardized_filters(
     if show_month:
         col_widths.append(1.2)  # keep month in the same row as country/year
 
-    cols = st.columns(col_widths)
+    # Home-style one-row header: when a title is given, the title sits on the
+    # left and the filters sit in a nested column group on the right (mirrors
+    # Home.py's title_col | filt_col layout). Otherwise filters render full-width.
+    if title:
+        icon_html = (
+            f'<span class="icon icon-xl icon-muted">{_html.escape(icon)}</span>'
+            if icon else ""
+        )
+        subtitle_html = (
+            f'<p class="page-header__subtitle">{_html.escape(subtitle)}</p>'
+            if subtitle else ""
+        )
+        # Title takes 2/5 of the width so it stays on one line; filters share 3/5.
+        title_col, filt_col = st.columns([2, 3], vertical_alignment="center")
+        with title_col:
+            st.markdown(
+                '<div class="exec-head">'
+                f'<h1 class="page-header__title">{icon_html}{_html.escape(title)}</h1>'
+                f'{subtitle_html}'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+        with filt_col:
+            cols = st.columns(col_widths)
+    else:
+        cols = st.columns(col_widths)
     col_idx = 0
-    
+
     # Initialize return dict
     result = {
         'period': freq_config['default'],
@@ -284,42 +387,14 @@ def render_standardized_filters(
             )
         col_idx += 1
     
-    # Country Filter (with access control)
-    with cols[col_idx]:
-        if is_master_user:
-            countries = ['All'] + sorted(df[country_col].unique().tolist()) if country_col in df.columns else ['All']
-        else:
-            countries = allowed_countries if allowed_countries else ['All']
-        
-        # Get default from session state
-        default_country_idx = 0
-        if "selected_country" in st.session_state:
-            validated = validate_selected_country(st.session_state.selected_country)
-            if validated in countries:
-                default_country_idx = countries.index(validated)
-        
-        # Check if locked
-        is_locked = not is_master_user and len(countries) == 1
-        result['is_locked'] = is_locked
-        
-        if is_locked:
-            st.markdown(f"""
-            <div style='background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; 
-                        padding: 10px 14px; display: flex; align-items: center; gap: 8px; margin-top: 24px;'>
-                <span style='font-size: 1rem;'>🔒</span>
-                <span style='font-weight: 600; color: #334155;'>{countries[0]}</span>
-            </div>
-            """, unsafe_allow_html=True)
-            result['country'] = countries[0]
-        else:
-            result['country'] = st.selectbox(
-                "Country", 
-                countries, 
-                index=default_country_idx, 
-                key=f"{key_prefix}_country"
-            )
-            result['country'] = validate_selected_country(result['country'])
-    col_idx += 1
+    # Country Filter (with access control) — omitted when show_country=False so
+    # the caller can render it in a secondary row instead (e.g. Production).
+    if show_country:
+        with cols[col_idx]:
+            country_res = _render_country_select(df, key_prefix, country_col)
+            result['country'] = country_res['country']
+            result['is_locked'] = country_res['is_locked']
+        col_idx += 1
     
     # Zone Filter (dependent on country)
     if show_zone:
@@ -349,47 +424,18 @@ def render_standardized_filters(
     # Year Filter
     if show_year:
         with cols[col_idx]:
-            if year_col in df.columns:
-                years = sorted(df[year_col].dropna().unique().tolist(), reverse=True)
-                # Convert to int if possible
-                try:
-                    years = [int(y) for y in years]
-                except (ValueError, TypeError):
-                    pass
-            else:
-                years = list(range(2024, 2019, -1))  # Default 2024-2020
-            
-            default_year_idx = 0
-            if "selected_year" in st.session_state and st.session_state.selected_year in years:
-                default_year_idx = years.index(st.session_state.selected_year)
-            
-            result['year'] = st.selectbox(
-                "Year",
-                years,
-                index=default_year_idx,
-                key=f"{key_prefix}_year"
-            )
+            result['year'] = _render_year_select(df, key_prefix, year_col)
         col_idx += 1
-    
+
     # Month filter. When show_month is True it sits in the same row as
     # country/year (a column was reserved above); otherwise it appears in its own
     # row only for Monthly/Daily periods.
-    month_names = ['All', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    default_month_idx = 0
-    if "selected_month" in st.session_state and st.session_state.selected_month in month_names:
-        default_month_idx = month_names.index(st.session_state.selected_month)
-
     if show_month:
         with cols[col_idx]:
-            result['month'] = st.selectbox(
-                "Month", month_names, index=default_month_idx, key=f"{key_prefix}_month",
-            )
+            result['month'] = _render_month_select(key_prefix)
         col_idx += 1
-    elif result['period'] in ['Monthly', 'Daily']:
-        result['month'] = st.selectbox(
-            "Month", month_names, index=default_month_idx, key=f"{key_prefix}_month",
-        )
+    elif auto_month and result['period'] in ['Monthly', 'Daily']:
+        result['month'] = _render_month_select(key_prefix)
 
     # ------------------------------------------------------------------
     # Write selections back to the GLOBAL session keys so that the choice
@@ -497,6 +543,7 @@ class KPI:
     donut: Optional[float] = None    # 0–100 — renders a mini donut instead of a sparkline
     help: Optional[str] = None       # tooltip text shown on an ⓘ next to the label
     metric_key: Optional[str] = None  # METRIC_REGISTRY key — auto-fills `help`
+    href: Optional[str] = None       # when set, the whole card links to this URL (same tab)
 
 
 def _classify_delta(delta: str, kind: str) -> str:
@@ -600,8 +647,15 @@ def render_kpi_row(items: Iterable[KPI]) -> None:
         else:
             viz_html = ""
 
+        # When href is set the whole card becomes a same-tab link to that page.
+        if it.href:
+            card_open = f'<a class="kpi-card kpi-card--link" href="{_html.escape(it.href)}" target="_self">'
+            card_close = '</a>'
+        else:
+            card_open = '<div class="kpi-card">'
+            card_close = '</div>'
         parts.append(
-            '<div class="kpi-card">'
+            f'{card_open}'
             f'<div class="kpi-card__head">'
             f'<div class="kpi-card__label">{_html.escape(it.label)}{help_html}</div>'
             f'{icon_html}'
@@ -610,7 +664,7 @@ def render_kpi_row(items: Iterable[KPI]) -> None:
             f'{viz_html}'
             f'{delta_html}'
             f'{footnote_html}'
-            '</div>'
+            f'{card_close}'
         )
     parts.append('</div>')
     st.markdown("".join(parts), unsafe_allow_html=True)
@@ -780,9 +834,14 @@ def render_action_checklist(title: str, items: List[Dict[str, str]]) -> None:
                     pass
 
 
-def render_majibot_todo(title: str, items: List[Dict[str, str]]) -> None:
+def render_majibot_todo(title: str, items: List[Dict[str, str]], *, bare: bool = False) -> None:
     """Render MajiBot's to-do list as a dark navy card (matches the MajiBot
-    panel). Each item is `{"text": str}`. Sits beside the risks/wins toggle."""
+    panel). Each item is `{"text": str}`. Sits beside the risks/wins toggle.
+
+    `bare=True` omits the outer `.majibot-todo` wrapper so the caller can
+    place the title + list inside its own container (e.g. one that also
+    holds a "Generate with AI" button, so the button reads as part of the
+    same card)."""
     rows = "".join(
         f'<li class="majibot-todo__row">'
         f'<span class="icon icon-sm majibot-todo__check">check_box_outline_blank</span>'
@@ -790,16 +849,17 @@ def render_majibot_todo(title: str, items: List[Dict[str, str]]) -> None:
         f'</li>'
         for it in items
     ) or '<li class="majibot-todo__empty">Nothing on the list — all clear.</li>'
-    st.markdown(
-        f'<div class="majibot-todo">'
+    inner = (
         f'<div class="majibot-todo__title">'
         f'<span class="majibot-todo__avatar"><span class="icon icon-sm">auto_awesome</span></span>'
         f'<span>{_html.escape(title)}</span>'
         f'</div>'
         f'<ul class="majibot-todo__list">{rows}</ul>'
-        f'</div>',
-        unsafe_allow_html=True,
     )
+    if bare:
+        st.markdown(inner, unsafe_allow_html=True)
+    else:
+        st.markdown(f'<div class="majibot-todo">{inner}</div>', unsafe_allow_html=True)
 
 
 def render_page_header(

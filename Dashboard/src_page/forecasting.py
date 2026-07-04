@@ -12,6 +12,9 @@ from utils import (
     render_page_hero,
     render_section_header,
     render_empty_state,
+    render_standardized_filters,
+    render_kpi_row,
+    KPI,
     filter_df_by_user_access,
     validate_selected_country,
     _ensure_pipeline,
@@ -136,19 +139,19 @@ def _render_scenario_card(result) -> None:
         st.markdown("**Baseline**")
         for k, v in result.baseline.items():
             formatted = f"{v:,.0f}" if isinstance(v, (int, float)) and abs(v) > 100 else f"{v}"
-            st.metric(k, formatted)
+            st.metric(k, formatted, help=f"Current {k.lower()} before the scenario is applied.")
 
     with col_proj:
         st.markdown("**Projected**")
         for k, v in result.projected.items():
             formatted = f"{v:,.0f}" if isinstance(v, (int, float)) and abs(v) > 100 else f"{v}"
-            st.metric(k, formatted)
+            st.metric(k, formatted, help=f"Projected {k.lower()} after applying the scenario levers.")
 
     with col_impact:
         st.markdown("**Impact**")
         for k, v in result.impact_pct.items():
             delta_str = f"{v:+.1f}%"
-            st.metric(k, delta_str)
+            st.metric(k, delta_str, help=f"Percentage change in {k.lower()} from baseline to projected.")
 
 
 @st.cache_data
@@ -187,17 +190,33 @@ def scene_forecasting():
     """Main entry point for the Forecasting & Scenarios page."""
     _ensure_pipeline()
 
-    selected_country = validate_selected_country(
-        st.session_state.get("selected_country", "Cameroon")
-    )
-    selected_zone = st.session_state.get("selected_zone", "All")
+    # Interactive Country / Zone selectors so users choose what to predict,
+    # rendered inline with the title (Home-style header).
+    try:
+        _opts = filter_df_by_user_access(
+            query("SELECT DISTINCT country, zone FROM billing"), "country"
+        )
+    except Exception:
+        _opts = pd.DataFrame(columns=["country", "zone"])
 
-    render_page_hero(
+    _filters = render_standardized_filters(
+        df=_opts,
+        page="forecasting",
+        key_prefix="fc_filter",
+        country_col="country",
+        zone_col="zone",
+        show_period=False,
+        show_zone=True,
+        show_year=False,
+        show_month=False,
+        auto_month=False,
         title="Insights & forecasting",
         icon="insights",
-        filters={"Country": selected_country, "Zone": selected_zone},
     )
+    selected_country = _filters["country"]
+    selected_zone = _filters["zone"]
 
+    st.markdown("<div class='filter-row-gap'></div>", unsafe_allow_html=True)
     tab_forecast, tab_decomp, tab_scenarios, tab_corr = st.tabs([
         "Time-series forecast",
         "Seasonal decomposition",
@@ -230,7 +249,7 @@ def scene_forecasting():
             horizon = st.slider("Forecast Horizon (months)", 3, 24, 12, key="fc_horizon")
 
         if st.button("Run Forecast", type="primary", key="fc_run"):
-            with st.spinner("Running forecast models (AutoARIMA + AutoETS)..."):
+            with st.spinner("Fitting a Holt-Winters exponential-smoothing model..."):
                 result = forecast_metric(
                     selected_metric,
                     country=selected_country,
@@ -242,6 +261,33 @@ def scene_forecasting():
                 st.warning(result["error"])
             else:
                 _render_forecast_chart(result)
+
+                # Forecast summary cards — icons + ⓘ tooltips on each metric.
+                try:
+                    _hist, _fc = result["historical"], result["forecast"]
+                    _label = result["metric_info"].get("label", selected_metric)
+                    _latest = float(_hist["y"].iloc[-1])
+                    _end = float(_fc["yhat"].iloc[-1])
+                    _chg = ((_end - _latest) / _latest * 100) if _latest else 0.0
+                    _lo = float(_fc["yhat_lower_95"].iloc[-1])
+                    _hi = float(_fc["yhat_upper_95"].iloc[-1])
+                    render_kpi_row([
+                        KPI(label="Latest actual", value=f"{_latest:,.1f}", icon="history",
+                            help=f"Most recent observed value of {_label.lower()}."),
+                        KPI(label=f"Forecast · +{horizon}m", value=f"{_end:,.1f}",
+                            delta=f"{_chg:+.1f}% vs latest",
+                            delta_kind=("positive" if _chg >= 0 else "negative"),
+                            icon="trending_up",
+                            help=f"Model projection for {_label.lower()} at the end of the {horizon}-month horizon."),
+                        KPI(label="95% interval", value=f"{_lo:,.0f} – {_hi:,.0f}", icon="expand",
+                            help="Range the actual value is expected to fall within, at 95% confidence, at horizon end."),
+                        KPI(label="Model", value=str(result["model_used"]), icon="model_training",
+                            help="Holt-Winters exponential smoothing (seasonal with 24+ months of history, "
+                                 "trend-only otherwise), falling back to a linear trend when there isn't "
+                                 "enough clean data to fit either."),
+                    ])
+                except Exception:
+                    pass
 
                 st.markdown(
                     '<div class="card card--quiet" style="margin-top: 8px;">'
