@@ -30,9 +30,9 @@ It was built as a capstone project with [Athena Infonomics](https://www.athenain
 - **Honest about gaps** — measures that aren't in the data are shown as explicit data-gap panels rather than estimated.
 - **In-app documentation** — a built-in reference page explaining every metric formula, the forecasting method, and the data pipeline.
 
-| Forecasting | Production | Admin &amp; users |
-|---|---|---|
-| <img src="./Gif/forecasting.gif" width="260" alt="Forecasting"/> | <img src="./Gif/production_page.gif" width="260" alt="Production page"/> | <img src="./Gif/admin_setting.gif" width="260" alt="Admin settings"/> |
+| Access &amp; Coverage | Service Quality |
+|---|---|
+| <img src="./Gif/access_page.gif" width="380" alt="Access & Coverage page"/> | <img src="./Gif/service_page.gif" width="380" alt="Service Quality page"/> |
 
 ## 🏗️ Architecture
 
