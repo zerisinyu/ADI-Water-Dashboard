@@ -8,9 +8,9 @@ A role-based analytics platform for water &amp; sanitation utilities — trackin
 ![Plotly](https://img.shields.io/badge/Plotly-charts-3F4F75?logo=plotly&logoColor=white)
 [![Live demo](https://img.shields.io/badge/Live%20demo-online-2c5582)](https://adi-water-dashboard.streamlit.app)
 
-**[▶ Try the live demo](https://adi-water-dashboard.streamlit.app)** — sign in with `admin` / `admin123`. The first load takes a minute or two while packages install.
+**[▶ Try the live demo](https://adi-water-dashboard.streamlit.app)** — sign in with `admin` / `admin123`; The first load takes a minute or two while packages install.
 
-<img src="./Gif/home_page.gif" width="100%" alt="Executive dashboard home page"/>
+<img src="./Gif/home_page.gif" width="500" alt="Executive dashboard home page"/>
 
 ---
 
@@ -18,7 +18,7 @@ A role-based analytics platform for water &amp; sanitation utilities — trackin
 
 The dashboard turns raw utility CSVs into a single, decision-oriented view of how a water and sanitation utility is performing. It combines secure role-based access, a DuckDB analytical pipeline, and an optional bring-your-own-key AI assistant, at national, city, and zone levels.
 
-It was built as a capstone project with [Athena Infonomics](https://www.athenainfonomics.com) and the Africa Utility Data Collaborative (AUDC), by **Fusion 4** — a team from the Applied Data Institute '25 cohort at [Equitech Futures](https://www.equitechfutures.com/programs/adi).
+It was proudly built as a capstone project with [Athena Infonomics](https://www.athenainfonomics.com) and the Africa Utility Data Collaborative (AUDC), by **Fusion 4** — a team from the Applied Data Institute '25 cohort at [Equitech Futures](https://www.equitechfutures.com/programs/adi).
 
 ## ✨ Highlights
 
@@ -30,9 +30,12 @@ It was built as a capstone project with [Athena Infonomics](https://www.athenain
 - **Honest about gaps** — measures that aren't in the data are shown as explicit data-gap panels rather than estimated.
 - **In-app documentation** — a built-in reference page explaining every metric formula, the forecasting method, and the data pipeline.
 
-| Access &amp; Coverage | Service Quality |
+---
+
+| Majibot AI | Forecasting |
 |---|---|
-| <img src="./Gif/access_page.gif" width="380" alt="Access & Coverage page"/> | <img src="./Gif/service_page.gif" width="380" alt="Service Quality page"/> |
+| <img src="./Gif/majibot.gif" width="200" alt="Majibot"/> | <img src="./Gif/forecasting_page.gif" width="300" alt="Forecasting page"/> |
+
 
 ## 🏗️ Architecture
 
@@ -161,4 +164,4 @@ Built by **Fusion 4** (Applied Data Institute '25):
 
 In collaboration with [Athena Infonomics](https://www.athenainfonomics.com), the Africa Utility Data Collaborative (AUDC), and [Equitech Futures](https://www.equitechfutures.com).
 
-> Produced as an academic capstone project. No open-source license is currently attached; please contact the team before reuse.
+Produced as an academic capstone project; No open-source license is currently attached; please contact the team before reuse.
