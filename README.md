@@ -32,14 +32,6 @@ It was proudly built as a capstone project with [Athena Infonomics](https://www.
 
 ---
 
-| Access &amp; Coverage | Service Quality |
-|---|---|
-| <img src="./Gif/access_page.gif" width="250" alt="Access & Coverage page"/> | <img src="./Gif/service_page.gif" width="250" alt="Service Quality page"/> |
-
-| Financial Health | Production & Operation |
-|---|---|
-| <img src="./Gif/financial_page.gif" width="250" alt="Financial page"/> | <img src="./Gif/production_page.gif" width="250" alt="Production page"/> |
-
 | Majibot AI | Forecasting |
 |---|---|
 | <img src="./Gif/majibot.gif" width="200" alt="Majibot"/> | <img src="./Gif/forecasting_page.gif" width="300" alt="Forecasting page"/> |
